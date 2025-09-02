@@ -1,0 +1,18 @@
+{
+	"name": "DS_GHArchive_Binary",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_ADLS_raw",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": "gharchive",
+				"fileSystem": "raw"
+			}
+		}
+	}
+}
