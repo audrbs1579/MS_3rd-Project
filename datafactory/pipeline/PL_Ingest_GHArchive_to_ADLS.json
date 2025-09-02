@@ -8,6 +8,10 @@
 				"dependsOn": [],
 				"userProperties": [],
 				"typeProperties": {
+					"items": {
+						"value": "@range(0,24)\n",
+						"type": "Expression"
+					},
 					"activities": [
 						{
 							"name": "Copy data1",
