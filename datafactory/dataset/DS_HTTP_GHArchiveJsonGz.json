@@ -1,0 +1,21 @@
+{
+	"name": "DS_HTTP_GHArchiveJsonGz",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_HTTP_GHArchive",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Json",
+		"typeProperties": {
+			"location": {
+				"type": "HttpServerLocation",
+				"relativeUrl": "@{dataset().year}-@{dataset().month}-@{dataset().day}-@{dataset().hour}.json.gz"
+			},
+			"compression": {
+				"type": "gzip"
+			}
+		},
+		"schema": {}
+	}
+}
