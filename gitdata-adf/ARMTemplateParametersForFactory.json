@@ -1,0 +1,18 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "gitdata-adf"
+		},
+		"LS_ADLS_RawData_properties_typeProperties_url": {
+			"value": "https://gitdatastorage.dfs.core.windows.net/"
+		},
+		"LS_HTTP_GHArchive_properties_typeProperties_url": {
+			"value": "https://data.gharchive.org"
+		},
+		"TR_Tumbling_Hourly_properties_pipeline_parameters_trigger_time": {
+			"value": "@trigger().outputs.windowStartTime"
+		}
+	}
+}

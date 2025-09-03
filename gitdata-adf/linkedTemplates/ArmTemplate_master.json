@@ -1,0 +1,63 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "gitdata-adf"
+		},
+		"LS_ADLS_RawData_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://gitdatastorage.dfs.core.windows.net/"
+		},
+		"LS_HTTP_GHArchive_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://data.gharchive.org"
+		},
+		"TR_Tumbling_Hourly_properties_pipeline_parameters_trigger_time": {
+			"type": "string",
+			"defaultValue": "@trigger().outputs.windowStartTime"
+		},
+		"containerUri": {
+			"type": "string",
+			"metadata": "URI to storage account containing linked ARM templates"
+		},
+		"containerSasToken": {
+			"type": "string",
+			"metadata": "Sas token to storage account containing linked ARM templates"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "gitdata-adf_ArmTemplate_0",
+			"type": "Microsoft.Resources/deployments",
+			"apiVersion": "2024-03-01",
+			"properties": {
+				"mode": "incremental",
+				"templateLink": {
+					"uri": "[concat(parameters('containerUri'), '/ArmTemplate_0.json', parameters('containerSasToken'))]",
+					"contentVersion": "1.0.0.0"
+				},
+				"parameters": {
+					"factoryName": {
+						"value": "[parameters('factoryName')]"
+					},
+					"LS_ADLS_RawData_properties_typeProperties_url": {
+						"value": "[parameters('LS_ADLS_RawData_properties_typeProperties_url')]"
+					},
+					"LS_HTTP_GHArchive_properties_typeProperties_url": {
+						"value": "[parameters('LS_HTTP_GHArchive_properties_typeProperties_url')]"
+					},
+					"TR_Tumbling_Hourly_properties_pipeline_parameters_trigger_time": {
+						"value": "[parameters('TR_Tumbling_Hourly_properties_pipeline_parameters_trigger_time')]"
+					}
+				}
+			},
+			"dependsOn": []
+		}
+	]
+}
