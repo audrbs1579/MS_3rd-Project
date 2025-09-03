@@ -96,7 +96,7 @@
 		"parameters": {
 			"trigger_time": {
 				"type": "string",
-				"defaultValue": "2025-09-03T00:00:00Z"
+				"defaultValue": "2025-09-01T10:00:00Z"
 			}
 		},
 		"variables": {
