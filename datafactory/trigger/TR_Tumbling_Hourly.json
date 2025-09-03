@@ -2,14 +2,14 @@
 	"name": "TR_Tumbling_Hourly",
 	"properties": {
 		"annotations": [],
-		"runtimeState": "Stopped",
+		"runtimeState": "Started",
 		"pipeline": {
 			"pipelineReference": {
 				"referenceName": "PL_Ingest_GHArchive_Hourly",
 				"type": "PipelineReference"
 			},
 			"parameters": {
-				"trigger_time": "@trigger().outputs.windowStartTime"
+				"trigger_time": "@trigger().outputs.windowStartTimeㄴ"
 			}
 		},
 		"type": "TumblingWindowTrigger",
