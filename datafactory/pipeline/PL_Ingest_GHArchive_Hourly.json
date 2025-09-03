@@ -43,7 +43,7 @@
 						"type": "DatasetReference",
 						"parameters": {
 							"year": {
-								"value": "@formatDateTime(pipeline().parameters.trigger_time, 'yyyy')",
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'yyyy')",
 								"type": "Expression"
 							},
 							"month": {
@@ -64,7 +64,13 @@
 				"outputs": [
 					{
 						"referenceName": "DS_ADLS_GHArchiveJson",
-						"type": "DatasetReference"
+						"type": "DatasetReference",
+						"parameters": {
+							"dynamic_filename": {
+								"value": "@concat('gharchive-', formatDateTime(variables('safe_trigger_time'), 'yyyy-MM-dd-HH'), '.json')",
+								"type": "Expression"
+							}
+						}
 					}
 				]
 			},

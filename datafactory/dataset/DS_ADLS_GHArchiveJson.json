@@ -5,11 +5,20 @@
 			"referenceName": "LS_ADLS_RawData",
 			"type": "LinkedServiceReference"
 		},
+		"parameters": {
+			"dynamic_filename": {
+				"type": "string"
+			}
+		},
 		"annotations": [],
 		"type": "Json",
 		"typeProperties": {
 			"location": {
 				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@dataset().dynamic_filename",
+					"type": "Expression"
+				},
 				"folderPath": "gharchive",
 				"fileSystem": "raw"
 			}
