@@ -1,73 +1,82 @@
 {
-	"name": "PL_Ingest_GHArchive_to_ADLS",
+	"name": "PL_Ingest_GHArchive_Hourly",
 	"properties": {
 		"activities": [
 			{
-				"name": "ForEach1",
-				"type": "ForEach",
+				"name": "Copy data1",
+				"type": "Copy",
 				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
 				"userProperties": [],
 				"typeProperties": {
-					"items": {
-						"value": "@range(0,24)\n",
-						"type": "Expression"
-					},
-					"activities": [
-						{
-							"name": "Copy data1",
-							"type": "Copy",
-							"dependsOn": [],
-							"policy": {
-								"timeout": "0.12:00:00",
-								"retry": 0,
-								"retryIntervalInSeconds": 30,
-								"secureOutput": false,
-								"secureInput": false
-							},
-							"userProperties": [],
-							"typeProperties": {
-								"source": {
-									"type": "BinarySource",
-									"storeSettings": {
-										"type": "HttpReadSettings",
-										"requestMethod": "GET"
-									},
-									"formatSettings": {
-										"type": "BinaryReadSettings"
-									}
-								},
-								"sink": {
-									"type": "BinarySink",
-									"storeSettings": {
-										"type": "AzureBlobFSWriteSettings"
-									}
-								},
-								"enableStaging": false
-							},
-							"inputs": [
-								{
-									"referenceName": "DS_GHArchive_Binary",
-									"type": "DatasetReference"
-								}
-							],
-							"outputs": [
-								{
-									"referenceName": "DS_ADLS_GHArchiveRaw",
-									"type": "DatasetReference"
-								}
-							]
+					"source": {
+						"type": "JsonSource",
+						"storeSettings": {
+							"type": "HttpReadSettings",
+							"requestMethod": "GET"
+						},
+						"formatSettings": {
+							"type": "JsonReadSettings"
 						}
-					]
-				}
+					},
+					"sink": {
+						"type": "JsonSink",
+						"storeSettings": {
+							"type": "AzureBlobFSWriteSettings",
+							"copyBehavior": "FlattenHierarchy"
+						},
+						"formatSettings": {
+							"type": "JsonWriteSettings"
+						}
+					},
+					"enableStaging": false
+				},
+				"inputs": [
+					{
+						"referenceName": "DS_HTTP_GHArchiveJsonGz",
+						"type": "DatasetReference",
+						"parameters": {
+							"year": "@formatDateTime(pipeline().parameters.trigger_time, 'yyyy')",
+							"month": "@formatDateTime(pipeline().parameters.trigger_time, 'MM')",
+							"day": "@formatDateTime(pipeline().parameters.trigger_time, 'dd')",
+							"hour": "@formatDateTime(pipeline().parameters.trigger_time, 'H')"
+						}
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "DS_ADLS_GHArchiveJson",
+						"type": "DatasetReference"
+					}
+				]
 			}
 		],
 		"parameters": {
-			"date": {
+			"year": {
 				"type": "string",
-				"defaultValue": "2025-09-01"
+				"defaultValue": "2025"
+			},
+			"month": {
+				"type": "string",
+				"defaultValue": "09"
+			},
+			"day": {
+				"type": "string",
+				"defaultValue": "01"
 			},
 			"hour": {
-				"type": "string"
+				"type": "string",
+				"defaultValue": "0"
+			},
+			"trigger_time": {
+				"type": "string",
+				"defaultValue": "2025-09-03T00:00:00Z"
 			}
 		},
 		"annotations": []

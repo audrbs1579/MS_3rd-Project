@@ -1,0 +1,19 @@
+{
+	"name": "DS_ADLS_GHArchiveJson",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_ADLS_RawData",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Json",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": "gharchive",
+				"fileSystem": "raw"
+			}
+		},
+		"schema": {}
+	}
+}
