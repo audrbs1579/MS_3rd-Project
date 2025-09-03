@@ -17,7 +17,7 @@
 		},
 		"TR_Tumbling_Hourly_properties_pipeline_parameters_trigger_time": {
 			"type": "string",
-			"defaultValue": "@trigger().outputs.windowStartTime"
+			"defaultValue": "@trigger().outputs.windowStartTimeㄴ"
 		},
 		"containerUri": {
 			"type": "string",

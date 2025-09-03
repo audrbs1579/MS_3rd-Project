@@ -17,7 +17,7 @@
 		},
 		"TR_Tumbling_Hourly_properties_pipeline_parameters_trigger_time": {
 			"type": "string",
-			"defaultValue": "@trigger().outputs.windowStartTime"
+			"defaultValue": "@trigger().outputs.windowStartTimeㄴ"
 		}
 	},
 	"variables": {
@@ -259,7 +259,7 @@
 			"apiVersion": "2018-06-01",
 			"properties": {
 				"annotations": [],
-				"runtimeState": "Stopped",
+				"runtimeState": "Started",
 				"pipeline": {
 					"pipelineReference": {
 						"referenceName": "PL_Ingest_GHArchive_Hourly",
@@ -281,6 +281,69 @@
 					},
 					"dependsOn": []
 				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/pipelines/PL_Ingest_GHArchive_Hourly')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/PL_Backfill_GHArchive')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "ForEach1",
+						"type": "ForEach",
+						"dependsOn": [],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@range(0, int(div(sub(ticks(pipeline().parameters.endDate), ticks(pipeline().parameters.startDate)), 36000000000)))",
+								"type": "Expression"
+							},
+							"batchCount": 50,
+							"activities": [
+								{
+									"name": "Execute Pipeline1",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"policy": {
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "PL_Ingest_GHArchive_Hourly",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"trigger_time": {
+												"value": "@addHours(pipeline().parameters.startDate, item())",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"parameters": {
+					"startDate": {
+						"type": "string",
+						"defaultValue": "2015-01-01T00:00:00Z"
+					},
+					"endDate": {
+						"type": "string",
+						"defaultValue": "@utcNow()"
+					}
+				},
+				"annotations": []
 			},
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/pipelines/PL_Ingest_GHArchive_Hourly')]"
