@@ -12,6 +12,7 @@
 						"value": "@range(0, int(div(sub(ticks(pipeline().parameters.endDate), ticks(pipeline().parameters.startDate)), 36000000000)))",
 						"type": "Expression"
 					},
+					"isSequential": false,
 					"batchCount": 50,
 					"activities": [
 						{
@@ -47,7 +48,7 @@
 			},
 			"endDate": {
 				"type": "string",
-				"defaultValue": "@utcNow()"
+				"defaultValue": "2025-09-03T11:00:00Z"
 			}
 		},
 		"annotations": []
