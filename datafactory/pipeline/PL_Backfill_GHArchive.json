@@ -1,0 +1,55 @@
+{
+	"name": "PL_Backfill_GHArchive",
+	"properties": {
+		"activities": [
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@range(0, int(div(sub(ticks(pipeline().parameters.endDate), ticks(pipeline().parameters.startDate)), 36000000000)))",
+						"type": "Expression"
+					},
+					"batchCount": 50,
+					"activities": [
+						{
+							"name": "Execute Pipeline1",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_Ingest_GHArchive_Hourly",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"trigger_time": {
+										"value": "@addHours(pipeline().parameters.startDate, item())",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"startDate": {
+				"type": "string",
+				"defaultValue": "2015-01-01T00:00:00Z"
+			},
+			"endDate": {
+				"type": "string",
+				"defaultValue": "@utcNow()"
+			}
+		},
+		"annotations": []
+	}
+}
