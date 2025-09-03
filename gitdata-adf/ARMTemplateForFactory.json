@@ -71,7 +71,7 @@
 								"type": "DatasetReference",
 								"parameters": {
 									"year": {
-										"value": "@formatDateTime(pipeline().parameters.trigger_time, 'yyyy')",
+										"value": "@formatDateTime(variables('safe_trigger_time'), 'yyyy')",
 										"type": "Expression"
 									},
 									"month": {
@@ -93,7 +93,12 @@
 							{
 								"referenceName": "DS_ADLS_GHArchiveJson",
 								"type": "DatasetReference",
-								"parameters": {}
+								"parameters": {
+									"dynamic_filename": {
+										"value": "@concat('gharchive-', formatDateTime(variables('safe_trigger_time'), 'yyyy-MM-dd-HH'), '.json')",
+										"type": "Expression"
+									}
+								}
 							}
 						]
 					},
@@ -152,11 +157,20 @@
 					"referenceName": "LS_ADLS_RawData",
 					"type": "LinkedServiceReference"
 				},
+				"parameters": {
+					"dynamic_filename": {
+						"type": "string"
+					}
+				},
 				"annotations": [],
 				"type": "Json",
 				"typeProperties": {
 					"location": {
 						"type": "AzureBlobFSLocation",
+						"fileName": {
+							"value": "@dataset().dynamic_filename",
+							"type": "Expression"
+						},
 						"folderPath": "gharchive",
 						"fileSystem": "raw"
 					}
