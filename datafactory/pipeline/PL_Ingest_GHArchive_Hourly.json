@@ -42,10 +42,22 @@
 						"referenceName": "DS_HTTP_GHArchiveJsonGz",
 						"type": "DatasetReference",
 						"parameters": {
-							"year": "@formatDateTime(pipeline().parameters.trigger_time, 'yyyy')",
-							"month": "@formatDateTime(pipeline().parameters.trigger_time, 'MM')",
-							"day": "@formatDateTime(pipeline().parameters.trigger_time, 'dd')",
-							"hour": "@formatDateTime(pipeline().parameters.trigger_time, 'H')"
+							"year": {
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'yyyy')",
+								"type": "Expression"
+							},
+							"month": {
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'MM')",
+								"type": "Expression"
+							},
+							"day": {
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'dd')",
+								"type": "Expression"
+							},
+							"hour": {
+								"value": "@string(int(formatDateTime(variables('safe_trigger_time'), 'HH')))",
+								"type": "Expression"
+							}
 						}
 					}
 				],
@@ -55,6 +67,20 @@
 						"type": "DatasetReference"
 					}
 				]
+			},
+			{
+				"name": "Set variable1",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "safe_trigger_time",
+					"value": "@addHours(pipeline().parameters.trigger_time, -4)"
+				}
 			}
 		],
 		"parameters": {
@@ -77,6 +103,11 @@
 			"trigger_time": {
 				"type": "string",
 				"defaultValue": "2025-09-03T00:00:00Z"
+			}
+		},
+		"variables": {
+			"safe_trigger_time": {
+				"type": "String"
 			}
 		},
 		"annotations": []
