@@ -5,7 +5,15 @@
 			{
 				"name": "Copy data1",
 				"type": "Copy",
-				"dependsOn": [],
+				"dependsOn": [
+					{
+						"activity": "Set variable1",
+						"dependencyConditions": [
+							"Succeeded",
+							"Failed"
+						]
+					}
+				],
 				"policy": {
 					"timeout": "0.12:00:00",
 					"retry": 0,
@@ -67,7 +75,7 @@
 						"type": "DatasetReference",
 						"parameters": {
 							"dynamic_filename": {
-								"value": "@concat('gharchive-', formatDateTime(variables('safe_trigger_time'), 'yyyy-MM-dd-HH'), '.json')",
+								"value": "@concat(formatDateTime(variables('safe_trigger_time'), 'yyyy-MM-dd-HH'), '.json')",
 								"type": "Expression"
 							}
 						}
@@ -77,14 +85,7 @@
 			{
 				"name": "Set variable1",
 				"type": "SetVariable",
-				"dependsOn": [
-					{
-						"activity": "Copy data1",
-						"dependencyConditions": [
-							"Succeeded"
-						]
-					}
-				],
+				"dependsOn": [],
 				"policy": {
 					"secureOutput": false,
 					"secureInput": false
