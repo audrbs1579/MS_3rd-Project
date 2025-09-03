@@ -71,7 +71,14 @@
 			{
 				"name": "Set variable1",
 				"type": "SetVariable",
-				"dependsOn": [],
+				"dependsOn": [
+					{
+						"activity": "Copy data1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
 				"policy": {
 					"secureOutput": false,
 					"secureInput": false
@@ -85,8 +92,7 @@
 		],
 		"parameters": {
 			"trigger_time": {
-				"type": "string",
-				"defaultValue": "2025-09-03T00:00:00Z"
+				"type": "string"
 			}
 		},
 		"variables": {
