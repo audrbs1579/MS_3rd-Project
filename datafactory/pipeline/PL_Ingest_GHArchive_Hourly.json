@@ -84,22 +84,6 @@
 			}
 		],
 		"parameters": {
-			"year": {
-				"type": "string",
-				"defaultValue": "2025"
-			},
-			"month": {
-				"type": "string",
-				"defaultValue": "09"
-			},
-			"day": {
-				"type": "string",
-				"defaultValue": "01"
-			},
-			"hour": {
-				"type": "string",
-				"defaultValue": "0"
-			},
 			"trigger_time": {
 				"type": "string",
 				"defaultValue": "2025-09-03T00:00:00Z"
