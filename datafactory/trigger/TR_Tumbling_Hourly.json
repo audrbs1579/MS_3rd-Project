@@ -2,7 +2,7 @@
 	"name": "TR_Tumbling_Hourly",
 	"properties": {
 		"annotations": [],
-		"runtimeState": "Started",
+		"runtimeState": "Stopped",
 		"pipeline": {
 			"pipelineReference": {
 				"referenceName": "PL_Ingest_GHArchive_Hourly",
