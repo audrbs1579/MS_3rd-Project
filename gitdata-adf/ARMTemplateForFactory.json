@@ -71,7 +71,7 @@
 								"type": "DatasetReference",
 								"parameters": {
 									"year": {
-										"value": "@formatDateTime(variables('safe_trigger_time'), 'yyyy')",
+										"value": "@formatDateTime(pipeline().parameters.trigger_time, 'yyyy')",
 										"type": "Expression"
 									},
 									"month": {
@@ -127,7 +127,8 @@
 				},
 				"parameters": {
 					"trigger_time": {
-						"type": "string"
+						"type": "string",
+						"defaultValue": "2025-09-01T10:00:00Z"
 					}
 				},
 				"variables": {
