@@ -3,7 +3,7 @@
   "routes": [
     {
       "route": "/api/*",
-      "rewrite": "https://<YOUR_FUNCTION_APP_NAME>.azurewebsites.net/api/*",
+      "rewrite": "https://white-bay-0e2efe700.1.azurestaticapps.net/api/*",
       "allowedRoles": [ "authenticated" ]   // 로그인 사용자만 접근 (원하면 잠시 지워도 됨)
     }
   ],
