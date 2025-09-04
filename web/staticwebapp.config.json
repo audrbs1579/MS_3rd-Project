@@ -1,0 +1,16 @@
+{
+  "navigationFallback": { "rewrite": "/index.html" },
+  "routes": [
+    {
+      "route": "/api/*",
+      "rewrite": "https://<YOUR_FUNCTION_APP_NAME>.azurewebsites.net/api/*",
+      "allowedRoles": [ "authenticated" ]   // 로그인 사용자만 접근 (원하면 잠시 지워도 됨)
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "statusCode": 302,
+      "redirect": "/.auth/login/github"     // 미로그인 시 SWA 내장 GitHub 로그인으로 보냄
+    }
+  }
+}
