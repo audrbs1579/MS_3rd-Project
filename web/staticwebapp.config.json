@@ -3,7 +3,7 @@
   "routes": [
     {
       "route": "/api/*",
-      "rewrite": "githubbackend-gjb3b9bkhca7f2hd.koreacentral-01.azurewebsites.net/api/*"
+      "rewrite": "https://githubbackend-gjb3b9bkhca7f2hd.koreacentral-01.azurewebsites.net/api/*"
     }
   ]
 }
