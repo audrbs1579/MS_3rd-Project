@@ -4,10 +4,18 @@ on:
   push:
     branches:
       - main
+    # 경로 감시 기능 추가: 아래 경로의 파일이 변경될 때만 이 workflow를 실행합니다.
+    paths:
+      - '.github/workflows/**'
+      - 'index.html' # index.html 파일도 감시 대상에 포함합니다.
+
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+    paths:
+      - '.github/workflows/**'
+      - 'index.html'
 
 jobs:
   build_and_deploy_job:
@@ -24,7 +32,7 @@ jobs:
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_WHITE_BAY_0E2EFE700 }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }} 
           action: "upload"
           ###### Repository/Build Configurations ######
           app_location: "/" 
@@ -43,4 +51,4 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_WHITE_BAY_0E2EFE700 }}
           action: "close"
-          app_location: "/"
+
