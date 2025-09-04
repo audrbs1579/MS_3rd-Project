@@ -25,8 +25,6 @@
             border-radius: 3px;
             box-shadow: 1px 1px 0 #FFF, 2px 2px 0 #ACA899, 3px 3px 0 #FFF, 4px 4px 0 #ACA899;
             width: 600px;
-            display: flex;
-            flex-direction: column;
         }
 
         /* 창 제목 표시줄 */
@@ -83,11 +81,7 @@
             cursor: pointer;
             white-space: nowrap;
         }
-        .list-item:hover {
-            background-color: #0045B5;
-            color: white;
-        }
-        .list-item.selected {
+        .list-item:hover, .list-item.selected {
             background-color: #0045B5;
             color: white;
         }
@@ -112,7 +106,6 @@
             font-size: 8pt;
             text-align: right;
         }
-
     </style>
 </head>
 <body>
@@ -164,8 +157,6 @@
         const fileTree = document.getElementById('file-tree');
         const statusText = document.getElementById('status-text');
 
-        let selectedRepo = null;
-
         // 1. 레포지토리 목록 불러오기 버튼 이벤트
         loadReposBtn.addEventListener('click', async () => {
             const token = tokenInput.value;
@@ -175,25 +166,23 @@
             }
 
             statusText.textContent = '레포지토리 목록을 불러오는 중...';
-            repoList.innerHTML = '';
+            repoList.innerHTML = '불러오는 중...';
 
             try {
-                const response = await fetch('https://api.github.com/user/repos', {
+                const response = await fetch('https://api.github.com/user/repos?sort=pushed&per_page=100', {
                     headers: { 'Authorization': `token ${token}` }
                 });
 
-                if (!response.ok) throw new Error(`HTTP 에러! 상태: ${response.status}`);
+                if (!response.ok) throw new Error(`HTTP Error! Status: ${response.status}`);
                 
                 const repos = await response.json();
                 
-                repos.sort((a, b) => new Date(b.pushed_at) - new Date(a.pushed_at)); // 최신순 정렬
-
+                repoList.innerHTML = ''; // 목록 초기화
                 repos.forEach(repo => {
                     const repoItem = document.createElement('div');
                     repoItem.className = 'list-item';
                     repoItem.textContent = `📁 ${repo.name}`;
-                    repoItem.dataset.repoName = repo.name;
-                    repoItem.dataset.owner = repo.owner.login;
+                    repoItem.dataset.repoFullName = repo.full_name;
                     repoList.appendChild(repoItem);
                 });
 
@@ -201,7 +190,7 @@
 
             } catch (error) {
                 statusText.textContent = '오류 발생.';
-                alert(`레포지토리 목록을 불러오는 데 실패했습니다: ${error.message}`);
+                repoList.innerHTML = `<div style="padding: 5px; color: red;">오류: ${error.message}</div>`;
             }
         });
 
@@ -212,23 +201,22 @@
                 repoItems.forEach(item => item.classList.remove('selected'));
                 event.target.classList.add('selected');
 
-                const repoName = event.target.dataset.repoName;
-                const owner = event.target.dataset.owner;
+                const repoFullName = event.target.dataset.repoFullName;
                 const token = tokenInput.value;
 
-                selectedRepo = { owner, repoName };
-                statusText.textContent = `'${repoName}'의 파일 구조를 불러오는 중...`;
-                fileTree.innerHTML = '';
+                statusText.textContent = `'${repoFullName}'의 파일 구조를 불러오는 중...`;
+                fileTree.innerHTML = '불러오는 중...';
 
                 try {
-                    const response = await fetch(`https://api.github.com/repos/${owner}/${repoName}/contents/`, {
+                    const response = await fetch(`https://api.github.com/repos/${repoFullName}/contents/`, {
                         headers: { 'Authorization': `token ${token}` }
                     });
 
-                    if (!response.ok) throw new Error(`HTTP 에러! 상태: ${response.status}`);
+                    if (!response.ok) throw new Error(`HTTP Error! Status: ${response.status}`);
 
                     const contents = await response.json();
-
+                    
+                    fileTree.innerHTML = ''; // 목록 초기화
                     contents.sort((a, b) => { // 폴더 먼저, 그 다음 이름순
                         if (a.type === b.type) return a.name.localeCompare(b.name);
                         return a.type === 'dir' ? -1 : 1;
@@ -242,11 +230,11 @@
                         fileTree.appendChild(fileItem);
                     });
                     
-                    statusText.textContent = `'${repoName}'의 파일 ${contents.length}개를 불러왔습니다.`;
+                    statusText.textContent = `'${repoFullName}'의 파일 ${contents.length}개를 불러왔습니다.`;
 
                 } catch (error) {
                     statusText.textContent = '오류 발생.';
-                    alert(`파일 구조를 불러오는 데 실패했습니다: ${error.message}`);
+                    fileTree.innerHTML = `<div style="padding: 5px; color: red;">오류: ${error.message}</div>`;
                 }
             }
         });
