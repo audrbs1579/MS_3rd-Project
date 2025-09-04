@@ -4,18 +4,16 @@ on:
   push:
     branches:
       - main
-    # 경로 감시 기능 추가: 아래 경로의 파일이 변경될 때만 이 workflow를 실행합니다.
+    # 경로 감시 기능: web 폴더 안의 모든 파일 변경을 감시합니다.
     paths:
-      - '.github/workflows/**'
-      - 'index.html' # index.html 파일도 감시 대상에 포함합니다.
+      - 'web/**'
 
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
     paths:
-      - '.github/workflows/**'
-      - 'index.html'
+      - 'web/**'
 
 jobs:
   build_and_deploy_job:
@@ -35,7 +33,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }} 
           action: "upload"
           ###### Repository/Build Configurations ######
-          app_location: "/" 
+          app_location: "web" # App source code path - 수정된 부분
           api_location: "" 
           output_location: ""
           ###### End of Repository/Build Configurations ######
