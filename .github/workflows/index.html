@@ -3,30 +3,201 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>배포 성공!</title>
+    <title>Project Guardian (Classic UI)</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        /* Windows XP 스타일 기본 폰트 및 배경 */
+        body {
+            background-color: #3A6EA5; /* XP 기본 파란 배경 */
+            font-family: 'Gulim', '굴림', Tahoma, sans-serif;
+            font-size: 9pt;
             display: flex;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
             height: 100vh;
             margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
         }
-        h1 { 
-            font-size: 4rem; 
-            color: white; 
-            text-shadow: 0 4px 8px rgba(0,0,0,0.2);
-            padding: 2rem 4rem;
-            background-color: rgba(255,255,255,0.1);
-            border-radius: 20px;
-            border: 1px solid rgba(255,255,255,0.2);
-            backdrop-filter: blur(10px);
+
+        /* 창 스타일 */
+        .window {
+            background-color: #ECE9D8;
+            border: 1px solid #ACA899;
+            border-radius: 3px;
+            box-shadow: 1px 1px 0 #FFF, 2px 2px 0 #ACA899, 3px 3px 0 #FFF, 4px 4px 0 #ACA899;
+            width: 550px;
         }
+
+        /* 창 제목 표시줄 */
+        .title-bar {
+            background: linear-gradient(to bottom, #0058E1, #0045B5);
+            padding: 3px 5px;
+            color: white;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: default;
+        }
+        
+        /* 창 내용 */
+        .window-body {
+            padding: 15px;
+        }
+
+        /* 기본 버튼 스타일 */
+        button {
+            background-color: #F0F0F0;
+            border: 1px solid #707070;
+            border-radius: 3px;
+            box-shadow: inset -1px -1px 0 #707070, inset 1px 1px 0 #FFF;
+            padding: 5px 15px;
+            font-family: 'Gulim', '굴림', Tahoma, sans-serif;
+            cursor: pointer;
+        }
+        button:active {
+            box-shadow: inset 1px 1px 0 #707070, inset -1px -1px 0 #FFF;
+        }
+        button:disabled {
+            color: #888;
+            cursor: not-allowed;
+        }
+        
+        .flex-center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 아이콘 스타일 */
+        .icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 8px;
+        }
+        
+        /* 저장소 목록 스타일 */
+        .repo-list {
+            background-color: white;
+            border: 1px inset #707070;
+            height: 150px;
+            overflow-y: auto;
+            padding: 5px;
+        }
+        .repo-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px;
+            margin-bottom: 5px;
+            border: 1px solid transparent;
+        }
+
+        /* 그룹 상자 스타일 */
+        fieldset {
+            border: 1px solid #ACA899;
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        legend {
+            font-weight: bold;
+            padding: 0 5px;
+        }
+
+        .hidden { display: none; }
     </style>
 </head>
 <body>
-    <h1>🎉 진짜 최종 성공! 🎉</h1>
+
+    <!-- 로그인 화면 -->
+    <div id="login-screen" class="window">
+        <div class="title-bar">
+            <span>Project Guardian 로그인</span>
+        </div>
+        <div class="window-body" style="text-align: center; padding: 30px;">
+            <svg class="icon" style="width: 48px; height: 48px; margin-bottom: 15px;" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>
+            <p style="margin-bottom: 20px;">GitHub 계정으로 시스템을 시작합니다.</p>
+            <button id="login-btn">
+                GitHub 계정으로 시작
+            </button>
+        </div>
+    </div>
+
+    <!-- 저장소 선택 화면 -->
+    <div id="repo-screen" class="window hidden">
+        <div class="title-bar">
+            <span>저장소 선택</span>
+        </div>
+        <div class="window-body">
+            <p style="margin-bottom: 10px;">분석할 저장소(Repository)를 선택하세요:</p>
+            <div class="repo-list">
+                <div class="repo-item">
+                    <div class="flex-center">
+                        <svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3,6H1V3C1,1.89 1.89,1 3,1H9V3H3V6M21,3V6H23V3C23,1.89 22.11,1 21,1H15V3H21M3,21V18H1V21C1,22.11 1.89,23 3,23H9V21H3M21,21H15V23H21C22.11,23 23,22.11 23,21V18H21V21M17,9H7V7H17V9M17,13H7V11H17V13M17,17H7V15H17V17Z"></path></svg>
+                        <span>my-company/project-alpha</span>
+                    </div>
+                    <button class="analyze-btn">분석</button>
+                </div>
+                <div class="repo-item">
+                    <div class="flex-center">
+                        <svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3,6H1V3C1,1.89 1.89,1 3,1H9V3H3V6M21,3V6H23V3C23,1.89 22.11,1 21,1H15V3H21M3,21V18H1V21C1,22.11 1.89,23 3,23H9V21H3M21,21H15V23H21C22.11,23 23,22.11 23,21V18H21V21M17,9H7V7H17V9M17,13H7V11H17V13M17,17H7V15H17V17Z"></path></svg>
+                        <span>my-company/critical-payment-gateway</span>
+                    </div>
+                    <button class="analyze-btn">분석</button>
+                </div>
+            </div>
+             <div id="analysis-in-progress" class="hidden" style="text-align: center; margin-top: 15px;">
+                <p><b>my-company/critical-payment-gateway</b> 분석 중...</p>
+                <p style="color: #555;">엔진을 활성화하고 있습니다. 잠시만 기다려주세요.</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 대시보드 화면 -->
+    <div id="dashboard-screen" class="window hidden">
+        <div class="title-bar">
+            <span>통합 보안 대시보드</span>
+        </div>
+        <div class="window-body">
+             <p style="margin-bottom: 10px;"><b>분석 저장소:</b> my-company/critical-payment-gateway</p>
+             <fieldset>
+                <legend><svg class="icon" style="width:16px; height:16px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,7C13.4,7 14.5,8.1 14.5,9.5C14.5,10.9 13.4,12 12,12C10.6,12 9.5,10.9 9.5,9.5C9.5,8.1 10.6,7 12,7M12,14C14.2,14 16,15.8 16,18H8C8,15.8 9.8,14 12,14Z"></path></svg> Defender</legend>
+                <p>알려진 취약점(CVE): <span style="color: green; font-weight: bold;">0건</span></p>
+                <p>유출된 비밀번호: <span style="color: red; font-weight: bold;">1건</span></p>
+             </fieldset>
+             <fieldset>
+                <legend><svg class="icon" style="width:16px; height:16px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z"></path></svg> Sentinel</legend>
+                <p>비정상 계정 접근: <span style="color: green; font-weight: bold;">없음</span></p>
+             </fieldset>
+             <fieldset>
+                <legend><svg class="icon" style="width:16px; height:16px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12,2C6.5,2 2,6.5 2,12S6.5,22 12,22S22,17.5 22,12S17.5,2 12,2M12,4C14.2,4 16,5.8 16,8C16,10.2 14.2,12 12,12C9.8,12 8,10.2 8,8C8,5.8 9.8,4 12,4M12,14C16,14 17.2,15.2 17.9,16.1L16.5,17.5C15.9,16.8 15,16 12,16C9,16 8.1,16.8 7.5,17.5L6.1,16.1C6.8,15.2 8,14 12,14Z"></path></svg> Project Guardian</legend>
+                 <p>고위험 이상 행동: <span style="color: red; font-weight: bold;">2건 탐지</span></p>
+             </fieldset>
+        </div>
+    </div>
+
+    <script>
+        const loginScreen = document.getElementById('login-screen');
+        const repoScreen = document.getElementById('repo-screen');
+        const dashboardScreen = document.getElementById('dashboard-screen');
+        const analysisInProgress = document.getElementById('analysis-in-progress');
+
+        document.getElementById('login-btn').addEventListener('click', () => {
+            loginScreen.classList.add('hidden');
+            repoScreen.classList.remove('hidden');
+        });
+
+        document.querySelectorAll('.analyze-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                analysisInProgress.classList.remove('hidden');
+                setTimeout(() => {
+                    repoScreen.classList.add('hidden');
+                    dashboardScreen.classList.remove('hidden');
+                }, 2000); // 2초 시뮬레이션
+            });
+        });
+    </script>
+
 </body>
 </html>
+
