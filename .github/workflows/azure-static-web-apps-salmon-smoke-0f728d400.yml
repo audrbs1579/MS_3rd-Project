@@ -27,7 +27,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           ###### Repository/Build Configurations ######
-          app_location: "web"
+          app_location: "/"
           api_location: ""
           output_location: ""
           ###### End of Repository/Build Configurations ######
