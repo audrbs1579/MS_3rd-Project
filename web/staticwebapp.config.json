@@ -3,14 +3,7 @@
   "routes": [
     {
       "route": "/api/*",
-      "rewrite": "https://white-bay-0e2efe700.1.azurestaticapps.net/api/*",
-      "allowedRoles": [ "authenticated" ]   // 로그인 사용자만 접근 (원하면 잠시 지워도 됨)
+      "rewrite": "githubbackend-gjb3b9bkhca7f2hd.koreacentral-01.azurewebsites.net/api/*"
     }
-  ],
-  "responseOverrides": {
-    "401": {
-      "statusCode": 302,
-      "redirect": "/.auth/login/github"     // 미로그인 시 SWA 내장 GitHub 로그인으로 보냄
-    }
-  }
+  ]
 }
