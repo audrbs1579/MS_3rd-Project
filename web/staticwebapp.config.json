@@ -1,11 +1,9 @@
 {
+  "navigationFallback": { "rewrite": "/index.html" },
   "routes": [
     {
       "route": "/api/*",
       "rewrite": "https://githubbackend-gjb3b9bkhca7f2hd.koreacentral-01.azurewebsites.net/api/*"
     }
-  ],
-  "navigationFallback": {
-    "rewrite": "/index.html"
-  }
+  ]
 }
