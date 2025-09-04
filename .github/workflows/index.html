@@ -30,3 +30,22 @@
     <h1>🎉 진짜 최종 성공! 🎉</h1>
 </body>
 </html>
+```
+
+### ### 2. VSCode 터미널에서 아래 명령어 그대로 실행
+
+**반드시 이전에 안내해 드린 대로 GitHub에서 새로 `clone` 받은 프로젝트 폴더 안에서** 터미널을 열고, 아래 명령어들을 한 줄씩 순서대로 실행하세요.
+
+```bash
+# 1. 내가 main 브랜치에 있는지 다시 한번 확인합니다.
+git checkout main
+
+# 2. 모든 변경사항(새로 덮어쓴 index.html)을 올릴 준비를 합니다.
+git add .
+
+# 3. "새로운 배포를 강제로 실행" 이라는 메시지로 변경사항을 저장합니다.
+git commit -m "Force new deployment with updated index.html"
+
+# 4. main 브랜치의 최신 내용을 GitHub 서버로 보냅니다.
+git push
+
