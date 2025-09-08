@@ -1,129 +1,120 @@
-from flask import Flask
-from datetime import datetime, timedelta, timezone
+from flask import Flask, render_template, request, redirect, session, url_for
+import requests
+import os
 
-# Flask 앱 생성
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 
-# Windows XP 테마의 HTML과 CSS
-html_content = """
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>Project Guardian</title>
-    <style>
-        body {
-            background-color: #3A6EA5; /* 윈도우 XP 바탕화면 파란색 */
-            font-family: Tahoma, Geneva, sans-serif;
-            font-size: 12px;
-            margin: 0;
-            padding: 0;
-            overflow: hidden; /* 스크롤바 제거 */
-        }
-        .window {
-            width: 600px;
-            height: 400px;
-            border: 2px solid #0058E1;
-            border-radius: 8px 8px 0 0;
-            background-color: #ECE9D8;
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            display: flex;
-            flex-direction: column;
-        }
-        .title-bar {
-            background: linear-gradient(to bottom, #0058E1, #3A85E1);
-            color: white;
-            font-weight: bold;
-            padding: 5px 10px;
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: move;
-        }
-        .title-bar-buttons span {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            margin-left: 2px;
-            background-color: #D64F34;
-            color: white;
-            text-align: center;
-            line-height: 20px;
-            border: 1px solid white;
-            font-family: 'Courier New', Courier, monospace;
-        }
-        .content {
-            padding: 20px;
-            flex-grow: 1;
-            color: #000;
-        }
-        .content h1 {
-            font-size: 24px;
-            color: #0058E1;
-        }
-        .taskbar {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 30px;
-            background: linear-gradient(to bottom, #245EDC, #3A85E1);
-            border-top: 1px solid #66A3FF;
-            display: flex;
-            align-items: center;
-        }
-        .start-button {
-            background: linear-gradient(to bottom, #72BE4A, #55A82B);
-            color: white;
-            font-weight: bold;
-            font-size: 16px;
-            border: 2px outset #55A82B;
-            border-radius: 10px 10px 0 0;
-            padding: 2px 20px;
-            margin-left: 5px;
-            font-style: italic;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <div class="window">
-        <div class="title-bar">
-            <span>Project Guardian - Microsoft Azure</span>
-            <div class="title-bar-buttons">
-                <span>_</span><span>☐</span><span>X</span>
-            </div>
-        </div>
-        <div class="content">
-            <h1>Deployment Successful!</h1>
-            <p><strong>Project Cherubim</strong> is now running on Azure App Service.</p>
-            <p>Your Python Flask application has been successfully deployed via GitHub Actions CI/CD pipeline.</p>
-            <p>Current Time (KST): {{ current_time }}</p>
-        </div>
-    </div>
-    <div class="taskbar">
-        <div class="start-button">start</div>
-    </div>
-</body>
-</html>
-"""
+# Flask 세션을 위한 시크릿 키 설정 (실제 운영 시에는 더 복잡하고 안전한 값으로 변경)
+# 터미널에서 python -c 'import os; print(os.urandom(24))' 명령으로 생성 가능
+app.secret_key = os.urandom(24) 
 
-# UTC 시간을 KST로 변환하기 위한 설정
-KST = timezone(timedelta(hours=9))
+# GitHub OAuth App 정보 (실제로는 환경 변수에서 가져와야 함)
+# Azure App Service의 '구성' -> '응용 프로그램 설정'에 추가하는 것이 가장 안전합니다.
+GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID', 'YOUR_GITHUB_CLIENT_ID')
+GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET', 'YOUR_GITHUB_CLIENT_SECRET')
+
+GITHUB_OAUTH_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_API_URL = "https://api.github.com"
+
 
 @app.route('/')
-def home():
-    # 현재 시간을 KST로 포맷팅
-    kst_time_str = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
-    # HTML 템플릿에 시간 변수를 전달
-    return html_content.replace('{{ current_time }}', kst_time_str)
+def index():
+    """로그인 페이지를 보여줍니다."""
+    if 'access_token' in session:
+        return redirect(url_for('dashboard'))
+    return render_template('index.html')
+
+@app.route('/login')
+def login():
+    """사용자를 GitHub 인증 페이지로 보냅니다."""
+    # repo: private 저장소 접근, read:user: 사용자 정보 읽기 권한
+    scope = "repo read:user"
+    return redirect(f"{GITHUB_OAUTH_URL}?client_id={GITHUB_CLIENT_ID}&scope={scope}")
+
+@app.route('/callback')
+def callback():
+    """GitHub에서 인증 후 돌아오는 경로. Access Token을 발급받습니다."""
+    session_code = request.args.get('code')
+    
+    token_params = {
+        'client_id': GITHUB_CLIENT_ID,
+        'client_secret': GITHUB_CLIENT_SECRET,
+        'code': session_code
+    }
+    headers = {'Accept': 'application/json'}
+    token_res = requests.post(GITHUB_TOKEN_URL, params=token_params, headers=headers)
+    token_json = token_res.json()
+    
+    access_token = token_json.get('access_token')
+    
+    if access_token:
+        session['access_token'] = access_token
+        return redirect(url_for('dashboard'))
+    else:
+        return "Error: Could not retrieve access token.", 400
+
+@app.route('/dashboard')
+def dashboard():
+    """로그인한 사용자의 리포지토리 목록을 보여주는 대시보드입니다."""
+    if 'access_token' not in session:
+        return redirect(url_for('index'))
+
+    access_token = session.get('access_token')
+    headers = {'Authorization': f'token {access_token}'}
+    
+    # 사용자 정보 가져오기
+    user_res = requests.get(f"{GITHUB_API_URL}/user", headers=headers)
+    user_info = user_res.json()
+    
+    # 리포지토리 목록 가져오기
+    repos_res = requests.get(f"{GITHUB_API_URL}/user/repos?type=owner&sort=updated", headers=headers)
+    repos = repos_res.json()
+    
+    return render_template('dashboard.html', user=user_info, repos=repos)
+
+@app.route('/analyze/<owner>/<repo_name>')
+def analyze_repo(owner, repo_name):
+    """선택한 리포지토리의 의존성을 분석하고 결과를 보여줍니다."""
+    if 'access_token' not in session:
+        return redirect(url_for('index'))
+
+    access_token = session.get('access_token')
+    headers = {
+        'Authorization': f'token {access_token}',
+        'Accept': 'application/vnd.github+json'
+    }
+    
+    # GitHub의 Dependency Graph API를 사용하여 SBOM(Software Bill of Materials)을 요청
+    sbom_url = f"{GITHUB_API_URL}/repos/{owner}/{repo_name}/dependency-graph/sbom"
+    sbom_res = requests.get(sbom_url, headers=headers)
+    
+    dependencies = []
+    error_message = None
+
+    if sbom_res.status_code == 200:
+        sbom_data = sbom_res.json().get('sbom', {})
+        # SBOM 데이터에서 패키지 정보만 추출
+        packages = sbom_data.get('packages', [])
+        for pkg in packages:
+            # purl(package URL)에서 패키지 이름과 버전을 추출
+            purl = pkg.get('purl', '')
+            try:
+                # 예: pkg:npm/express@4.17.1 -> express 4.17.1
+                name_version = purl.split('/')[1]
+                dependencies.append(name_version.replace('@', ' '))
+            except IndexError:
+                dependencies.append(purl) # 형식에 맞지 않으면 원본 표시
+    else:
+        error_message = f"Could not fetch dependency graph. Status: {sbom_res.status_code}. (저장소의 'Settings > Code security and analysis'에서 Dependency graph가 활성화되어 있는지 확인하세요.)"
+
+    return render_template('results.html', repo_full_name=f"{owner}/{repo_name}", dependencies=dependencies, error=error_message)
+
+@app.route('/logout')
+def logout():
+    """세션에서 access_token을 제거하여 로그아웃합니다."""
+    session.pop('access_token', None)
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    # 로컬 테스트용 서버 실행
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
