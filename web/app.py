@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, session, url_for
 import requests
 import os
 from azure.cosmos import CosmosClient, PartitionKey
+from datetime import datetime
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24) 
