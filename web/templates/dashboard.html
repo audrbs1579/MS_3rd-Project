@@ -2,71 +2,145 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Project Guardian Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Dashboard</title>
     <style>
-        @import url('https://fonts.googleapis.com/css?family=Noto+Sans+KR:wght@400;500;700&display=swap');
         body {
-            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #3A6EA5;
+            font-family: Tahoma, Geneva, sans-serif;
+            font-size: 12px;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
         }
         .window {
-            @apply bg-gray-900 text-white min-h-screen p-8;
+            width: 600px;
+            min-height: 400px;
+            border: 2px solid #0058E1;
+            border-radius: 8px 8px 0 0;
+            background-color: #ECE9D8;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
         }
         .title-bar {
-            @apply flex justify-between items-center mb-8;
+            background: linear-gradient(to bottom, #0058E1, #3A85E1);
+            color: white;
+            font-weight: bold;
+            padding: 5px 10px;
+            border-top-left-radius: 5px;
+            border-top-right-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+        }
+        .title-bar-buttons span {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-left: 2px;
+            background-color: #D64F34;
+            color: white;
+            text-align: center;
+            line-height: 20px;
+            border: 1px solid white;
+            font-family: 'Courier New', Courier, monospace;
         }
         .content {
-            @apply max-w-4xl mx-auto;
+            padding: 20px;
+            flex-grow: 1;
+            color: #000;
+            overflow-y: auto;
         }
-        .card {
-            @apply bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6;
+        .content h1 {
+            font-size: 24px;
+            color: #0058E1;
         }
-        .repo-item {
-            @apply flex items-center justify-between p-4 bg-gray-800 rounded-lg border border-gray-700;
+        .taskbar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 30px;
+            background: linear-gradient(to bottom, #245EDC, #3A85E1);
+            border-top: 1px solid #66A3FF;
+            display: flex;
+            align-items: center;
         }
-        .repo-item:hover {
-            @apply bg-gray-700;
+        .start-button {
+            background: linear-gradient(to bottom, #72BE4A, #55A82B);
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            border: 2px outset #55A82B;
+            border-radius: 10px 10px 0 0;
+            padding: 2px 20px;
+            margin-left: 5px;
+            font-style: italic;
+            cursor: pointer;
         }
-        .dependencies-list {
-            @apply max-h-48 overflow-y-auto bg-gray-900 p-4 rounded-md;
+        button {
+            border: 1px solid #000;
+            background-color: #ECE9D8;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        a {
+            color: #0058E1;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        li {
+            background-color: #FFF;
+            padding: 8px;
+            border: 1px solid #DDD;
+            margin-bottom: 5px;
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white">
+<body>
     <div class="window">
         <div class="title-bar">
-            <span class="text-4xl font-bold">{{ user_id }}'s Dashboard</span>
-            <a href="{{ url_for('logout') }}"><button class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition duration-300">로그아웃</button></a>
+            <span>{{ user_id }}'s Dashboard</span>
+            <div class="title-bar-buttons"><span>_</span><span>☐</span><span>X</span></div>
         </div>
         <div class="content">
-            <h1 class="text-2xl font-semibold mb-4">Repositories from Cosmos DB</h1>
-            
+            <h1>Repositories from Cosmos DB</h1>
+            <p><a href="{{ url_for('logout') }}">Logout</a></p>
             {% if items %}
                 {% for item in items %}
-                    <div class="card">
-                        <div class="repo-item">
-                            <h3 class="text-xl font-bold">{{ item.repositoryName }}</h3>
-                            <span class="text-sm text-gray-400">Last updated: {{ item.lastUpdated.split('T')[0] }}</span>
-                        </div>
-                        <h4 class="text-lg font-bold mt-4 mb-2">Dependencies ({{ item.dependencies | length }}):</h4>
+                    <div class="repo-item" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+                        <h3>{{ item.repositoryName }}</h3>
+                        <p>Last updated (in DB): {{ item.lastUpdated }}</p>
+                        <h4>Dependencies ({{ item.dependencies | length }}):</h4>
                         {% if item.dependencies %}
-                            <ul class="dependencies-list">
+                            <ul style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 5px;">
                                 {% for dep in item.dependencies %}
-                                    <li class="font-mono text-sm mb-1">{{ dep }}</li>
+                                    <li>{{ dep }}</li>
                                 {% endfor %}
                             </ul>
                         {% else %}
-                            <p class="text-gray-400 italic">No dependencies found.</p>
+                            <p>No dependencies found.</p>
                         {% endif %}
                     </div>
                 {% endfor %}
             {% else %}
-                <div class="text-center p-8 border-2 border-dashed border-gray-600 rounded-lg">
-                    <h3 class="text-xl font-semibold text-blue-300">데이터가 없습니다.</h3>
-                    <p class="text-gray-400 mt-2">초기 동기화가 진행 중일 수 있습니다. 잠시 후 새로고침 해주세요.</p>
-                </div>
+                <p>No data found in Cosmos DB. The initial sync might be in progress. Please refresh in a moment.</p>
             {% endif %}
         </div>
+    </div>
+    <div class="taskbar">
+        <div class="start-button">start</div>
     </div>
 </body>
 </html>
