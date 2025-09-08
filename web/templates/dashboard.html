@@ -2,42 +2,71 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard</title>
-    </head>
-<body>
+    <title>Project Guardian Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .window {
+            @apply bg-gray-900 text-white min-h-screen p-8;
+        }
+        .title-bar {
+            @apply flex justify-between items-center mb-8;
+        }
+        .content {
+            @apply max-w-4xl mx-auto;
+        }
+        .card {
+            @apply bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6;
+        }
+        .repo-item {
+            @apply flex items-center justify-between p-4 bg-gray-800 rounded-lg border border-gray-700;
+        }
+        .repo-item:hover {
+            @apply bg-gray-700;
+        }
+        .dependencies-list {
+            @apply max-h-48 overflow-y-auto bg-gray-900 p-4 rounded-md;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
     <div class="window">
         <div class="title-bar">
-            <span>{{ user_id }}'s Dashboard</span>
-            <div class="title-bar-buttons"><span>_</span><span>☐</span><span>X</span></div>
+            <span class="text-4xl font-bold">{{ user_id }}'s Dashboard</span>
+            <a href="{{ url_for('logout') }}"><button class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition duration-300">로그아웃</button></a>
         </div>
         <div class="content">
-            <h1>Repositories from Cosmos DB</h1>
-            <p><a href="{{ url_for('logout') }}">Logout</a></p>
+            <h1 class="text-2xl font-semibold mb-4">Repositories from Cosmos DB</h1>
             
             {% if items %}
                 {% for item in items %}
-                    <div class="repo-item" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
-                        <h3>{{ item.repositoryName }}</h3>
-                        <p>Last updated (in DB): {{ item.lastUpdated }}</p>
-                        <h4>Dependencies ({{ item.dependencies | length }}):</h4>
+                    <div class="card">
+                        <div class="repo-item">
+                            <h3 class="text-xl font-bold">{{ item.repositoryName }}</h3>
+                            <span class="text-sm text-gray-400">Last updated: {{ item.lastUpdated.split('T')[0] }}</span>
+                        </div>
+                        <h4 class="text-lg font-bold mt-4 mb-2">Dependencies ({{ item.dependencies | length }}):</h4>
                         {% if item.dependencies %}
-                            <ul style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 5px;">
+                            <ul class="dependencies-list">
                                 {% for dep in item.dependencies %}
-                                    <li>{{ dep }}</li>
+                                    <li class="font-mono text-sm mb-1">{{ dep }}</li>
                                 {% endfor %}
                             </ul>
                         {% else %}
-                            <p>No dependencies found.</p>
+                            <p class="text-gray-400 italic">No dependencies found.</p>
                         {% endif %}
                     </div>
                 {% endfor %}
             {% else %}
-                <p>No data found in Cosmos DB. The initial sync might be in progress. Please refresh in a moment.</p>
+                <div class="text-center p-8 border-2 border-dashed border-gray-600 rounded-lg">
+                    <h3 class="text-xl font-semibold text-blue-300">데이터가 없습니다.</h3>
+                    <p class="text-gray-400 mt-2">초기 동기화가 진행 중일 수 있습니다. 잠시 후 새로고침 해주세요.</p>
+                </div>
             {% endif %}
         </div>
-    </div>
-    <div class="taskbar">
-        <div class="start-button">start</div>
     </div>
 </body>
 </html>
