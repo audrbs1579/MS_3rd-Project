@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Project Guardian – Dependencies Explorer</title>
   <style>
-    /* ===== Windows XP 폰트/스타일 ===== */
+    /* ===== Windows XP 룩 & 폰트 ===== */
     body {
       background-color: #3A6EA5;
       font-family: Gulim, Dotum, "Tahoma", Geneva, sans-serif; /* XP 한글: 굴림 우선 */
@@ -14,159 +14,81 @@
       overflow: hidden;
     }
 
-    /* 앱 컨테이너: 2창 레이아웃 (좌: 의존성 / 우: 계정) */
-    .desktop {
-      height: 100vh;
-      width: 100vw;
-      display: grid;
-      grid-template-rows: 1fr 30px; /* 내용 + 작업표시줄 */
-    }
-    .workspace {
-      position: relative;
-      overflow: hidden;
-      padding: 10px;
-    }
-    .grid {
-      height: 100%;
-      display: grid;
-      grid-template-columns: 1fr 12px 320px; /* 좌/핸들/우 */
-      gap: 10px;
-      align-items: stretch;
-    }
+    .desktop { height: 100vh; width: 100vw; display: grid; grid-template-rows: 1fr 30px; }
+    .workspace { position: relative; overflow: hidden; padding: 10px; }
+    .grid { height: 100%; display: grid; grid-template-columns: 420px 12px 1fr; gap: 10px; align-items: stretch; }
 
-    /* 공통 윈도우 스타일 */
+    /* 공통 윈도우 */
     .window {
       border: 2px solid #0058E1;
       border-radius: 8px 8px 0 0;
       background-color: #ECE9D8;
       box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      min-width: 240px;
+      display: flex; flex-direction: column; overflow: hidden;
     }
     .title-bar {
       background: linear-gradient(to bottom, #0058E1, #3A85E1);
-      color: #fff;
-      font-weight: bold;
-      padding: 6px 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      user-select: none;
+      color: #fff; font-weight: bold; padding: 6px 8px;
+      display: flex; align-items: center; gap: 6px; user-select: none;
     }
-    .title-icon {
-      width: 16px; height: 16px; flex: 0 0 16px;
-    }
-    .title-text {
-      flex: 1 1 auto;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
+    .title-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+    .title-text { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .title-buttons span {
-      display: inline-block;
-      width: 18px; height: 18px; margin-left: 3px;
-      background-color: #D64F34; color: #fff;
-      text-align: center; line-height: 18px; border: 1px solid #fff;
-      font-family: "Courier New", Courier, monospace;
+      display: inline-block; width: 18px; height: 18px; margin-left: 3px;
+      background-color: #D64F34; color: #fff; text-align: center; line-height: 18px;
+      border: 1px solid #fff; font-family: "Courier New", Courier, monospace;
     }
 
-    /* 좌측: 의존성 창 */
-    .toolbar {
-      display: flex; gap: 8px; align-items: center;
-      padding: 8px 10px;
-      background: #f5f2e8;
-      border-bottom: 1px solid #cfc9b8;
+    /* 좌측: 레포지토리 목록 */
+    .toolbar { display:flex; gap:8px; align-items:center; padding:8px 10px; background:#f5f2e8; border-bottom:1px solid #cfc9b8; }
+    .toolbar input[type="text"]{ width: 260px; padding: 5px 6px; border: 1px solid #9f9a87; background:#fff; font-family: inherit; }
+    .toolbar button{ border:1px solid #000; background:#ECE9D8; padding:5px 10px; cursor:pointer; }
+
+    .left-content { padding:10px; flex:1 1 auto; overflow:auto; color:#000; }
+    .repo-row {
+      padding: 10px; border: 1px solid #ccc; background:#fff; border-radius: 4px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; cursor: pointer;
     }
-    .toolbar input[type="text"]{
-      width: 260px;
-      padding: 5px 6px;
-      border: 1px solid #9f9a87;
-      background: #fff;
-      font-family: inherit;
-    }
-    .toolbar button{
-      border: 1px solid #000;
-      background-color: #ECE9D8;
-      padding: 5px 10px;
-      cursor: pointer;
-    }
-    .content { padding: 10px; flex: 1 1 auto; overflow: auto; color:#000; }
-    .repo {
-      border: 1px solid #ccc; background: #fff; margin-bottom: 8px; border-radius: 4px; overflow: hidden;
-    }
-    .repo-header {
-      display: flex; align-items: center; justify-content: space-between; gap: 10px;
-      padding: 8px 10px; background: linear-gradient(to bottom, #fdfaf2, #efe8d4);
-      border-bottom: 1px solid #e0dac9; cursor: pointer; user-select: none;
-    }
+    .repo-row.active { outline: 2px solid #3A85E1; background: #f5f9ff; }
     .repo-title { display:flex; align-items:center; gap:8px; min-width:0; }
-    .caret { width: 10px; transition: transform .15s ease; }
-    .repo-name { font-weight: bold; color: #0058E1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
-    .chip { font-size: 11px; background:#e7eefc; border:1px solid #bfd0f5; padding:1px 6px; border-radius:10px; color:#245edc; white-space: nowrap; }
-    .repo-actions { display:flex; gap:6px; flex-wrap:nowrap; }
-    .repo-actions button { border:1px solid #000; background:#ECE9D8; padding:3px 8px; cursor:pointer; white-space:nowrap; }
-    .repo-body { display:none; padding:10px; background:#fff; }
-    .repo.open .repo-body { display:block; }
-    .repo.open .caret { transform: rotate(90deg); }
-    .deps { max-height: 180px; overflow:auto; border:1px solid #eee; padding:6px; margin:0; list-style:none; }
-    .deps li { padding:6px 8px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .deps li:last-child{ border-bottom:none; }
-    .dep-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
-    .empty { padding: 20px; color:#333; }
+    .repo-name { font-weight:bold; color:#0058E1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 260px; }
+    .chip { font-size: 11px; background:#e7eefc; border:1px solid #bfd0f5; padding:1px 6px; border-radius:10px; color:#245edc; white-space:nowrap; }
+    .repo-actions { display:flex; gap:6px; }
+    .repo-actions button{ border:1px solid #000; background:#ECE9D8; padding:3px 8px; cursor:pointer; }
 
     /* 가운데 핸들 */
-    .handle {
-      display:flex; align-items:center; justify-content:center;
-      background: #D6D3C6; border: 1px solid #9f9a87; border-radius: 8px;
-      user-select:none; cursor: col-resize;
-    }
-    .handle button {
-      border:1px solid #000; background:#ECE9D8; padding:2px 6px; cursor:pointer;
-      font-weight:bold;
-    }
+    .handle { display:flex; align-items:center; justify-content:center; background:#D6D3C6; border:1px solid #9f9a87; border-radius:8px; user-select:none; cursor: col-resize; }
+    .handle button { border:1px solid #000; background:#ECE9D8; padding:2px 6px; cursor:pointer; font-weight:bold; }
 
-    /* 우측: 계정 창 */
-    .accounts-list { list-style:none; padding:0; margin:0; }
-    .accounts-list li {
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
-      padding:8px 10px; border-bottom:1px solid #e0dac9; background:#fff;
-    }
-    .accounts-list li.active { background:#f3efe2; }
-    .owner-name { font-weight:bold; color:#0058E1; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .count-badge { font-size: 11px; background:#e7eefc; border:1px solid #bfd0f5; padding:1px 6px; border-radius:10px; color:#245edc; }
+    /* 우측: 의존성 디테일 */
+    .right-content { padding:10px; flex:1 1 auto; overflow:auto; color:#000; }
+    .detail-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+    .deps { margin:0; padding:0; list-style:none; border:1px solid #eee; background:#fff; }
+    .deps li { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; border-bottom:1px solid #f0f0f0; }
+    .deps li:last-child{ border-bottom:none; }
+    .dep-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 640px; }
+    .empty { padding: 12px; background:#fff; border:1px dashed #ccc; color:#333; }
 
-    /* 작업 표시줄 */
-    .taskbar {
-      background: linear-gradient(to bottom, #245EDC, #3A85E1);
-      border-top: 1px solid #66A3FF;
-      display: flex; align-items: center; gap: 8px; padding: 0 6px;
-    }
-    .start-button {
-      background: linear-gradient(to bottom, #72BE4A, #55A82B);
-      color: white; font-weight: bold; font-size: 16px;
-      border: 2px outset #55A82B; border-radius: 10px 10px 0 0;
-      padding: 2px 20px; margin-left: 5px; font-style: italic; cursor: pointer; user-select: none;
-    }
+    /* 작업표시줄 */
+    .taskbar { background: linear-gradient(to bottom, #245EDC, #3A85E1); border-top:1px solid #66A3FF; display:flex; align-items:center; gap:8px; padding:0 6px; }
+    .start-button { background:linear-gradient(to bottom, #72BE4A, #55A82B); color:#fff; font-weight:bold; font-size:16px; border:2px outset #55A82B; border-radius:10px 10px 0 0; padding:2px 20px; margin-left:5px; font-style:italic; cursor:pointer; user-select:none; }
 
-    a { color:#0058E1; text-decoration:none; }
-    a:hover { text-decoration: underline; }
+    a { color:#0058E1; text-decoration:none; } a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <div class="desktop">
     <div class="workspace">
       <div class="grid" id="grid">
-        <!-- 좌측: 의존성 창 -->
+        <!-- 좌: 레포지토리 목록 창 -->
         <div class="window" id="leftWin">
           <div class="title-bar">
-            <!-- 폴더 느낌의 간단한 SVG 아이콘 -->
             <svg class="title-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M1 4h5l2 2h7v7H1z" fill="#FFCC66" stroke="#996600" />
+              <path d="M1 4h5l2 2h7v7H1z" fill="#FFCC66" stroke="#996600"></path>
             </svg>
-            <div class="title-text">{{ user_id }} – Dependencies Explorer</div>
+            <div class="title-text">{{ user_id }} – Repositories</div>
             <div class="title-buttons"><span>_</span><span>☐</span><span>X</span></div>
           </div>
-
           <div class="toolbar">
             <span>검색:</span>
             <input id="filterInput" type="text" placeholder="레포지토리/의존성 검색" />
@@ -174,205 +96,169 @@
             <button id="btnCollapse">모두 접기</button>
             <a href="{{ url_for('logout') }}"><button>Logout</button></a>
           </div>
-
-          <div class="content" id="listArea">
-            {% if items %}
-              {% for item in items %}
-                <div class="repo"
-                     data-repo="{{ item.repositoryName | e }}"
-                     data-owner="{{ (item.repositoryName.split('/')[0] if '/' in item.repositoryName else user_id) | e }}">
-                  <div class="repo-header">
-                    <div class="repo-title">
-                      <svg class="caret" viewBox="0 0 16 16" aria-hidden="true">
-                        <path d="M5 3l6 5-6 5z" fill="currentColor"></path>
-                      </svg>
-                      <span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span>
-                      <span class="chip" title="DB에 기록된 갱신 시각">updated: {{ item.lastUpdated | to_kst }}</span>
-                    </div>
-                    <div class="repo-actions">
-                      <span class="chip">{{ item.dependencies | length }} deps</span>
-                      <button class="toggleBtn" type="button">열기</button>
-                      <button class="copyBtn" type="button" data-copy-target="deps-{{ loop.index }}">복사</button>
-                    </div>
-                  </div>
-                  <div class="repo-body">
-                    {% if item.dependencies and item.dependencies | length > 0 %}
-                      <ul class="deps" id="deps-{{ loop.index }}">
-                        {% for dep in item.dependencies %}
-                          <li data-dep="{{ dep | e }}">
-                            <span class="dep-name" title="{{ dep }}">{{ dep }}</span>
-                            {% set lower = dep | lower %}
-                            {% if 'npm' in lower or 'yarn' in lower or '.json' in lower %}
-                              <span class="chip">JS</span>
-                            {% elif 'pip' in lower or 'python' in lower or '.txt' in lower %}
-                              <span class="chip">Py</span>
-                            {% elif 'maven' in lower or 'gradle' in lower or '.pom' in lower or 'jar' in lower %}
-                              <span class="chip">Java</span>
-                            {% elif 'nuget' in lower or '.csproj' in lower %}
-                              <span class="chip">.NET</span>
-                            {% else %}
-                              <span class="chip">dep</span>
-                            {% endif %}
-                          </li>
-                        {% endfor %}
-                      </ul>
-                    {% else %}
-                      <div class="empty">No dependencies found.</div>
-                    {% endif %}
-                  </div>
-                </div>
-              {% endfor %}
-            {% else %}
-              <div class="empty">No data found in Cosmos DB. The initial sync might be in progress. Please refresh in a moment.</div>
-            {% endif %}
+          <div class="left-content" id="repoList">
+            {% for item in items %}
+            <div class="repo-row"
+                 data-index="{{ loop.index0 }}"
+                 data-repo="{{ item.repositoryName | e }}">
+              <div class="repo-title">
+                <svg width="10" viewBox="0 0 16 16"><path d="M5 3l6 5-6 5z" fill="currentColor"></path></svg>
+                <span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span>
+                <span class="chip" title="DB에 기록된 갱신 시각">updated: {{ item.lastUpdated | to_kst }}</span>
+              </div>
+              <div class="repo-actions">
+                <span class="chip">{{ item.dependencies | length }} deps</span>
+                <button class="copyBtn" type="button">복사</button>
+              </div>
+            </div>
+            {% endfor %}
           </div>
         </div>
 
-        <!-- 가운데 핸들(토글) -->
-        <div class="handle">
-          <button id="toggleRight" title="계정 패널 접기/펼치기">◀▶</button>
-        </div>
+        <!-- 가운데 핸들 -->
+        <div class="handle"><button id="toggleRight" title="의존성 패널 접기/펼치기">◀▶</button></div>
 
-        <!-- 우측: 계정 창 -->
+        <!-- 우: 선택한 레포 의존성 창 -->
         <div class="window" id="rightWin">
           <div class="title-bar">
             <svg class="title-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="7" fill="#66CCFF" stroke="#006699" />
+              <circle cx="8" cy="8" r="7" fill="#66CCFF" stroke="#006699"></circle>
             </svg>
-            <div class="title-text">Accounts</div>
+            <div class="title-text" id="detailTitle">Dependencies</div>
             <div class="title-buttons"><span>_</span><span>☐</span><span>X</span></div>
           </div>
-          <div class="content">
-            {% if owners and owners|length > 0 %}
-              <ul class="accounts-list" id="accountsList">
-                <li class="active" data-owner="all">
-                  <span class="owner-name">전체</span>
-                  <span class="count-badge">{{ items|length }}</span>
-                </li>
-                {% for o in owners %}
-                  <li data-owner="{{ o.owner }}">
-                    <span class="owner-name" title="{{ o.owner }}">{{ o.owner }}</span>
-                    <span class="count-badge">{{ o.count }}</span>
-                  </li>
-                {% endfor %}
-              </ul>
-            {% else %}
-              <div class="empty">No accounts.</div>
-            {% endif %}
+          <div class="right-content">
+            <div class="detail-header">
+              <div id="detailMeta" class="chip">레포를 선택하세요</div>
+              <div>
+                <button id="btnCopyDeps" class="chip" style="cursor:pointer;">의존성 복사</button>
+              </div>
+            </div>
+            <ul class="deps" id="depsList"></ul>
+            <div class="empty" id="emptyState">왼쪽에서 레포지토리를 선택하면 의존성을 표시합니다.</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 작업 표시줄 -->
-    <div class="taskbar">
-      <div class="start-button">start</div>
-    </div>
+    <!-- 작업표시줄 -->
+    <div class="taskbar"><div class="start-button">start</div></div>
   </div>
 
   <script>
-    // ---- 아코디언 ----
-    document.querySelectorAll('.repo').forEach(function(repoEl){
-      const header = repoEl.querySelector('.repo-header');
-      const toggleBtn = repoEl.querySelector('.toggleBtn');
+    // 서버 데이터 → 클라이언트
+    const DATA = {{ items|tojson }};
+    const repoListEl = document.getElementById('repoList');
+    const depsListEl = document.getElementById('depsList');
+    const emptyStateEl = document.getElementById('emptyState');
+    const detailTitleEl = document.getElementById('detailTitle');
+    const detailMetaEl = document.getElementById('detailMeta');
 
-      function toggle(open){
-        if(open === true){ repoEl.classList.add('open'); toggleBtn.textContent = '닫기'; }
-        else if(open === false){ repoEl.classList.remove('open'); toggleBtn.textContent = '열기'; }
-        else { repoEl.classList.toggle('open'); toggleBtn.textContent = repoEl.classList.contains('open') ? '닫기' : '열기'; }
+    // 좌측 행 클릭 시 우측 패널 채우기
+    function renderDetails(idx) {
+      const item = DATA[idx];
+      if (!item) return;
+
+      // 좌측 active 처리
+      document.querySelectorAll('.repo-row').forEach(r => r.classList.remove('active'));
+      const activeRow = document.querySelector(`.repo-row[data-index="${idx}"]`);
+      if (activeRow) activeRow.classList.add('active');
+
+      // 제목 & 메타
+      detailTitleEl.textContent = item.repositoryName;
+      detailMetaEl.textContent = `updated: ${activeRow.querySelector('.chip').textContent.replace('updated: ','')}`;
+
+      // 리스트 렌더
+      depsListEl.innerHTML = '';
+      const deps = item.dependencies || [];
+      if (deps.length === 0) {
+        depsListEl.innerHTML = '';
+        emptyStateEl.style.display = '';
+        return;
       }
-      header.addEventListener('click', function(e){
-        if(e.target.closest('.repo-actions')) return; // actions 클릭은 무시
-        toggle();
-      });
-      toggleBtn.addEventListener('click', function(e){
-        e.stopPropagation();
-        toggle();
-      });
-    });
+      emptyStateEl.style.display = 'none';
 
-    // ---- 모두 펼치기/접기 ----
-    document.getElementById('btnExpand').addEventListener('click', function(){
-      document.querySelectorAll('.repo').forEach(function(el){
-        el.classList.add('open');
-        const btn = el.querySelector('.toggleBtn');
-        if(btn) btn.textContent = '닫기';
-      });
-    });
-    document.getElementById('btnCollapse').addEventListener('click', function(){
-      document.querySelectorAll('.repo').forEach(function(el){
-        el.classList.remove('open');
-        const btn = el.querySelector('.toggleBtn');
-        if(btn) btn.textContent = '열기';
-      });
-    });
+      deps.forEach(dep => {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'dep-name';
+        name.title = dep;
+        name.textContent = dep;
 
-    // ---- 복사 버튼 ----
-    document.querySelectorAll('.copyBtn').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        e.stopPropagation();
-        const id = btn.getAttribute('data-copy-target');
-        const ul = document.getElementById(id);
-        let text = '';
-        if(ul){
-          text = Array.from(ul.querySelectorAll('li .dep-name')).map(n=>n.textContent).join('\n');
-        }
-        navigator.clipboard.writeText(text || '').then(function(){
-          const old = btn.textContent;
-          btn.textContent = '복사됨!';
-          setTimeout(()=>btn.textContent=old, 900);
-        });
-      });
-    });
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        const lower = (dep||'').toLowerCase();
+        if (lower.includes('npm') || lower.includes('yarn') || lower.includes('.json')) chip.textContent = 'JS';
+        else if (lower.includes('pip') || lower.includes('python') || lower.includes('.txt')) chip.textContent = 'Py';
+        else if (lower.includes('maven') || lower.includes('gradle') || lower.includes('.pom') || lower.includes('jar')) chip.textContent = 'Java';
+        else if (lower.includes('nuget') || lower.includes('.csproj')) chip.textContent = '.NET';
+        else chip.textContent = 'dep';
 
-    // ---- 검색(레포/의존성) ----
-    document.getElementById('filterInput').addEventListener('input', function(){
-      applyFilters();
-    });
-
-    // ---- 계정 필터 (오른쪽 패널 클릭) ----
-    let currentOwner = 'all';
-    document.querySelectorAll('#accountsList li').forEach(function(li){
-      li.addEventListener('click', function(){
-        document.querySelectorAll('#accountsList li').forEach(x=>x.classList.remove('active'));
-        li.classList.add('active');
-        currentOwner = li.getAttribute('data-owner') || 'all';
-        applyFilters();
-      });
-    });
-
-    function applyFilters(){
-      const q = (document.getElementById('filterInput').value || '').trim().toLowerCase();
-      document.querySelectorAll('.repo').forEach(function(repo){
-        const name = (repo.getAttribute('data-repo') || '').toLowerCase();
-        const owner = (repo.getAttribute('data-owner') || '').toLowerCase();
-        const deps = Array.from(repo.querySelectorAll('.deps li')).map(li => (li.getAttribute('data-dep') || '').toLowerCase());
-
-        const ownerOK = (currentOwner === 'all') || (owner === currentOwner.toLowerCase());
-        const hitName = !q || name.includes(q);
-        const hitDep = q && deps.some(d => d.includes(q));
-        const show = ownerOK && (!q || hitName || hitDep);
-
-        repo.style.display = show ? '' : 'none';
-        if(show && q && hitDep){ repo.classList.add('open'); const tb=repo.querySelector('.toggleBtn'); if(tb) tb.textContent='닫기'; }
+        li.appendChild(name);
+        li.appendChild(chip);
+        depsListEl.appendChild(li);
       });
     }
 
-    // ---- 가운데 핸들 토글(간단 접기/펼치기) ----
+    // 이벤트: 좌측 레포 행
+    repoListEl.addEventListener('click', (e) => {
+      const row = e.target.closest('.repo-row');
+      if (!row) return;
+
+      // 복사 버튼?
+      if (e.target.classList.contains('copyBtn')) {
+        const idx = row.getAttribute('data-index');
+        const deps = (DATA[idx]?.dependencies || []).join('\n');
+        navigator.clipboard.writeText(deps).then(()=>{
+          e.target.textContent = '복사됨!';
+          setTimeout(()=> e.target.textContent='복사', 900);
+        });
+        return;
+      }
+
+      renderDetails(row.getAttribute('data-index'));
+    });
+
+    // 검색(레포/의존성)
+    document.getElementById('filterInput').addEventListener('input', function(){
+      const q = this.value.trim().toLowerCase();
+      document.querySelectorAll('.repo-row').forEach(function(row){
+        const idx = row.getAttribute('data-index');
+        const item = DATA[idx];
+        const name = (item.repositoryName || '').toLowerCase();
+        const deps = (item.dependencies || []).map(d => (d||'').toLowerCase());
+        const hit = !q || name.includes(q) || deps.some(d => d.includes(q));
+        row.style.display = hit ? '' : 'none';
+      });
+    });
+
+    // 모두 펼치기/접기는 좌측 아코디언 제거했으므로 noop → 선택적 확장 시 오른쪽으로 표현
+    document.getElementById('btnExpand').addEventListener('click', () => {
+      // 첫 항목 선택
+      const first = document.querySelector('.repo-row:not([style*="display: none"])');
+      if (first) renderDetails(first.getAttribute('data-index'));
+    });
+    document.getElementById('btnCollapse').addEventListener('click', () => {
+      // 선택 해제
+      document.querySelectorAll('.repo-row').forEach(r => r.classList.remove('active'));
+      depsListEl.innerHTML = '';
+      detailTitleEl.textContent = 'Dependencies';
+      detailMetaEl.textContent = '레포를 선택하세요';
+      emptyStateEl.style.display = '';
+    });
+
+    // 가운데 핸들 토글
     const grid = document.getElementById('grid');
     const toggleRight = document.getElementById('toggleRight');
     let rightVisible = true;
     toggleRight.addEventListener('click', function(){
       rightVisible = !rightVisible;
-      grid.style.gridTemplateColumns = rightVisible ? '1fr 12px 320px' : '1fr 12px 0px';
+      grid.style.gridTemplateColumns = rightVisible ? '420px 12px 1fr' : '1fr 12px 0px';
     });
 
-    // 초기 필터 적용(선택된 계정이 서버에서 내려올 수 있음)
-    const selectedOwner = "{{ selected_owner }}";
-    if(selectedOwner && selectedOwner !== 'all'){
-      const target = document.querySelector(`#accountsList li[data-owner="${selectedOwner}"]`);
-      if(target){ target.click(); }
-    }
+    // 초기: 첫 번째 항목 자동 선택(있다면)
+    const firstRow = document.querySelector('.repo-row');
+    if(firstRow) renderDetails(firstRow.getAttribute('data-index'));
   </script>
 </body>
 </html>

@@ -6,7 +6,6 @@ import json
 import requests
 import azure.functions as func
 
-# --- 환경 변수 ---
 GH_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
 GH_PAT = os.environ.get("GITHUB_PAT", "")
 GITHUB_API_URL = "https://api.github.com"
@@ -23,12 +22,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     event_type = req.headers.get("X-GitHub-Event", "")
     body = req.get_body()
 
-    # 서명 검증
     if not verify_signature(body, signature):
         logging.warning("Invalid signature.")
         return func.HttpResponse("Invalid signature", status_code=403)
 
-    # push 이벤트만 처리
     if event_type != 'push':
         return func.HttpResponse(f"Event '{event_type}' is not supported.", status_code=200)
 
@@ -38,10 +35,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if not repo_full_name:
             return func.HttpResponse("Repository name not found in webhook payload.", status_code=400)
 
-        headers = {
-            'Authorization': f'token {GH_PAT}',
-            'Accept': 'application/vnd.github+json'
-        }
+        headers = {'Authorization': f'token {GH_PAT}', 'Accept': 'application/vnd.github+json'}
         sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
         sbom_res = requests.get(sbom_url, headers=headers)
 
