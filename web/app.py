@@ -84,27 +84,29 @@ def analyze_repo(owner, repo_name):
         'Authorization': f'token {access_token}',
         'Accept': 'application/vnd.github+json'
     }
-    
+
     # GitHub의 Dependency Graph API를 사용하여 SBOM(Software Bill of Materials)을 요청
     sbom_url = f"{GITHUB_API_URL}/repos/{owner}/{repo_name}/dependency-graph/sbom"
     sbom_res = requests.get(sbom_url, headers=headers)
-    
+
     dependencies = []
     error_message = None
 
     if sbom_res.status_code == 200:
         sbom_data = sbom_res.json().get('sbom', {})
-        # SBOM 데이터에서 패키지 정보만 추출
         packages = sbom_data.get('packages', [])
+
+        # VVVV--- 이 부분이 수정되었습니다 ---VVVV
         for pkg in packages:
-            # purl(package URL)에서 패키지 이름과 버전을 추출
-            purl = pkg.get('purl', '')
-            try:
-                # 예: pkg:npm/express@4.17.1 -> express 4.17.1
-                name_version = purl.split('/')[1]
-                dependencies.append(name_version.replace('@', ' '))
-            except IndexError:
-                dependencies.append(purl) # 형식에 맞지 않으면 원본 표시
+            # 패키지 이름과 버전 정보를 직접 가져옵니다.
+            name = pkg.get('name', 'Unknown Package')
+            version = pkg.get('versionInfo', '')
+
+            # 이름이 존재할 경우에만 목록에 추가합니다.
+            if name:
+                dependencies.append(f"{name} {version}".strip())
+        # ^^^^--- 여기까지 수정 ---^^^^
+
     else:
         error_message = f"Could not fetch dependency graph. Status: {sbom_res.status_code}. (저장소의 'Settings > Code security and analysis'에서 Dependency graph가 활성화되어 있는지 확인하세요.)"
 
