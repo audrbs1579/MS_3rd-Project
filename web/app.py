@@ -1,122 +1,138 @@
 from flask import Flask, render_template, request, redirect, session, url_for
 import requests
 import os
+from azure.cosmos import CosmosClient, PartitionKey
 
 app = Flask(__name__, template_folder='templates')
-
-# Flask 세션을 위한 시크릿 키 설정 (실제 운영 시에는 더 복잡하고 안전한 값으로 변경)
-# 터미널에서 python -c 'import os; print(os.urandom(24))' 명령으로 생성 가능
 app.secret_key = os.urandom(24) 
 
-# GitHub OAuth App 정보 (실제로는 환경 변수에서 가져와야 함)
-# Azure App Service의 '구성' -> '응용 프로그램 설정'에 추가하는 것이 가장 안전합니다.
-GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID', 'YOUR_GITHUB_CLIENT_ID')
-GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET', 'YOUR_GITHUB_CLIENT_SECRET')
-
-GITHUB_OAUTH_URL = "https://github.com/login/oauth/authorize"
-GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+# --- GitHub OAuth App 정보 ---
+GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
+GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
 GITHUB_API_URL = "https://api.github.com"
 
+# --- Cosmos DB 설정 ---
+COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
+DATABASE_NAME = 'ProjectGuardianDB'
+CONTAINER_NAME = 'Dependencies'
 
+# Cosmos DB 클라이언트 초기화
+cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
+database = cosmos_client.get_database_client(DATABASE_NAME)
+container = database.get_container_client(CONTAINER_NAME)
+
+# --- 기본 라우트 ---
 @app.route('/')
 def index():
-    """로그인 페이지를 보여줍니다."""
     if 'access_token' in session:
         return redirect(url_for('dashboard'))
     return render_template('index.html')
 
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+# --- GitHub 로그인 관련 라우트 ---
+# 이전과 동일 (생략)
 @app.route('/login')
 def login():
-    """사용자를 GitHub 인증 페이지로 보냅니다."""
-    # repo: private 저장소 접근, read:user: 사용자 정보 읽기 권한
     scope = "repo read:user"
-    return redirect(f"{GITHUB_OAUTH_URL}?client_id={GITHUB_CLIENT_ID}&scope={scope}")
+    return redirect(f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}&scope={scope}")
 
 @app.route('/callback')
 def callback():
-    """GitHub에서 인증 후 돌아오는 경로. Access Token을 발급받습니다."""
     session_code = request.args.get('code')
-    
     token_params = {
         'client_id': GITHUB_CLIENT_ID,
         'client_secret': GITHUB_CLIENT_SECRET,
         'code': session_code
     }
     headers = {'Accept': 'application/json'}
-    token_res = requests.post(GITHUB_TOKEN_URL, params=token_params, headers=headers)
+    token_res = requests.post("https://github.com/login/oauth/access_token", params=token_params, headers=headers)
     token_json = token_res.json()
     
     access_token = token_json.get('access_token')
-    
     if access_token:
         session['access_token'] = access_token
+        # 사용자 정보 가져와서 세션에 저장
+        user_headers = {'Authorization': f'token {access_token}'}
+        user_res = requests.get(f"{GITHUB_API_URL}/user", headers=user_headers)
+        user_info = user_res.json()
+        session['user_id'] = user_info.get('login')
         return redirect(url_for('dashboard'))
     else:
         return "Error: Could not retrieve access token.", 400
 
+# --- 핵심 기능: 대시보드 및 데이터 동기화 ---
 @app.route('/dashboard')
 def dashboard():
-    """로그인한 사용자의 리포지토리 목록을 보여주는 대시보드입니다."""
-    if 'access_token' not in session:
+    """DB에서 데이터를 조회하고, 없으면 GitHub에서 가져와 동기화합니다."""
+    if 'user_id' not in session:
         return redirect(url_for('index'))
+    
+    user_id = session['user_id']
+    
+    # 1. Cosmos DB에서 현재 사용자의 데이터 조회
+    query = "SELECT * FROM c WHERE c.userId = @userId"
+    items = list(container.query_items(
+        query=query,
+        parameters=[{"name": "@userId", "value": user_id}],
+        enable_cross_partition_query=True
+    ))
+    
+    # 2. DB에 데이터가 없으면 GitHub에서 동기화 실행
+    if not items:
+        # 동기화 함수 호출 (시간이 걸릴 수 있음)
+        sync_github_to_cosmos(user_id, session.get('access_token'))
+        # 동기화 후 다시 데이터 조회
+        items = list(container.query_items(
+            query=query,
+            parameters=[{"name": "@userId", "value": user_id}],
+            enable_cross_partition_query=True
+        ))
+        
+    return render_template('dashboard.html', user_id=user_id, items=items)
 
-    access_token = session.get('access_token')
-    headers = {'Authorization': f'token {access_token}'}
+def sync_github_to_cosmos(user_id, access_token):
+    """사용자의 모든 리포지토리 의존성을 GitHub에서 가져와 Cosmos DB에 저장합니다."""
+    if not access_token:
+        return
+
+    headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github+json'}
     
-    # 사용자 정보 가져오기
-    user_res = requests.get(f"{GITHUB_API_URL}/user", headers=headers)
-    user_info = user_res.json()
-    
-    # 리포지토리 목록 가져오기
-    repos_res = requests.get(f"{GITHUB_API_URL}/user/repos?type=owner&sort=updated", headers=headers)
+    # 1. 사용자의 모든 리포지토리 목록 가져오기
+    repos_res = requests.get(f"{GITHUB_API_URL}/user/repos?type=owner", headers=headers)
     repos = repos_res.json()
+
+    # 2. 각 리포지토리의 의존성 분석 및 DB에 저장
+    for repo in repos:
+        repo_name = repo.get('name')
+        repo_full_name = repo.get('full_name')
+        
+        sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
+        sbom_res = requests.get(sbom_url, headers=headers)
+        
+        dependencies = []
+        if sbom_res.status_code == 200:
+            sbom_data = sbom_res.json().get('sbom', {})
+            packages = sbom_data.get('packages', [])
+            for pkg in packages:
+                name = pkg.get('name', '')
+                version = pkg.get('versionInfo', '')
+                if name and repo_name.lower() not in name.lower():
+                    dependencies.append(f"{name} {version}".strip())
+        
+        # 3. Cosmos DB에 저장할 데이터 구조 만들기
+        item_body = {
+            'id': f"{user_id}_{repo_name}",
+            'userId': user_id,
+            'repositoryName': repo_full_name,
+            'lastUpdated': datetime.utcnow().isoformat() + 'Z',
+            'dependencies': sorted(dependencies)
+        }
+        
+        # 4. Upsert (있으면 업데이트, 없으면 생성)
+        container.upsert_item(body=item_body)
     
-    return render_template('dashboard.html', user=user_info, repos=repos)
-
-@app.route('/analyze/<owner>/<repo_name>')
-def analyze_repo(owner, repo_name):
-    """선택한 리포지토리의 의존성을 분석하고 결과를 보여줍니다."""
-    if 'access_token' not in session:
-        return redirect(url_for('index'))
-
-    access_token = session.get('access_token')
-    headers = {
-        'Authorization': f'token {access_token}',
-        'Accept': 'application/vnd.github+json'
-    }
-
-    # GitHub의 Dependency Graph API를 사용하여 SBOM(Software Bill of Materials)을 요청
-    sbom_url = f"{GITHUB_API_URL}/repos/{owner}/{repo_name}/dependency-graph/sbom"
-    sbom_res = requests.get(sbom_url, headers=headers)
-
-    dependencies = []
-    error_message = None
-
-    if sbom_res.status_code == 200:
-        sbom_data = sbom_res.json().get('sbom', {})
-        packages = sbom_data.get('packages', [])
-
-        # VVVV--- 이 부분이 수정되었습니다 ---VVVV
-        for pkg in packages:
-            # 패키지 이름과 버전 정보를 직접 가져옵니다.
-            name = pkg.get('name', 'Unknown Package')
-            version = pkg.get('versionInfo', '')
-
-            # 이름이 존재할 경우에만 목록에 추가합니다.
-            if name:
-                dependencies.append(f"{name} {version}".strip())
-        # ^^^^--- 여기까지 수정 ---^^^^
-
-    else:
-        error_message = f"Could not fetch dependency graph. Status: {sbom_res.status_code}. (저장소의 'Settings > Code security and analysis'에서 Dependency graph가 활성화되어 있는지 확인하세요.)"
-
-    return render_template('results.html', repo_full_name=f"{owner}/{repo_name}", dependencies=dependencies, error=error_message)
-
-@app.route('/logout')
-def logout():
-    """세션에서 access_token을 제거하여 로그아웃합니다."""
-    session.pop('access_token', None)
-    return redirect(url_for('index'))
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    return
