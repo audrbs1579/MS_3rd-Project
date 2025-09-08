@@ -5,82 +5,80 @@
   <title>Project Guardian – Dependencies Explorer</title>
   <style>
     /* ===== Windows XP 룩 & 폰트 ===== */
-    body {
-      background-color: #3A6EA5;
-      font-family: Gulim, Dotum, "Tahoma", Geneva, sans-serif; /* XP 한글: 굴림 우선 */
-      font-size: 12px;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
+    body{
+      background-color:#3A6EA5;
+      font-family:Gulim, Dotum, "Tahoma", Geneva, sans-serif;
+      font-size:12px; margin:0; padding:0; overflow:hidden;
+    }
+    .desktop{height:100vh;width:100vw;display:grid;grid-template-rows:1fr 30px;}
+    .workspace{position:relative;overflow:hidden;padding:10px;}
+
+    /* 처음에는 좌 2/3, 우 1/3 */
+    .grid{height:100%;display:grid;grid-template-columns:2fr 10px 1fr;gap:10px;align-items:stretch;}
+
+    /* 공통 창 */
+    .window{
+      border:2px solid #0058E1;border-radius:8px 8px 0 0;background:#ECE9D8;
+      box-shadow:5px 5px 15px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;
+    }
+    .title-bar{
+      background:linear-gradient(to bottom,#0058E1,#3A85E1);color:#fff;font-weight:bold;
+      padding:6px 8px;display:flex;align-items:center;gap:6px;user-select:none;
+    }
+    .title-icon{width:16px;height:16px;flex:0 0 16px;}
+    .title-text{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .title-buttons span{
+      display:inline-block;width:18px;height:18px;margin-left:3px;background:#D64F34;color:#fff;
+      text-align:center;line-height:18px;border:1px solid #fff;font-family:"Courier New",Courier,monospace;
     }
 
-    .desktop { height: 100vh; width: 100vw; display: grid; grid-template-rows: 1fr 30px; }
-    .workspace { position: relative; overflow: hidden; padding: 10px; }
-    .grid { height: 100%; display: grid; grid-template-columns: 420px 12px 1fr; gap: 10px; align-items: stretch; }
-
-    /* 공통 윈도우 */
-    .window {
-      border: 2px solid #0058E1;
-      border-radius: 8px 8px 0 0;
-      background-color: #ECE9D8;
-      box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
-      display: flex; flex-direction: column; overflow: hidden;
+    /* 좌: 레포 목록 */
+    .toolbar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:#f5f2e8;border-bottom:1px solid #cfc9b8;}
+    .toolbar input[type="text"]{width:260px;padding:5px 6px;border:1px solid #9f9a87;background:#fff;font-family:inherit;}
+    .toolbar button{border:1px solid #000;background:#ECE9D8;padding:5px 10px;cursor:pointer;}
+    .left-content{padding:10px;flex:1 1 auto;overflow:auto;color:#000;}
+    .repo-row{
+      padding:10px;border:1px solid #ccc;background:#fff;border-radius:4px;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;cursor:pointer;
     }
-    .title-bar {
-      background: linear-gradient(to bottom, #0058E1, #3A85E1);
-      color: #fff; font-weight: bold; padding: 6px 8px;
-      display: flex; align-items: center; gap: 6px; user-select: none;
+    .repo-row.active{outline:2px solid #3A85E1;background:#f5f9ff;}
+    .repo-title{display:flex;align-items:center;gap:8px;min-width:0;}
+    .repo-name{font-weight:bold;color:#0058E1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;}
+    .chip{font-size:11px;background:#e7eefc;border:1px solid #bfd0f5;padding:1px 6px;border-radius:10px;color:#245edc;white-space:nowrap;}
+    .repo-actions{display:flex;gap:6px;}
+    .repo-actions button{border:1px solid #000;background:#ECE9D8;padding:3px 8px;cursor:pointer;}
+
+    /* 가운데 핸들 (드래그 가능) */
+    .handle{
+      display:flex;align-items:center;justify-content:center;background:#D6D3C6;
+      border:1px solid #9f9a87;border-radius:8px;user-select:none;cursor:col-resize;
     }
-    .title-icon { width: 16px; height: 16px; flex: 0 0 16px; }
-    .title-text { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .title-buttons span {
-      display: inline-block; width: 18px; height: 18px; margin-left: 3px;
-      background-color: #D64F34; color: #fff; text-align: center; line-height: 18px;
-      border: 1px solid #fff; font-family: "Courier New", Courier, monospace;
+    .handle button{
+      border:1px solid #000;background:#ECE9D8;padding:2px 6px;cursor:col-resize;font-weight:bold;
+      width:22px;height:22px;display:flex;align-items:center;justify-content:center;
     }
 
-    /* 좌측: 레포지토리 목록 */
-    .toolbar { display:flex; gap:8px; align-items:center; padding:8px 10px; background:#f5f2e8; border-bottom:1px solid #cfc9b8; }
-    .toolbar input[type="text"]{ width: 260px; padding: 5px 6px; border: 1px solid #9f9a87; background:#fff; font-family: inherit; }
-    .toolbar button{ border:1px solid #000; background:#ECE9D8; padding:5px 10px; cursor:pointer; }
-
-    .left-content { padding:10px; flex:1 1 auto; overflow:auto; color:#000; }
-    .repo-row {
-      padding: 10px; border: 1px solid #ccc; background:#fff; border-radius: 4px;
-      display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; cursor: pointer;
-    }
-    .repo-row.active { outline: 2px solid #3A85E1; background: #f5f9ff; }
-    .repo-title { display:flex; align-items:center; gap:8px; min-width:0; }
-    .repo-name { font-weight:bold; color:#0058E1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 260px; }
-    .chip { font-size: 11px; background:#e7eefc; border:1px solid #bfd0f5; padding:1px 6px; border-radius:10px; color:#245edc; white-space:nowrap; }
-    .repo-actions { display:flex; gap:6px; }
-    .repo-actions button{ border:1px solid #000; background:#ECE9D8; padding:3px 8px; cursor:pointer; }
-
-    /* 가운데 핸들 */
-    .handle { display:flex; align-items:center; justify-content:center; background:#D6D3C6; border:1px solid #9f9a87; border-radius:8px; user-select:none; cursor: col-resize; }
-    .handle button { border:1px solid #000; background:#ECE9D8; padding:2px 6px; cursor:pointer; font-weight:bold; }
-
-    /* 우측: 의존성 디테일 */
-    .right-content { padding:10px; flex:1 1 auto; overflow:auto; color:#000; }
-    .detail-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
-    .deps { margin:0; padding:0; list-style:none; border:1px solid #eee; background:#fff; }
-    .deps li { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; border-bottom:1px solid #f0f0f0; }
-    .deps li:last-child{ border-bottom:none; }
-    .dep-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 640px; }
-    .empty { padding: 12px; background:#fff; border:1px dashed #ccc; color:#333; }
+    /* 우: 의존성 상세 */
+    .right-content{padding:10px;flex:1 1 auto;overflow:auto;color:#000;}
+    .detail-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+    .deps{margin:0;padding:0;list-style:none;border:1px solid #eee;background:#fff;}
+    .deps li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid #f0f0f0;}
+    .deps li:last-child{border-bottom:none;}
+    .dep-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:640px;}
+    .empty{padding:12px;background:#fff;border:1px dashed #ccc;color:#333;}
 
     /* 작업표시줄 */
-    .taskbar { background: linear-gradient(to bottom, #245EDC, #3A85E1); border-top:1px solid #66A3FF; display:flex; align-items:center; gap:8px; padding:0 6px; }
-    .start-button { background:linear-gradient(to bottom, #72BE4A, #55A82B); color:#fff; font-weight:bold; font-size:16px; border:2px outset #55A82B; border-radius:10px 10px 0 0; padding:2px 20px; margin-left:5px; font-style:italic; cursor:pointer; user-select:none; }
+    .taskbar{background:linear-gradient(to bottom,#245EDC,#3A85E1);border-top:1px solid #66A3FF;display:flex;align-items:center;gap:8px;padding:0 6px;}
+    .start-button{background:linear-gradient(to bottom,#72BE4A,#55A82B);color:#fff;font-weight:bold;font-size:16px;border:2px outset #55A82B;border-radius:10px 10px 0 0;padding:2px 20px;margin-left:5px;font-style:italic;cursor:pointer;user-select:none;}
 
-    a { color:#0058E1; text-decoration:none; } a:hover { text-decoration: underline; }
+    a{color:#0058E1;text-decoration:none;} a:hover{text-decoration:underline;}
   </style>
 </head>
 <body>
   <div class="desktop">
     <div class="workspace">
       <div class="grid" id="grid">
-        <!-- 좌: 레포지토리 목록 창 -->
+        <!-- 좌: 레포 목록 창 -->
         <div class="window" id="leftWin">
           <div class="title-bar">
             <svg class="title-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -98,9 +96,7 @@
           </div>
           <div class="left-content" id="repoList">
             {% for item in items %}
-            <div class="repo-row"
-                 data-index="{{ loop.index0 }}"
-                 data-repo="{{ item.repositoryName | e }}">
+            <div class="repo-row" data-index="{{ loop.index0 }}" data-repo="{{ item.repositoryName | e }}">
               <div class="repo-title">
                 <svg width="10" viewBox="0 0 16 16"><path d="M5 3l6 5-6 5z" fill="currentColor"></path></svg>
                 <span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span>
@@ -115,8 +111,10 @@
           </div>
         </div>
 
-        <!-- 가운데 핸들 -->
-        <div class="handle"><button id="toggleRight" title="의존성 패널 접기/펼치기">◀▶</button></div>
+        <!-- 가운데 핸들 (">"만 표시 + 드래그로 폭 조절) -->
+        <div class="handle" id="splitter">
+          <button id="splitBtn" title="창 폭 조절">></button>
+        </div>
 
         <!-- 우: 선택한 레포 의존성 창 -->
         <div class="window" id="rightWin">
@@ -129,13 +127,11 @@
           </div>
           <div class="right-content">
             <div class="detail-header">
-              <div id="detailMeta" class="chip">레포를 선택하세요</div>
-              <div>
-                <button id="btnCopyDeps" class="chip" style="cursor:pointer;">의존성 복사</button>
-              </div>
+              <div id="detailMeta" class="chip">왼쪽에서 레포지토리를 선택하면 의존성을 표시합니다.</div>
+              <div><button id="btnCopyDeps" class="chip" style="cursor:pointer;">의존성 복사</button></div>
             </div>
             <ul class="deps" id="depsList"></ul>
-            <div class="empty" id="emptyState">왼쪽에서 레포지토리를 선택하면 의존성을 표시합니다.</div>
+            <div class="empty" id="emptyState" style="display:none;"></div>
           </div>
         </div>
       </div>
@@ -146,7 +142,7 @@
   </div>
 
   <script>
-    // 서버 데이터 → 클라이언트
+    // ===== 서버 데이터 =====
     const DATA = {{ items|tojson }};
     const repoListEl = document.getElementById('repoList');
     const depsListEl = document.getElementById('depsList');
@@ -154,36 +150,43 @@
     const detailTitleEl = document.getElementById('detailTitle');
     const detailMetaEl = document.getElementById('detailMeta');
 
-    // 좌측 행 클릭 시 우측 패널 채우기
-    function renderDetails(idx) {
+    // ===== 레포 선택 시 오른쪽 렌더링 =====
+    function onlyRepoName(full){
+      if(!full) return '';
+      const parts = full.split('/');
+      return parts.length > 1 ? parts.slice(1).join('/') : full; // owner 제거
+    }
+
+    function renderDetails(idx){
       const item = DATA[idx];
-      if (!item) return;
+      if(!item) return;
 
-      // 좌측 active 처리
-      document.querySelectorAll('.repo-row').forEach(r => r.classList.remove('active'));
-      const activeRow = document.querySelector(`.repo-row[data-index="${idx}"]`);
-      if (activeRow) activeRow.classList.add('active');
+      // 좌측 active
+      document.querySelectorAll('.repo-row').forEach(r=>r.classList.remove('active'));
+      const row = document.querySelector(`.repo-row[data-index="${idx}"]`);
+      if(row) row.classList.add('active');
 
-      // 제목 & 메타
-      detailTitleEl.textContent = item.repositoryName;
-      detailMetaEl.textContent = `updated: ${activeRow.querySelector('.chip').textContent.replace('updated: ','')}`;
+      // 제목: 소유자 제거
+      detailTitleEl.textContent = onlyRepoName(item.repositoryName);
 
-      // 리스트 렌더
-      depsListEl.innerHTML = '';
+      // 메타(업데이트 시각)
+      const timeChip = row.querySelector('.repo-title .chip');
+      detailMetaEl.textContent = timeChip ? timeChip.textContent : '';
+
+      // 의존성 출력
       const deps = item.dependencies || [];
-      if (deps.length === 0) {
-        depsListEl.innerHTML = '';
+      depsListEl.innerHTML = '';
+      if(deps.length === 0){
         emptyStateEl.style.display = '';
+        emptyStateEl.textContent = '이 레포지토리는 의존성이 없습니다.';
         return;
       }
       emptyStateEl.style.display = 'none';
 
-      deps.forEach(dep => {
+      deps.forEach(dep=>{
         const li = document.createElement('li');
         const name = document.createElement('span');
-        name.className = 'dep-name';
-        name.title = dep;
-        name.textContent = dep;
+        name.className = 'dep-name'; name.title = dep; name.textContent = dep;
 
         const chip = document.createElement('span');
         chip.className = 'chip';
@@ -194,69 +197,95 @@
         else if (lower.includes('nuget') || lower.includes('.csproj')) chip.textContent = '.NET';
         else chip.textContent = 'dep';
 
-        li.appendChild(name);
-        li.appendChild(chip);
+        li.appendChild(name); li.appendChild(chip);
         depsListEl.appendChild(li);
       });
     }
 
-    // 이벤트: 좌측 레포 행
-    repoListEl.addEventListener('click', (e) => {
-      const row = e.target.closest('.repo-row');
-      if (!row) return;
+    // 좌측 클릭/복사
+    repoListEl.addEventListener('click', (e)=>{
+      const row = e.target.closest('.repo-row'); if(!row) return;
+      const idx = row.getAttribute('data-index');
 
-      // 복사 버튼?
-      if (e.target.classList.contains('copyBtn')) {
-        const idx = row.getAttribute('data-index');
+      if(e.target.classList.contains('copyBtn')){
         const deps = (DATA[idx]?.dependencies || []).join('\n');
         navigator.clipboard.writeText(deps).then(()=>{
-          e.target.textContent = '복사됨!';
-          setTimeout(()=> e.target.textContent='복사', 900);
+          e.target.textContent='복사됨!'; setTimeout(()=>e.target.textContent='복사',900);
         });
         return;
       }
-
-      renderDetails(row.getAttribute('data-index'));
+      renderDetails(idx);
     });
 
-    // 검색(레포/의존성)
+    // 검색
     document.getElementById('filterInput').addEventListener('input', function(){
-      const q = this.value.trim().toLowerCase();
+      const q = (this.value||'').trim().toLowerCase();
       document.querySelectorAll('.repo-row').forEach(function(row){
         const idx = row.getAttribute('data-index');
         const item = DATA[idx];
-        const name = (item.repositoryName || '').toLowerCase();
-        const deps = (item.dependencies || []).map(d => (d||'').toLowerCase());
-        const hit = !q || name.includes(q) || deps.some(d => d.includes(q));
+        const name = (item.repositoryName||'').toLowerCase();
+        const deps = (item.dependencies||[]).map(d=>(d||'').toLowerCase());
+        const hit = !q || name.includes(q) || deps.some(d=>d.includes(q));
         row.style.display = hit ? '' : 'none';
       });
     });
 
-    // 모두 펼치기/접기는 좌측 아코디언 제거했으므로 noop → 선택적 확장 시 오른쪽으로 표현
-    document.getElementById('btnExpand').addEventListener('click', () => {
-      // 첫 항목 선택
+    // 모두 펼치기 → 첫 항목 선택
+    document.getElementById('btnExpand').addEventListener('click', ()=>{
       const first = document.querySelector('.repo-row:not([style*="display: none"])');
-      if (first) renderDetails(first.getAttribute('data-index'));
+      if(first) renderDetails(first.getAttribute('data-index'));
     });
-    document.getElementById('btnCollapse').addEventListener('click', () => {
-      // 선택 해제
-      document.querySelectorAll('.repo-row').forEach(r => r.classList.remove('active'));
-      depsListEl.innerHTML = '';
-      detailTitleEl.textContent = 'Dependencies';
-      detailMetaEl.textContent = '레포를 선택하세요';
-      emptyStateEl.style.display = '';
+    // 모두 접기 → 선택 해제
+    document.getElementById('btnCollapse').addEventListener('click', ()=>{
+      document.querySelectorAll('.repo-row').forEach(r=>r.classList.remove('active'));
+      depsListEl.innerHTML='';
+      detailTitleEl.textContent='Dependencies';
+      detailMetaEl.textContent='왼쪽에서 레포지토리를 선택하면 의존성을 표시합니다.';
+      emptyStateEl.style.display='none';
     });
 
-    // 가운데 핸들 토글
+    // ===== 가운데 스플리터: 드래그로 폭 조절 =====
     const grid = document.getElementById('grid');
-    const toggleRight = document.getElementById('toggleRight');
-    let rightVisible = true;
-    toggleRight.addEventListener('click', function(){
-      rightVisible = !rightVisible;
-      grid.style.gridTemplateColumns = rightVisible ? '420px 12px 1fr' : '1fr 12px 0px';
+    const splitter = document.getElementById('splitter');
+    let dragging = false;
+    let startX = 0;
+    let startLeftWidth = 0; // px 기준
+
+    function getLeftWidthPx(){
+      const cols = getComputedStyle(grid).gridTemplateColumns.split(' ');
+      // 현재 좌측이 fr일 수 있으므로 실제 px로 계산
+      const rect = grid.getBoundingClientRect();
+      const rightPx = document.getElementById('rightWin').getBoundingClientRect().width;
+      const gutter = splitter.getBoundingClientRect().width;
+      const leftPx = rect.width - rightPx - gutter - 10 /*gap 보정*/;
+      return leftPx;
+    }
+
+    splitter.addEventListener('mousedown', (e)=>{
+      dragging = true;
+      startX = e.clientX;
+      startLeftWidth = document.getElementById('leftWin').getBoundingClientRect().width;
+      document.body.style.userSelect='none';
+    });
+    window.addEventListener('mousemove', (e)=>{
+      if(!dragging) return;
+      const dx = e.clientX - startX;
+      let newLeft = Math.max(260, startLeftWidth + dx);     // 최소 260px
+      const gridRect = grid.getBoundingClientRect();
+      const maxLeft = gridRect.width - 260 - splitter.offsetWidth - 10; // 우측 최소 260px
+      newLeft = Math.min(newLeft, maxLeft);
+      const right = gridRect.width - newLeft - splitter.offsetWidth - 10;
+      grid.style.gridTemplateColumns = `${newLeft}px 10px ${right}px`;
+    });
+    window.addEventListener('mouseup', ()=>{
+      dragging = false;
+      document.body.style.userSelect='';
     });
 
-    // 초기: 첫 번째 항목 자동 선택(있다면)
+    // 버튼은 모양만 ">"로 유지 (토글은 없이 드래그만)
+    document.getElementById('splitBtn').addEventListener('click', (e)=>{ /*no-op*/ });
+
+    // 초기: 첫 번째 항목 자동 선택(있으면)
     const firstRow = document.querySelector('.repo-row');
     if(firstRow) renderDetails(firstRow.getAttribute('data-index'));
   </script>
