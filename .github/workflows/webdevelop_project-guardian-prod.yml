@@ -67,5 +67,5 @@ jobs:
         id: deploy-to-webapp
         with:
           app-name: 'project-guardian-prod'
-          slot-name: 'Production'
+          slot-name: 'staging'
           
