@@ -1,146 +1,372 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <title>Dashboard</title>
-    <style>
-        body {
-            background-color: #3A6EA5;
-            font-family: Tahoma, Geneva, sans-serif;
-            font-size: 12px;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-        }
-        .window {
-            width: 600px;
-            min-height: 400px;
-            border: 2px solid #0058E1;
-            border-radius: 8px 8px 0 0;
-            background-color: #ECE9D8;
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            display: flex;
-            flex-direction: column;
-        }
-        .title-bar {
-            background: linear-gradient(to bottom, #0058E1, #3A85E1);
-            color: white;
-            font-weight: bold;
-            padding: 5px 10px;
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: move;
-        }
-        .title-bar-buttons span {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            margin-left: 2px;
-            background-color: #D64F34;
-            color: white;
-            text-align: center;
-            line-height: 20px;
-            border: 1px solid white;
-            font-family: 'Courier New', Courier, monospace;
-        }
-        .content {
-            padding: 20px;
-            flex-grow: 1;
-            color: #000;
-            overflow-y: auto;
-        }
-        .content h1 {
-            font-size: 24px;
-            color: #0058E1;
-        }
-        .taskbar {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 30px;
-            background: linear-gradient(to bottom, #245EDC, #3A85E1);
-            border-top: 1px solid #66A3FF;
-            display: flex;
-            align-items: center;
-        }
-        .start-button {
-            background: linear-gradient(to bottom, #72BE4A, #55A82B);
-            color: white;
-            font-weight: bold;
-            font-size: 16px;
-            border: 2px outset #55A82B;
-            border-radius: 10px 10px 0 0;
-            padding: 2px 20px;
-            margin-left: 5px;
-            font-style: italic;
-            cursor: pointer;
-        }
-        button {
-            border: 1px solid #000;
-            background-color: #ECE9D8;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-        a {
-            color: #0058E1;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        ul {
-            list-style-type: none;
-            padding-left: 0;
-        }
-        li {
-            background-color: #FFF;
-            padding: 8px;
-            border: 1px solid #DDD;
-            margin-bottom: 5px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Project Guardian – Dependencies Explorer</title>
+  <style>
+    /* ===== Windows XP 느낌 유지 ===== */
+    body {
+      background-color: #3A6EA5;
+      font-family: Tahoma, Geneva, sans-serif;
+      font-size: 12px;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .window {
+      width: 760px;
+      height: 520px;
+      border: 2px solid #0058E1;
+      border-radius: 8px 8px 0 0;
+      background-color: #ECE9D8;
+      box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .title-bar {
+      background: linear-gradient(to bottom, #0058E1, #3A85E1);
+      color: #fff;
+      font-weight: bold;
+      padding: 6px 10px;
+      border-top-left-radius: 5px;
+      border-top-right-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: move;
+      user-select: none;
+    }
+    .title-bar-buttons span {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      margin-left: 2px;
+      background-color: #D64F34;
+      color: #fff;
+      text-align: center;
+      line-height: 20px;
+      border: 1px solid #fff;
+      font-family: "Courier New", Courier, monospace;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      background: #f5f2e8;
+      border-bottom: 1px solid #cfc9b8;
+    }
+    .toolbar .hint { color:#555; }
+    .toolbar input[type="text"]{
+      width: 260px;
+      padding: 5px 6px;
+      border: 1px solid #9f9a87;
+      background: #fff;
+    }
+    .toolbar button{
+      border: 1px solid #000;
+      background-color: #ECE9D8;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    .content {
+      padding: 10px;
+      flex: 1 1 auto;
+      overflow: auto;
+      color: #000;
+    }
+    .repo {
+      border: 1px solid #ccc;
+      background: #fff;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .repo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      background: linear-gradient(to bottom, #fdfaf2, #efe8d4);
+      border-bottom: 1px solid #e0dac9;
+      cursor: pointer;
+      user-select: none;
+    }
+    .repo-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .caret {
+      width: 10px;
+      transition: transform .15s ease;
+    }
+    .repo-name {
+      font-weight: bold;
+      color: #0058E1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 340px;
+    }
+    .muted { color:#666; }
+    .repo-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: nowrap;
+    }
+    .repo-actions button {
+      border: 1px solid #000;
+      background-color: #ECE9D8;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .repo-body {
+      display: none;
+      padding: 10px;
+      background: #fff;
+    }
+    .repo.open .repo-body { display: block; }
+    .repo.open .caret { transform: rotate(90deg); }
+
+    .deps {
+      max-height: 180px;
+      overflow: auto;
+      border: 1px solid #eee;
+      padding: 6px;
+      margin: 0;
+      list-style: none;
+    }
+    .deps li {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .deps li:last-child{ border-bottom: none; }
+    .dep-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 520px;
+    }
+    .chip {
+      font-size: 11px;
+      background: #e7eefc;
+      border: 1px solid #bfd0f5;
+      padding: 1px 6px;
+      border-radius: 10px;
+      color: #245edc;
+      white-space: nowrap;
+    }
+
+    .taskbar {
+      position: absolute;
+      bottom: 0; left: 0; width: 100%; height: 30px;
+      background: linear-gradient(to bottom, #245EDC, #3A85E1);
+      border-top: 1px solid #66A3FF;
+      display: flex; align-items: center;
+    }
+    .start-button {
+      background: linear-gradient(to bottom, #72BE4A, #55A82B);
+      color: white;
+      font-weight: bold;
+      font-size: 16px;
+      border: 2px outset #55A82B;
+      border-radius: 10px 10px 0 0;
+      padding: 2px 20px;
+      margin-left: 5px;
+      font-style: italic;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    a { color:#0058E1; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .empty { padding: 20px; color:#333; }
+  </style>
 </head>
 <body>
-    <div class="window">
-        <div class="title-bar">
-            <span>{{ user_id }}'s Dashboard</span>
-            <div class="title-bar-buttons"><span>_</span><span>☐</span><span>X</span></div>
-        </div>
-        <div class="content">
-            <h1>Repositories from Cosmos DB</h1>
-            <p><a href="{{ url_for('logout') }}">Logout</a></p>
-            {% if items %}
-                {% for item in items %}
-                    <div class="repo-item" style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
-                        <h3>{{ item.repositoryName }}</h3>
-                        <p>Last updated (in DB): {{ item.lastUpdated }}</p>
-                        <h4>Dependencies ({{ item.dependencies | length }}):</h4>
-                        {% if item.dependencies %}
-                            <ul style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 5px;">
-                                {% for dep in item.dependencies %}
-                                    <li>{{ dep }}</li>
-                                {% endfor %}
-                            </ul>
-                        {% else %}
-                            <p>No dependencies found.</p>
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            {% else %}
-                <p>No data found in Cosmos DB. The initial sync might be in progress. Please refresh in a moment.</p>
-            {% endif %}
-        </div>
+  <div class="window" id="win">
+    <div class="title-bar" id="dragBar">
+      <span>{{ user_id }} – Dependencies Explorer</span>
+      <div class="title-bar-buttons"><span>_</span><span>☐</span><span>X</span></div>
     </div>
-    <div class="taskbar">
-        <div class="start-button">start</div>
+
+    <div class="toolbar">
+      <span class="hint">검색:</span>
+      <input id="filterInput" type="text" placeholder="레포지토리/의존성 검색" />
+      <button id="btnExpand">모두 펼치기</button>
+      <button id="btnCollapse">모두 접기</button>
+      <a href="{{ url_for('logout') }}"><button>Logout</button></a>
     </div>
+
+    <div class="content" id="listArea">
+      <h1 style="margin:6px 0 10px; color:#0058E1; font-size:18px;">Repositories from Cosmos DB</h1>
+
+      {% if items %}
+        {% for item in items %}
+          <div class="repo" data-repo="{{ item.repositoryName | e }}">
+            <div class="repo-header">
+              <div class="repo-title">
+                <svg class="caret" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M5 3l6 5-6 5z" fill="currentColor"></path>
+                </svg>
+                <span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span>
+                <span class="chip" title="DB에 기록된 갱신 시각">updated: {{ item.lastUpdated }}</span>
+              </div>
+              <div class="repo-actions">
+                <span class="chip" title="의존성 개수">{{ item.dependencies | length }} deps</span>
+                <button class="toggleBtn" type="button">열기</button>
+                <button class="copyBtn" type="button" data-copy-target="deps-{{ loop.index }}">복사</button>
+              </div>
+            </div>
+            <div class="repo-body">
+              {% if item.dependencies and item.dependencies | length > 0 %}
+                <ul class="deps" id="deps-{{ loop.index }}">
+                  {% for dep in item.dependencies %}
+                    <li data-dep="{{ dep | e }}">
+                      <span class="dep-name" title="{{ dep }}">{{ dep }}</span>
+                      <!-- 패키지 매니저 힌트칩(간단 추정) -->
+                      {% set lower = dep | lower %}
+                      {% if 'npm' in lower or 'yarn' in lower or '.json' in lower %}
+                        <span class="chip">JS</span>
+                      {% elif 'pip' in lower or 'python' in lower or '.txt' in lower %}
+                        <span class="chip">Py</span>
+                      {% elif 'maven' in lower or 'gradle' in lower or '.pom' in lower or 'jar' in lower %}
+                        <span class="chip">Java</span>
+                      {% elif 'nuget' in lower or '.csproj' in lower %}
+                        <span class="chip">.NET</span>
+                      {% else %}
+                        <span class="chip">dep</span>
+                      {% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <div class="empty">No dependencies found.</div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">No data found in Cosmos DB. The initial sync might be in progress. Please refresh in a moment.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="taskbar">
+    <div class="start-button">start</div>
+  </div>
+
+  <script>
+    // ---- 아코디언 & 버튼 제어 ----
+    document.querySelectorAll('.repo').forEach(function(repoEl){
+      const header = repoEl.querySelector('.repo-header');
+      const toggleBtn = repoEl.querySelector('.toggleBtn');
+      const body = repoEl.querySelector('.repo-body');
+
+      function toggle(open){
+        if(open === true){ repoEl.classList.add('open'); toggleBtn.textContent = '닫기'; }
+        else if(open === false){ repoEl.classList.remove('open'); toggleBtn.textContent = '열기'; }
+        else { repoEl.classList.toggle('open'); toggleBtn.textContent = repoEl.classList.contains('open') ? '닫기' : '열기'; }
+      }
+      header.addEventListener('click', function(e){
+        // 버튼 클릭은 헤더 버블링 무시
+        if(e.target.closest('.repo-actions')) return;
+        toggle();
+      });
+      toggleBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        toggle();
+      });
+    });
+
+    // ---- 모두 펼치기 / 접기 ----
+    document.getElementById('btnExpand').addEventListener('click', function(){
+      document.querySelectorAll('.repo').forEach(function(el){
+        el.classList.add('open');
+        const btn = el.querySelector('.toggleBtn');
+        if(btn) btn.textContent = '닫기';
+      });
+    });
+    document.getElementById('btnCollapse').addEventListener('click', function(){
+      document.querySelectorAll('.repo').forEach(function(el){
+        el.classList.remove('open');
+        const btn = el.querySelector('.toggleBtn');
+        if(btn) btn.textContent = '열기';
+      });
+    });
+
+    // ---- 복사 버튼 (의존성 리스트 텍스트) ----
+    document.querySelectorAll('.copyBtn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const id = btn.getAttribute('data-copy-target');
+        const ul = document.getElementById(id);
+        let text = '';
+        if(ul){
+          text = Array.from(ul.querySelectorAll('li .dep-name')).map(n=>n.textContent).join('\n');
+        }
+        navigator.clipboard.writeText(text || '').then(function(){
+          const old = btn.textContent;
+          btn.textContent = '복사됨!';
+          setTimeout(()=>btn.textContent=old, 900);
+        });
+      });
+    });
+
+    // ---- 검색(레포지토리명 + 의존성 동시 필터) ----
+    document.getElementById('filterInput').addEventListener('input', function(){
+      const q = this.value.trim().toLowerCase();
+      document.querySelectorAll('.repo').forEach(function(repo){
+        const name = (repo.getAttribute('data-repo') || '').toLowerCase();
+        const deps = Array.from(repo.querySelectorAll('.deps li')).map(li => (li.getAttribute('data-dep') || '').toLowerCase());
+        const hitName = name.includes(q);
+        const hitDep = q && deps.some(d => d.includes(q));
+        // 매칭되면 보이기
+        const show = q ? (hitName || hitDep) : true;
+        repo.style.display = show ? '' : 'none';
+        // 의존성 검색 매칭이면 자동 펼침
+        if(show && q && hitDep){ repo.classList.add('open'); const tb=repo.querySelector('.toggleBtn'); if(tb) tb.textContent='닫기'; }
+      });
+    });
+
+    // ---- 윈도우 드래그 (XP 느낌) ----
+    (function makeDraggable(){
+      const win = document.getElementById('win');
+      const bar = document.getElementById('dragBar');
+      let isDown=false, sx=0, sy=0, sl=0, st=0;
+
+      bar.addEventListener('mousedown', function(e){
+        isDown=true;
+        const rect = win.getBoundingClientRect();
+        sx = e.clientX; sy = e.clientY; sl = rect.left; st = rect.top;
+        document.body.style.userSelect='none';
+      });
+      window.addEventListener('mousemove', function(e){
+        if(!isDown) return;
+        const dx = e.clientX - sx;
+        const dy = e.clientY - sy;
+        win.style.left = (sl + dx + win.offsetWidth/2) + 'px';
+        win.style.top  = (st + dy + win.offsetHeight/2) + 'px';
+        win.style.transform = 'translate(-50%, -50%)';
+      });
+      window.addEventListener('mouseup', function(){
+        isDown=false;
+        document.body.style.userSelect='';
+      });
+    })();
+  </script>
 </body>
 </html>
