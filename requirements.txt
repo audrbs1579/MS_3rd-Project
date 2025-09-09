@@ -1,5 +1,5 @@
-# Uncomment to enable Azure Monitor OpenTelemetry
-# Ref: aka.ms/functions-azure-monitor-python
-# azure-monitor-opentelemetry
-
+flask
+gunicorn
+requests
 azure-functions
+azure-cosmos
