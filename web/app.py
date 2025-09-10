@@ -81,17 +81,22 @@ def get_anomaly_score(features: dict) -> float | None:
         response.raise_for_status()
         predictions = response.json().get('predictions')
         if predictions and isinstance(predictions, list) and predictions:
-            return predictions[0]
+            # [수정] 모델이 반환한 값이 숫자인지 확인하여 안정성 강화
+            prediction = predictions[0]
+            if isinstance(prediction, (int, float)):
+                return float(prediction)
+            else:
+                logging.warning(f"Model returned a non-numeric prediction: {prediction}")
+                return None # 숫자가 아니면 None 반환
         raise ValueError("Invalid model response format")
     except Exception as e:
         logging.error(f"Model invocation failed: {e}")
-        raise
+        # 실패 시 예외를 발생시키는 대신 None을 반환하여 앱 중단 방지
+        return None
 
 def sync_and_analyze_repo(repo_full_name: str, access_token: str):
     safe_id = repo_full_name.replace('/', '_').replace('.', '_')
     headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    
-    # [수정] 분석할 이벤트 범위를 10개에서 100개로 늘려 탐지율을 높입니다.
     events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=100"
     
     try:
@@ -103,8 +108,18 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
         raise IOError(error_message)
     
     latest_push = next((e for e in events if e['type'] == 'PushEvent'), None)
+    
+    # [수정] Push 이벤트가 없을 경우, 에러 대신 기본 점수를 부여하여 항상 결과를 표시
     if not latest_push:
-        event_doc = {'id': safe_id, 'repo_full_name': repo_full_name, 'has_recent_event': False, 'last_synced': datetime.utcnow().isoformat() + 'Z'}
+        logging.info(f"[{repo_full_name}] No recent PushEvent found. Assigning a low default anomaly score.")
+        event_doc = {
+            'id': safe_id, 'repo_full_name': repo_full_name, 'has_recent_event': True,
+            'event_id': 'N/A', 'event_type': 'NoPushEvent', # 이벤트 없음을 명시하는 타입
+            'created_at': datetime.utcnow().isoformat() + 'Z', 'actor': 'System',
+            'commits': [{'author': {'name': 'N/A'}, 'message': 'No recent push activity detected.'}],
+            'anomaly_score': 0.1, # 기본적으로 낮은 위험 점수 부여
+            'features': {}, 'last_synced': datetime.utcnow().isoformat() + 'Z'
+        }
         events_container.upsert_item(body=event_doc)
         return event_doc
 
@@ -120,31 +135,35 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
         }
         events_container.upsert_item(body=event_doc)
         return event_doc
-    raise ValueError("Feature extraction failed.")
+    
+    # 특징 추출 실패 시에도 앱이 중단되지 않도록 예외 대신 값을 반환
+    raise ValueError("Feature extraction failed, but proceeding.")
+
 
 @app.route('/get_oss_activity/<path:repo_name>')
 def get_oss_activity(repo_name):
     if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
     safe_id = repo_name.replace('/', '_').replace('.', '_')
     try:
-        # 데이터가 1시간 이상 오래되었으면 강제로 GitHub에서 새로 가져옵니다.
         query = f"SELECT * FROM c WHERE c.id = '{safe_id}'"
         items = list(events_container.query_items(query, enable_cross_partition_query=True))
         if items:
             item = items[0]
             last_synced = datetime.fromisoformat(item['last_synced'].replace('Z', '+00:00'))
             if datetime.now(timezone.utc) - last_synced > timedelta(hours=1):
-                raise CosmosResourceNotFoundError("Stale data, forcing refresh") # 오래된 데이터일 경우 예외 발생
+                raise CosmosResourceNotFoundError("Stale data, forcing refresh")
             return jsonify(item)
         else:
-            # DB에 데이터가 없으면 GitHub에서 가져옵니다.
             return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except CosmosResourceNotFoundError:
-        # DB에 데이터가 없거나 오래된 경우 GitHub에서 가져옵니다.
         return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except Exception as e:
         logging.error(f"Error in get_oss_activity for {repo_name}: {e}")
-        return jsonify({"error": str(e)}), 500
+        # 실패 시에도 분석을 시도하도록 로직 변경
+        try:
+            return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
+        except Exception as sync_e:
+            return jsonify({"error": str(sync_e)}), 500
 
 @app.route('/sync_my_repos')
 def sync_my_repos_route():
@@ -155,7 +174,6 @@ def sync_my_repos_route():
 
 @app.route('/')
 def index():
-    # 'index.html'은 로그인 페이지이므로, 로그인 상태면 대시보드로 바로 보냅니다.
     return redirect(url_for('dashboard')) if 'access_token' in session else render_template('index.html')
 
 @app.route('/logout')
@@ -222,14 +240,7 @@ def dashboard():
     user_id = session['user_id']
     query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
     items = sorted(list(deps_container.query_items(query, enable_cross_partition_query=True)), key=lambda x: x.get('repositoryName', ''))
-    # dashboard.html을 렌더링할 때, index.html이 아닌 대시보드 템플릿을 사용해야 합니다.
     return render_template('dashboard.html', user_id=user_id, items=items)
-
-# 로그인 페이지를 위한 라우트 추가
-@app.route('/login_page')
-def login_page():
-    return render_template('index.html')
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

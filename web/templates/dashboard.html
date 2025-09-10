@@ -2,7 +2,6 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <!-- [수정] 특수문자 '–'를 일반 하이픈 '-'으로 변경 -->
   <title>Project Guardian - OSS Activity Explorer</title>
   <style>
     body{background-color:#3A6EA5;font-family:Gulim, Dotum, "Tahoma", Geneva, sans-serif;font-size:12px; margin:0; padding:0; overflow:hidden;}
@@ -127,6 +126,13 @@
         activityDetailsEl.innerHTML = `<div class="loading-state"><div class="loading-spinner"></div>Fetching latest activity for ${repoFullName}...</div>`;
         try {
             const response = await fetch(`/get_oss_activity/${repoFullName}`);
+
+            if (response.status === 401) {
+                alert('세션이 만료되었거나 인증에 실패했습니다. 다시 로그인해주세요.');
+                window.location.href = "{{ url_for('login') }}";
+                return;
+            }
+
             const data = await response.json();
             if (!response.ok || data.error) {
                 throw new Error(data.error || `HTTP error! status: ${response.status}`);
@@ -138,18 +144,47 @@
     }
 
     function renderActivityDetails(data) {
-        if (!data.has_recent_event) {
-            activityDetailsEl.innerHTML = `<div class="empty-state">No recent push event found for this repository.</div>`;
-            return;
-        }
         const score = data.anomaly_score;
         let scoreColor = '#666';
-        if (score === null || score === undefined) scoreColor = '#666';
-        else if (score > 0.8) scoreColor = '#e53e3e';
-        else if (score > 0.5) scoreColor = '#dd6b20';
-        else scoreColor = '#38a169';
+        // [수정] score 타입이 숫자인지 먼저 확인하도록 조건 강화
+        if (typeof score === 'number') {
+            if (score > 0.8) scoreColor = '#e53e3e';
+            else if (score > 0.5) scoreColor = '#dd6b20';
+            else scoreColor = '#38a169';
+        }
         
         const commitsHtml = (data.commits || []).map(c => `<li><strong>${c.author.name}:</strong> ${c.message.split('\\n')[0]}</li>`).join('');
+
+        // [수정] 백엔드에서 'NoPushEvent' 타입을 보냈을 때를 위한 UI 처리 추가
+        const detailsHtml = data.event_type === 'NoPushEvent' 
+        ? `
+            <div class="detail-section">
+                <h4>Latest Push Event Details</h4>
+                <ul class="detail-list">
+                    <li><strong>Status:</strong> No recent push activity found. Considered low risk.</li>
+                </ul>
+            </div>
+            <div class="detail-section">
+                <h4>Commits in Push (0)</h4>
+                <ul class="detail-list"><li>No recent push activity detected.</li></ul>
+            </div>
+        `
+        : `
+            <div class="detail-section">
+                <h4>Latest Push Event Details</h4>
+                <ul class="detail-list">
+                    <li><strong>Actor:</strong> ${data.actor || 'N/A'}</li>
+                    <li><strong>Event Time (UTC):</strong> ${new Date(data.created_at).toLocaleString()}</li>
+                    <li><strong>Force Push:</strong> ${data.features.force_push === 1 ? 'Yes' : 'No'}</li>
+                    <li><strong>Sensitive Path Touched:</strong> ${data.features.touched_sensitive_paths === 1 ? 'Yes' : 'No'}</li>
+                    <li><strong>Dependency File Changed:</strong> ${data.features.dep_change_cnt === 1 ? 'Yes' : 'No'}</li>
+                </ul>
+            </div>
+            <div class="detail-section">
+                <h4>Commits in Push (${(data.commits || []).length})</h4>
+                <ul class="detail-list">${commitsHtml || '<li>No commit info</li>'}</ul>
+            </div>
+        `;
 
         activityDetailsEl.innerHTML = `
             <div class="detail-content">
@@ -160,23 +195,10 @@
                 <div class="detail-section">
                     <h4>Anomaly Score</h4>
                     <div class="detail-score" style="background-color: ${scoreColor}; color: white;">
-                        ${(score !== null && score !== undefined) ? score.toFixed(2) : 'N/A'}
+                        ${(typeof score === 'number') ? score.toFixed(2) : 'N/A'}
                     </div>
                 </div>
-                <div class="detail-section">
-                    <h4>Latest Push Event Details</h4>
-                    <ul class="detail-list">
-                        <li><strong>Actor:</strong> ${data.actor || 'N/A'}</li>
-                        <li><strong>Event Time (UTC):</strong> ${new Date(data.created_at).toLocaleString()}</li>
-                        <li><strong>Force Push:</strong> ${data.features.force_push === 1 ? 'Yes' : 'No'}</li>
-                        <li><strong>Sensitive Path Touched:</strong> ${data.features.touched_sensitive_paths === 1 ? 'Yes' : 'No'}</li>
-                        <li><strong>Dependency File Changed:</strong> ${data.features.dep_change_cnt === 1 ? 'Yes' : 'No'}</li>
-                    </ul>
-                </div>
-                <div class="detail-section">
-                    <h4>Commits in Push (${(data.commits || []).length})</h4>
-                    <ul class="detail-list">${commitsHtml || '<li>No commit info</li>'}</ul>
-                </div>
+                ${detailsHtml}
             </div>`;
     }
 
