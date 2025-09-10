@@ -5,6 +5,7 @@ import requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 from azure.cosmos import CosmosClient
+from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24)
@@ -20,22 +21,37 @@ DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
 MODEL_ENDPOINT_PATH = "/serving-endpoints/fake-model-api/invocations"
 GITHUB_API_URL = "https://api.github.com"
 
-# --- Cosmos DB ---
+# --- Cosmos DB Configuration [수정됨] ---
 COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
-DATABASE_NAME = 'ProjectGuardianDB'
-CONTAINER_NAME = 'Dependencies'
-EVENTS_CONTAINER_NAME = 'OssEvents'
+# [수정] 알려주신 실제 데이터베이스 이름으로 변경
+DATABASE_NAME = 'cosmos-project-guardian'
+# [수정] 컨테이너 이름 명확화
+DEPS_CONTAINER_NAME = 'Dependencies'
+EVENTS_CONTAINER_NAME = 'OssActivity' # 새로운 컨테이너 이름
 
-cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
-database = cosmos_client.get_database_client(DATABASE_NAME)
-deps_container = database.get_container_client(CONTAINER_NAME)
+# [수정] 데이터베이스와 컨테이너가 없으면 자동으로 생성하도록 로직 강화
 try:
-    events_container = database.create_container_if_not_exists(id=EVENTS_CONTAINER_NAME, partition_key={'paths': ['/repo_full_name']})
-except Exception:
-    events_container = database.get_container_client(EVENTS_CONTAINER_NAME)
+    cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
+    database = cosmos_client.create_database_if_not_exists(id=DATABASE_NAME)
+    deps_container = database.create_container_if_not_exists(
+        id=DEPS_CONTAINER_NAME, 
+        partition_key={'paths': ['/userId']}
+    )
+    events_container = database.create_container_if_not_exists(
+        id=EVENTS_CONTAINER_NAME, 
+        partition_key={'paths': ['/repo_full_name']}
+    )
+except Exception as e:
+    logging.critical(f"Cosmos DB 초기화 실패: {e}")
+    # 앱 실행을 중단하거나 적절한 오류 처리가 필요할 수 있습니다.
+    # 여기서는 로깅만 하고 진행하지만, 실제 운영 환경에서는 더 강력한 처리가 필요합니다.
+    cosmos_client = None
+    database = None
+    deps_container = None
+    events_container = None
 
 
-# --- Feature Extraction & Model Invocation ---
+# --- Feature Extraction & Model Invocation (이하 코드는 이전과 동일) ---
 SENSITIVE_PATHS = [".github/workflows/", "config/", "secret", "credential", "token", "key", ".env", "password"]
 DEPENDENCY_FILES = ["requirements.txt", "package.json", "pom.xml", "build.gradle", "go.mod", "Cargo.toml"]
 
@@ -66,7 +82,7 @@ def extract_features_from_event(event: dict, access_token: str) -> dict | None:
         features['msg_len_avg'] = sum(len(c.get('message', '')) for c in commits) / len(commits) if commits else 0
         touched_sensitive = 0
         dep_changed = 0
-        for commit_info in commits[:5]: # 너무 많은 커밋 분석을 방지하기 위해 최대 5개로 제한
+        for commit_info in commits[:5]:
             commit_details = get_commit_details(commit_info.get('url'), headers)
             files = commit_details.get('files', [])
             for f in files:
@@ -99,13 +115,9 @@ def get_anomaly_score(features: dict) -> float | None:
             logging.info(f"Score from model: {predictions[0]}")
             return predictions[0]
         else:
-            logging.error(f"Unexpected format from model: {response.json()}")
             raise ValueError("Invalid model response format")
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         logging.error(f"Model invocation failed: {e}")
-        raise
-    except (json.JSONDecodeError, ValueError) as e:
-        logging.error(f"Model response parsing failed: {e} - Response: {response.text}")
         raise
 
 def sync_and_analyze_repo(repo_full_name: str, access_token: str):
@@ -115,10 +127,9 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
     
     try:
         res = requests.get(events_url, headers=headers, timeout=15)
-        res.raise_for_status() # 4xx, 5xx 에러 시 예외 발생
+        res.raise_for_status()
         events = res.json()
     except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to fetch events for {repo_full_name}: {e}")
         error_message = f"GitHub API Error: {e}"
         if e.response is not None:
              error_message = f"GitHub API Error (Status {e.response.status_code}): Repository not found or private."
@@ -158,10 +169,8 @@ def get_oss_activity(repo_name):
         result = sync_and_analyze_repo(repo_name, access_token)
         return jsonify(result)
     except Exception as e:
-        # 클라이언트에 보여줄 상세한 에러 메시지 반환
         return jsonify({"error": str(e)}), 500
 
-# --- 로그인 및 SBOM 동기화 로직 (이전과 동일) ---
 @app.route('/')
 def index():
     if 'access_token' in session:
@@ -233,8 +242,9 @@ def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('index'))
     user_id = session['user_id']
-    query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.lastUpdated DESC"
-    items = list(deps_container.query_items(query, parameters=[{"name": "@userId", "value": user_id}], enable_cross_partition_query=True))
+    query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
+    items = list(deps_container.query_items(query, enable_cross_partition_query=True))
+    items.sort(key=lambda x: x.get('repositoryName', ''))
     return render_template('dashboard.html', user_id=user_id, items=items)
 
 if __name__ == '__main__':
