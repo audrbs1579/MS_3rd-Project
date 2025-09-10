@@ -90,7 +90,10 @@ def get_anomaly_score(features: dict) -> float | None:
 def sync_and_analyze_repo(repo_full_name: str, access_token: str):
     safe_id = repo_full_name.replace('/', '_').replace('.', '_')
     headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=10"
+    
+    # [수정] 분석할 이벤트 범위를 10개에서 100개로 늘려 탐지율을 높입니다.
+    events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=100"
+    
     try:
         res = requests.get(events_url, headers=headers, timeout=15)
         res.raise_for_status()
@@ -124,19 +127,23 @@ def get_oss_activity(repo_name):
     if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
     safe_id = repo_name.replace('/', '_').replace('.', '_')
     try:
+        # 데이터가 1시간 이상 오래되었으면 강제로 GitHub에서 새로 가져옵니다.
         query = f"SELECT * FROM c WHERE c.id = '{safe_id}'"
         items = list(events_container.query_items(query, enable_cross_partition_query=True))
         if items:
             item = items[0]
             last_synced = datetime.fromisoformat(item['last_synced'].replace('Z', '+00:00'))
             if datetime.now(timezone.utc) - last_synced > timedelta(hours=1):
-                raise CosmosResourceNotFoundError("Stale data, refresh")
+                raise CosmosResourceNotFoundError("Stale data, forcing refresh") # 오래된 데이터일 경우 예외 발생
             return jsonify(item)
         else:
+            # DB에 데이터가 없으면 GitHub에서 가져옵니다.
             return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except CosmosResourceNotFoundError:
+        # DB에 데이터가 없거나 오래된 경우 GitHub에서 가져옵니다.
         return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except Exception as e:
+        logging.error(f"Error in get_oss_activity for {repo_name}: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/sync_my_repos')
@@ -148,6 +155,7 @@ def sync_my_repos_route():
 
 @app.route('/')
 def index():
+    # 'index.html'은 로그인 페이지이므로, 로그인 상태면 대시보드로 바로 보냅니다.
     return redirect(url_for('dashboard')) if 'access_token' in session else render_template('index.html')
 
 @app.route('/logout')
@@ -214,7 +222,14 @@ def dashboard():
     user_id = session['user_id']
     query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
     items = sorted(list(deps_container.query_items(query, enable_cross_partition_query=True)), key=lambda x: x.get('repositoryName', ''))
+    # dashboard.html을 렌더링할 때, index.html이 아닌 대시보드 템플릿을 사용해야 합니다.
     return render_template('dashboard.html', user_id=user_id, items=items)
+
+# 로그인 페이지를 위한 라우트 추가
+@app.route('/login_page')
+def login_page():
+    return render_template('index.html')
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
