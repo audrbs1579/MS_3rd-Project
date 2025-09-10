@@ -1,224 +1,212 @@
-import logging
-import os
-import json
-import requests
-from datetime import datetime, timezone, timedelta
-from flask import Flask, render_template, request, redirect, session, url_for, jsonify
-from azure.cosmos import CosmosClient
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Project Guardian – OSS Activity Explorer</title>
+  <style>
+    /* disabled 스타일 제거 */
+    body{background-color:#3A6EA5;font-family:Gulim, Dotum, "Tahoma", Geneva, sans-serif;font-size:12px; margin:0; padding:0; overflow:hidden;}
+    .desktop{height:100vh;width:100vw;display:grid;grid-template-rows:1fr 30px;}
+    .workspace{position:relative;overflow:hidden;padding:10px;}
+    .grid{height:100%;display:grid;grid-template-columns: 2fr 10px 2fr 10px 1.5fr;gap:10px;align-items:stretch;}
+    .window{border:2px solid #0058E1;border-radius:8px 8px 0 0;background:#ECE9D8;box-shadow:5px 5px 15px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;}
+    .title-bar{background:linear-gradient(to bottom,#0058E1,#3A85E1);color:#fff;font-weight:bold;padding:6px 8px;display:flex;align-items:center;gap:6px;user-select:none;flex-shrink: 0;}
+    .toolbar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:#f5f2e8;border-bottom:1px solid #cfc9b8; flex-shrink: 0;}
+    .toolbar button, .toolbar a button {border:1px solid #000;background:#ECE9D8;padding:5px 10px;cursor:pointer; font-family: inherit;}
+    .content-area { padding:10px;flex-grow:1;overflow:auto;color:#000; }
+    .repo-row, .dep-row {padding:10px;border:1px solid #ccc;background:#fff;border-radius:4px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;cursor:pointer;}
+    .repo-row.active, .dep-row.active { outline:2px solid #3A85E1;background:#f5f9ff; }
+    .repo-name, .dep-name {font-weight:bold;color:#0058E1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;}
+    .chip{font-size:11px;background:#e7eefc;border:1px solid #bfd0f5;padding:1px 6px;border-radius:10px;color:#245edc;white-space:nowrap;}
+    .handle{background:#D6D3C6; border:1px solid #9f9a87;border-radius:8px;user-select:none;cursor:col-resize; display:flex; align-items:center; justify-content:center;}
+    .detail-content { font-family: 'Malgun Gothic', sans-serif; }
+    .detail-header { border-bottom: 1px solid #ccc; padding-bottom: 8px; margin-bottom: 8px; }
+    .detail-title { font-size: 14px; font-weight: bold; }
+    .detail-meta { font-size: 11px; color: #555; }
+    .detail-score { font-size: 18px; font-weight: bold; padding: 5px; border-radius: 4px; text-align: center; }
+    .detail-section { margin-top: 15px; }
+    .detail-section h4 { margin: 0 0 5px 0; font-size: 12px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
+    .detail-list { list-style: none; padding-left: 0; margin: 0; font-size: 11px; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ccc; }
+    .detail-list li { padding: 4px 6px; border-bottom: 1px solid #eee; }
+    .empty-state, .loading-state, .error-state { padding: 20px; text-align: center; color: #666; }
+    .error-state { color: #D64F34; font-weight: bold; text-align: left; white-space: pre-wrap; word-break: break-all; }
+    .loading-spinner {border: 4px solid #f0f0f0; border-top: 4px solid #3A85E1;border-radius: 50%; width: 30px; height: 30px;animation: spin 1s linear infinite; margin: 0 auto 10px auto;}
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .taskbar{background:linear-gradient(to bottom,#245EDC,#3A85E1);border-top:1px solid #66A3FF;display:flex;align-items:center;gap:8px;padding:0 6px;}
+    .start-button{background:linear-gradient(to bottom,#72BE4A,#55A82B);color:#fff;font-weight:bold;font-size:16px;border:2px outset #55A82B;border-radius:10px 10px 0 0;padding:2px 20px;margin-left:5px;font-style:italic;cursor:pointer;user-select:none;}
+    a{color:#0058E1;text-decoration:none;} a:hover{text-decoration:underline;}
+  </style>
+</head>
+<body>
+  <div class="desktop">
+    <div class="workspace">
+      <div class="grid" id="mainGrid">
+        <div class="window" id="myReposPane">
+          <div class="title-bar"><div class="title-text">{{ user_id }}'s Repositories</div></div>
+          <div class="toolbar">
+            <input id="filterInput" type="text" placeholder="레포/의존성 검색" />
+            <button id="refreshBtn">새로고침</button>
+            <a href="{{ url_for('logout') }}"><button>Logout</button></a>
+          </div>
+          <div class="content-area" id="repoList">
+            {% for item in items %}
+            <div class="repo-row" data-repo-id="{{ item.id }}">
+              <div class="repo-title"><span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span></div>
+              <span class="chip">{{ item.dependencies | length }} dependencies</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="handle" data-splitter-for="1"></div>
+        <div class="window" id="dependenciesPane">
+          <div class="title-bar"><div class="title-text">Dependencies</div></div>
+          <div class="content-area" id="depsList">
+             <div class="empty-state">Select a repository to see its dependencies.</div>
+          </div>
+        </div>
+        <div class="handle" data-splitter-for="2"></div>
+        <div class="window" id="activityPane">
+          <div class="title-bar"><div class="title-text">OSS Activity Details</div></div>
+          <div class="content-area" id="activityDetails">
+            <div class="empty-state">Select a dependency to see its latest activity.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="taskbar"><div class="start-button">start</div></div>
+  </div>
 
-app = Flask(__name__, template_folder='templates')
-app.secret_key = os.urandom(24)
+  <script>
+    const REPO_DATA = {{ items|tojson }};
+    const repoListEl = document.getElementById('repoList');
+    const depsListEl = document.getElementById('depsList');
+    const activityDetailsEl = document.getElementById('activityDetails');
+    const refreshBtn = document.getElementById('refreshBtn');
 
-# --- Configuration ---
-GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
-GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
-raw_host = os.environ.get("DATABRICKS_HOST", "")
-DATABRICKS_HOST = raw_host.split('?')[0].strip('/') if raw_host else ""
-DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
-MODEL_ENDPOINT_PATH = "/serving-endpoints/fake-model-api/invocations"
-GITHUB_API_URL = "https://api.github.com"
-COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
+    refreshBtn.addEventListener('click', () => {
+        refreshBtn.textContent = 'Refreshing...';
+        refreshBtn.disabled = true;
+        window.location.href = "{{ url_for('sync_my_repos_route') }}";
+    });
 
-# [최종 수정] 지시하신 DB와 컨테이너 이름을 정확히 사용합니다.
-DATABASE_NAME = 'ProjectGuardianDB'
-DEPS_CONTAINER_NAME = 'Dependencies'
-EVENTS_CONTAINER_NAME = 'leases' # 분석 캐시로 'leases' 컨테이너 사용
+    repoListEl.addEventListener('click', e => {
+        const row = e.target.closest('.repo-row');
+        if (!row) return;
+        document.querySelectorAll('.repo-row').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
+        const repoId = row.dataset.repoId;
+        const repo = REPO_DATA.find(r => r.id === repoId);
+        renderDependencies(repo);
+        clearActivityDetails();
+    });
 
-# --- Cosmos DB Initialization ---
-# 이제 컨테이너가 이미 존재한다고 가정하고 바로 연결합니다.
-try:
-    cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
-    database = cosmos_client.get_database_client(DATABASE_NAME)
-    deps_container = database.get_container_client(DEPS_CONTAINER_NAME)
-    events_container = database.get_container_client(EVENTS_CONTAINER_NAME) # 'leases' 컨테이너에 연결
-    logging.info("Cosmos DB에 성공적으로 연결되었습니다.")
-except Exception as e:
-    logging.critical(f"Cosmos DB 연결 실패: {e}")
-    cosmos_client = database = deps_container = events_container = None
-
-# --- Feature Extraction & Model Invocation (이하 코드는 이전과 동일) ---
-SENSITIVE_PATHS = [".github/workflows/", "config/", "secret", "credential", "token", "key", ".env", "password"]
-DEPENDENCY_FILES = ["requirements.txt", "package.json", "pom.xml", "build.gradle", "go.mod", "Cargo.toml"]
-
-def get_commit_details(commit_url: str, headers: dict) -> dict:
-    try:
-        res = requests.get(commit_url, headers=headers, timeout=10)
-        return res.json() if res.status_code == 200 else {}
-    except requests.RequestException:
-        return {}
-
-def extract_features_from_event(event: dict, access_token: str) -> dict | None:
-    if event.get('type') != 'PushEvent': return None
-    payload = event.get('payload', {})
-    features, headers = {}, {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    try:
-        dt_utc = datetime.fromisoformat(event['created_at'].replace('Z', '+00:00'))
-        features.update({
-            'hour_of_day': dt_utc.hour, 'dow': dt_utc.weekday(),
-            'event_type': event['type'], 'action': 'pushed',
-            'repo_name': event['repo']['name'].split('/')[-1],
-            'commit_count': len(payload.get('commits', [])),
-            'msg_len_avg': sum(len(c.get('message', '')) for c in payload.get('commits', [])) / len(payload.get('commits', [])) if payload.get('commits') else 0,
-            'force_push': 1 if payload.get('forced') else 0
-        })
-        touched_sensitive, dep_changed = 0, 0
-        for commit_info in payload.get('commits', [])[:5]:
-            files = get_commit_details(commit_info.get('url'), headers).get('files', [])
-            for f in files:
-                filename = f.get('filename', '').lower()
-                if any(p in filename for p in SENSITIVE_PATHS): touched_sensitive = 1
-                if any(d in filename for d in DEPENDENCY_FILES): dep_changed = 1
-        features.update({'touched_sensitive_paths': touched_sensitive, 'dep_change_cnt': dep_changed})
-        return features
-    except Exception as e:
-        logging.error(f"Feature extraction failed: {e}")
-        return None
-
-def get_anomaly_score(features: dict) -> float | None:
-    if not DATABRICKS_HOST or not DATABRICKS_TOKEN: return 0.5
-    url, headers = f"{DATABRICKS_HOST}{MODEL_ENDPOINT_PATH}", {'Authorization': f'Bearer {DATABRICKS_TOKEN}', 'Content-Type': 'application/json'}
-    data = json.dumps({"dataframe_records": [features]})
-    try:
-        response = requests.post(url, headers=headers, data=data, timeout=20)
-        response.raise_for_status()
-        predictions = response.json().get('predictions')
-        if predictions and isinstance(predictions, list) and predictions:
-            return predictions[0]
-        raise ValueError("Invalid model response format")
-    except Exception as e:
-        logging.error(f"Model invocation failed: {e}")
-        raise
-
-def sync_and_analyze_repo(repo_full_name: str, access_token: str):
-    headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=10"
-    try:
-        res = requests.get(events_url, headers=headers, timeout=15)
-        res.raise_for_status()
-        events = res.json()
-    except requests.exceptions.RequestException as e:
-        error_message = f"GitHub API Error (Status {e.response.status_code if e.response else 'N/A'}): Repository not found or private."
-        raise IOError(error_message)
-    
-    latest_push = next((e for e in events if e['type'] == 'PushEvent'), None)
-    if not latest_push:
-        event_doc = {'id': repo_full_name, 'repo_full_name': repo_full_name, 'has_recent_event': False, 'last_synced': datetime.utcnow().isoformat() + 'Z'}
-        events_container.upsert_item(body=event_doc)
-        return event_doc
-
-    features = extract_features_from_event(latest_push, access_token)
-    if features:
-        score = get_anomaly_score(features)
-        event_doc = {
-            'id': repo_full_name, 'repo_full_name': repo_full_name, 'has_recent_event': True,
-            'event_id': latest_push['id'], 'event_type': latest_push['type'],
-            'created_at': latest_push['created_at'], 'actor': latest_push.get('actor', {}).get('login'),
-            'commits': latest_push.get('payload', {}).get('commits', []), 'anomaly_score': score,
-            'features': features, 'last_synced': datetime.utcnow().isoformat() + 'Z'
+    function renderDependencies(repo) {
+        if (!repo || !repo.dependencies || repo.dependencies.length === 0) {
+            depsListEl.innerHTML = '<div class="empty-state">No dependencies found.</div>';
+            return;
         }
-        # [중요] leases 컨테이너에 맞는 파티션 키를 설정해야 합니다.
-        # leases의 파티션 키가 무엇인지 모르므로, 일단 id와 동일하게 가정합니다.
-        # 만약 leases의 파티션 키가 다르다면, 이 부분을 수정해야 합니다.
-        event_doc['partitionKey'] = repo_full_name
-        events_container.upsert_item(body=event_doc)
-        return event_doc
-    raise ValueError("Feature extraction failed.")
+        // [수정] disabled 클래스 로직을 완전히 제거합니다.
+        depsListEl.innerHTML = repo.dependencies.map(dep => {
+            const [repoFullName, version] = dep.split(' ');
+            return `<div class="dep-row" data-repo-full-name="${repoFullName}">
+                        <span class="dep-name" title="${dep}">${repoFullName}</span>
+                        <span class="chip">${version || 'N/A'}</span>
+                    </div>`;
+        }).join('');
+    }
 
-@app.route('/get_oss_activity/<path:repo_name>')
-def get_oss_activity(repo_name):
-    if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
-    try:
-        # [중요] leases 컨테이너의 파티션 키를 알아야 read_item을 효율적으로 사용할 수 있습니다.
-        # 일단은 파티션 키 없이 쿼리로 조회하도록 수정합니다. (성능 저하 가능성 있음)
-        query = f"SELECT * FROM c WHERE c.id = '{repo_name}'"
-        items = list(events_container.query_items(query, enable_cross_partition_query=True))
-        if items:
-            return jsonify(items[0])
-        else:
-             return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    depsListEl.addEventListener('click', e => {
+        const row = e.target.closest('.dep-row');
+        // [수정] disabled 클래스 검사를 제거하여 모든 행에서 클릭 이벤트가 발생하도록 합니다.
+        if (!row) return;
+        document.querySelectorAll('.dep-row').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
+        const repoFullName = row.dataset.repoFullName;
+        fetchAndRenderActivity(repoFullName);
+    });
 
-@app.route('/sync_my_repos')
-def sync_my_repos_route():
-    if 'user_id' not in session or 'access_token' not in session:
-        return redirect(url_for('index'))
-    sync_my_repos_to_db(session['user_id'], session['access_token'])
-    return redirect(url_for('dashboard'))
-
-@app.route('/')
-def index():
-    return redirect(url_for('dashboard')) if 'access_token' in session else render_template('index.html')
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('index'))
-
-@app.route('/login')
-def login():
-    scope = "repo read:user"
-    return redirect(f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}&scope={scope}")
-
-@app.route('/callback')
-def callback():
-    session_code = request.args.get('code')
-    token_params = {'client_id': GITHUB_CLIENT_ID, 'client_secret': GITHUB_CLIENT_SECRET, 'code': session_code}
-    headers = {'Accept': 'application/json'}
-    token_res = requests.post("https://github.com/login/oauth/access_token", params=token_params, headers=headers)
-    token_json = token_res.json()
-    access_token = token_json.get('access_token')
-    if not access_token: return "Error: Could not retrieve access token.", 400
-    session['access_token'] = access_token
-    user_headers = {'Authorization': f'token {access_token}'}
-    user_res = requests.get(f"{GITHUB_API_URL}/user", headers=user_headers)
-    user_info = user_res.json()
-    session['user_id'] = user_info.get('login')
-    sync_my_repos_to_db(user_info.get('login'), access_token)
-    return redirect(url_for('dashboard'))
-
-def sync_my_repos_to_db(user_id, access_token):
-    if not deps_container:
-        logging.error("Dependencies container is not initialized.")
-        return
-    headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github+json'}
-    repos_res = requests.get(f"{GITHUB_API_URL}/user/repos?type=owner&per_page=100", headers=headers)
-    repos = repos_res.json() if repos_res.ok else []
-    for repo in repos:
-        repo_full_name = repo.get('full_name')
-        if not repo_full_name: continue
-        sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
-        sbom_res = requests.get(sbom_url, headers=headers)
-        dependencies = set()
-        if sbom_res.status_code == 200:
-            for pkg in sbom_res.json().get('sbom', {}).get('packages', []):
-                pkg_name, repo_name = pkg.get('name', ''), repo.get('name', '')
-                if not pkg_name or repo_name.lower() in pkg_name.lower(): continue
-                version = pkg.get('versionInfo', '')
-                repo_path = next((ref.get('locator') for ref in pkg.get('externalRefs', []) if ref.get('referenceType') == 'vcs' and 'github.com' in ref.get('locator', '')), None)
-                if repo_path:
-                    repo_full_name_dep = '/'.join(repo_path.split('github.com/')[1].replace('.git', '').split('/')[:2])
-                    dependencies.add(f"{repo_full_name_dep} {version}".strip())
-                else:
-                    dependencies.add(f"{pkg_name} {version}".strip())
-        item = {
-            'id': f"{user_id}_{repo.get('name')}", 'userId': user_id,
-            'repositoryName': repo_full_name,
-            'lastUpdated': datetime.utcnow().isoformat() + 'Z',
-            'dependencies': sorted(list(dependencies))
+    async function fetchAndRenderActivity(repoFullName) {
+        activityDetailsEl.innerHTML = `<div class="loading-state"><div class="loading-spinner"></div>Fetching latest activity for ${repoFullName}...</div>`;
+        try {
+            const response = await fetch(`/get_oss_activity/${repoFullName}`);
+            const data = await response.json();
+            if (!response.ok || data.error) {
+                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+            }
+            renderActivityDetails(data);
+        } catch (error) {
+            activityDetailsEl.innerHTML = `<div class="error-state"><strong>Failed to fetch activity:</strong><br>${error.message}</div>`;
         }
-        deps_container.upsert_item(body=item)
+    }
 
-@app.route('/dashboard')
-def dashboard():
-    if 'user_id' not in session: return redirect(url_for('index'))
-    if not deps_container:
-        return "Error: Could not connect to the database.", 500
-    user_id = session['user_id']
-    query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
-    items = sorted(list(deps_container.query_items(query, enable_cross_partition_query=True)), key=lambda x: x.get('repositoryName', ''))
-    return render_template('dashboard.html', user_id=user_id, items=items)
+    function renderActivityDetails(data) {
+        if (!data.has_recent_event) {
+            activityDetailsEl.innerHTML = `<div class="empty-state">No recent push event found for this repository.</div>`;
+            return;
+        }
+        const score = data.anomaly_score;
+        let scoreColor = '#666';
+        if (score === null || score === undefined) scoreColor = '#666';
+        else if (score > 0.8) scoreColor = '#e53e3e';
+        else if (score > 0.5) scoreColor = '#dd6b20';
+        else scoreColor = '#38a169';
+        
+        const commitsHtml = (data.commits || []).map(c => `<li><strong>${c.author.name}:</strong> ${c.message.split('\\n')[0]}</li>`).join('');
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
+        activityDetailsEl.innerHTML = `
+            <div class="detail-content">
+                <div class="detail-header">
+                    <div class="detail-title">${data.repo_full_name}</div>
+                    <div class="detail-meta">Last synced: ${new Date(data.last_synced).toLocaleString()}</div>
+                </div>
+                <div class="detail-section">
+                    <h4>Anomaly Score</h4>
+                    <div class="detail-score" style="background-color: ${scoreColor}; color: white;">
+                        ${(score !== null && score !== undefined) ? score.toFixed(2) : 'N/A'}
+                    </div>
+                </div>
+                <div class="detail-section">
+                    <h4>Latest Push Event Details</h4>
+                    <ul class="detail-list">
+                        <li><strong>Actor:</strong> ${data.actor || 'N/A'}</li>
+                        <li><strong>Event Time (UTC):</strong> ${new Date(data.created_at).toLocaleString()}</li>
+                        <li><strong>Force Push:</strong> ${data.features.force_push === 1 ? 'Yes' : 'No'}</li>
+                        <li><strong>Sensitive Path Touched:</strong> ${data.features.touched_sensitive_paths === 1 ? 'Yes' : 'No'}</li>
+                        <li><strong>Dependency File Changed:</strong> ${data.features.dep_change_cnt === 1 ? 'Yes' : 'No'}</li>
+                    </ul>
+                </div>
+                <div class="detail-section">
+                    <h4>Commits in Push (${(data.commits || []).length})</h4>
+                    <ul class="detail-list">${commitsHtml || '<li>No commit info</li>'}</ul>
+                </div>
+            </div>`;
+    }
+
+    function clearActivityDetails() {
+        activityDetailsEl.innerHTML = '<div class="empty-state">Select a dependency to see its latest activity.</div>';
+    }
+
+    document.querySelectorAll('.handle').forEach(handle => {
+        handle.addEventListener('mousedown', e => {
+            const mainGrid = document.getElementById('mainGrid');
+            const startX = e.clientX;
+            const gridTemplate = getComputedStyle(mainGrid).gridTemplateColumns.split(' ').map(v => parseFloat(v));
+            const splitterIndex = parseInt(handle.dataset.splitterFor) * 2 - 1;
+            const onMouseMove = moveEvent => {
+                const dx = moveEvent.clientX - startX;
+                const newCols = [...gridTemplate];
+                newCols[splitterIndex - 1] += dx;
+                newCols[splitterIndex + 1] -= dx;
+                mainGrid.style.gridTemplateColumns = newCols.map(v => `${v}px`).join(' ');
+            };
+            const onMouseUp = () => {
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+            };
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+        });
+    });
+  </script>
+</body>
+</html>
