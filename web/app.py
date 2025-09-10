@@ -13,7 +13,6 @@ app.secret_key = os.urandom(24)
 GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
 GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
 
-# [수정] HOST 값에서 불필요한 부분을 제거하도록 처리
 raw_host = os.environ.get("DATABRICKS_HOST", "")
 DATABRICKS_HOST = raw_host.split('?')[0].strip('/') if raw_host else ""
 DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
@@ -42,7 +41,7 @@ DEPENDENCY_FILES = ["requirements.txt", "package.json", "pom.xml", "build.gradle
 
 def get_commit_details(commit_url: str, headers: dict) -> dict:
     try:
-        res = requests.get(commit_url, headers=headers)
+        res = requests.get(commit_url, headers=headers, timeout=10)
         if res.status_code == 200:
             return res.json()
     except requests.RequestException:
@@ -67,7 +66,7 @@ def extract_features_from_event(event: dict, access_token: str) -> dict | None:
         features['msg_len_avg'] = sum(len(c.get('message', '')) for c in commits) / len(commits) if commits else 0
         touched_sensitive = 0
         dep_changed = 0
-        for commit_info in commits:
+        for commit_info in commits[:5]: # 너무 많은 커밋 분석을 방지하기 위해 최대 5개로 제한
             commit_details = get_commit_details(commit_info.get('url'), headers)
             files = commit_details.get('files', [])
             for f in files:
@@ -86,7 +85,7 @@ def extract_features_from_event(event: dict, access_token: str) -> dict | None:
 
 def get_anomaly_score(features: dict) -> float | None:
     if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
-        logging.warning("Databricks 호스트 또는 토큰이 설정되지 않았습니다. 데모 점수(0.5)를 반환합니다.")
+        logging.warning("Databricks HOST or TOKEN not set. Returning demo score 0.5.")
         return 0.5
     url = f"{DATABRICKS_HOST}{MODEL_ENDPOINT_PATH}"
     headers = {'Authorization': f'Bearer {DATABRICKS_TOKEN}', 'Content-Type': 'application/json'}
@@ -97,36 +96,42 @@ def get_anomaly_score(features: dict) -> float | None:
         response.raise_for_status()
         predictions = response.json().get('predictions')
         if predictions and isinstance(predictions, list) and len(predictions) > 0:
-            logging.info(f"모델로부터 받은 점수: {predictions[0]}")
+            logging.info(f"Score from model: {predictions[0]}")
             return predictions[0]
         else:
-            logging.error(f"모델 응답에서 예상치 못한 형식: {response.json()}")
-            return None
+            logging.error(f"Unexpected format from model: {response.json()}")
+            raise ValueError("Invalid model response format")
     except requests.exceptions.RequestException as e:
-        logging.error(f"모델 호출 실패: {e}")
-        return None
-    except json.JSONDecodeError as e:
-        logging.error(f"모델 응답 JSON 파싱 실패: {e} - 응답 내용: {response.text}")
-        return None
+        logging.error(f"Model invocation failed: {e}")
+        raise
+    except (json.JSONDecodeError, ValueError) as e:
+        logging.error(f"Model response parsing failed: {e} - Response: {response.text}")
+        raise
 
 def sync_and_analyze_repo(repo_full_name: str, access_token: str):
     headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    logging.info(f"{repo_full_name}의 이벤트 가져오는 중...")
+    logging.info(f"Fetching events for {repo_full_name}...")
     events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=10"
-    res = requests.get(events_url, headers=headers)
-    if res.status_code != 200:
-        logging.error(f"{repo_full_name}의 이벤트 가져오기 실패: {res.text}")
-        # 404 에러 등을 DB에 기록하여 클라이언트에 전달
-        event_doc = {'id': repo_full_name, 'repo_full_name': repo_full_name, 'has_recent_event': False, 'error': 'Repository not found or private.', 'last_synced': datetime.utcnow().isoformat() + 'Z'}
-        events_container.upsert_item(body=event_doc)
-        return event_doc
-        
-    latest_push_event = next((event for event in res.json() if event['type'] == 'PushEvent'), None)
+    
+    try:
+        res = requests.get(events_url, headers=headers, timeout=15)
+        res.raise_for_status() # 4xx, 5xx 에러 시 예외 발생
+        events = res.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to fetch events for {repo_full_name}: {e}")
+        error_message = f"GitHub API Error: {e}"
+        if e.response is not None:
+             error_message = f"GitHub API Error (Status {e.response.status_code}): Repository not found or private."
+        raise IOError(error_message)
+
+    latest_push_event = next((event for event in events if event['type'] == 'PushEvent'), None)
+    
     if not latest_push_event:
-        logging.info(f"{repo_full_name}에 최근 Push 이벤트 없음")
+        logging.info(f"No recent push event for {repo_full_name}")
         event_doc = {'id': repo_full_name, 'repo_full_name': repo_full_name, 'has_recent_event': False, 'last_synced': datetime.utcnow().isoformat() + 'Z'}
         events_container.upsert_item(body=event_doc)
         return event_doc
+
     features = extract_features_from_event(latest_push_event, access_token)
     if features:
         score = get_anomaly_score(features)
@@ -138,29 +143,25 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
             'features': features, 'last_synced': datetime.utcnow().isoformat() + 'Z'
         }
         events_container.upsert_item(body=event_doc)
-        logging.info(f"{repo_full_name} 분석 완료. 점수: {score}")
+        logging.info(f"Analysis complete for {repo_full_name}. Score: {score}")
         return event_doc
-    return None
+    
+    raise ValueError("Feature extraction failed for the latest event.")
 
 @app.route('/get_oss_activity/<path:repo_name>')
 def get_oss_activity(repo_name):
     if 'access_token' not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    
     access_token = session.get('access_token')
     try:
-        item = events_container.read_item(item=repo_name, partition_key=repo_name)
-        last_synced = datetime.fromisoformat(item['last_synced'].replace('Z', '+00:00'))
-        if datetime.now(timezone.utc) - last_synced > timedelta(hours=1):
-             raise Exception("Stale data, refresh")
-        return jsonify(item)
-    except Exception:
         result = sync_and_analyze_repo(repo_name, access_token)
-        if result:
-            return jsonify(result)
-        else:
-            error_payload = {"error": f"Failed to fetch or analyze activity for {repo_name}."}
-            return jsonify(error_payload), 500
+        return jsonify(result)
+    except Exception as e:
+        # 클라이언트에 보여줄 상세한 에러 메시지 반환
+        return jsonify({"error": str(e)}), 500
 
+# --- 로그인 및 SBOM 동기화 로직 (이전과 동일) ---
 @app.route('/')
 def index():
     if 'access_token' in session:
@@ -205,20 +206,25 @@ def sync_my_repos_to_db(user_id, access_token):
         if not repo_full_name: continue
         sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
         sbom_res = requests.get(sbom_url, headers=headers)
-        dependencies = []
+        dependencies = set()
         if sbom_res.status_code == 200:
             sbom = sbom_res.json().get('sbom', {})
             for pkg in sbom.get('packages', []):
+                pkg_name = pkg.get('name', '')
+                if not pkg_name or repo_name.lower() in pkg_name.lower():
+                    continue
                 version = pkg.get('versionInfo', '')
                 repo_path = next((ext_ref.get('locator') for ext_ref in pkg.get('externalRefs', []) if ext_ref.get('referenceType') == 'vcs' and 'github.com' in ext_ref.get('locator', '')), None)
                 if repo_path:
                     repo_full_name_dep = '/'.join(repo_path.split('github.com/')[1].replace('.git', '').split('/')[:2])
-                    dependencies.append(f"{repo_full_name_dep} {version}".strip())
+                    dependencies.add(f"{repo_full_name_dep} {version}".strip())
+                else:
+                    dependencies.add(f"{pkg_name} {version}".strip())
         item = {
             'id': f"{user_id}_{repo_name}", 'userId': user_id,
             'repositoryName': repo_full_name,
             'lastUpdated': datetime.utcnow().isoformat() + 'Z',
-            'dependencies': sorted(list(set(dependencies)))
+            'dependencies': sorted(list(dependencies))
         }
         deps_container.upsert_item(body=item)
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Project Guardian – OSS Activity Explorer</title>
   <style>
-    /* 기본 스타일은 유지, 레이아웃만 3단으로 변경 */
+    /* 기존 스타일과 동일 */
     body{
       background-color:#3A6EA5;
       font-family:Gulim, Dotum, "Tahoma", Geneva, sans-serif;
@@ -12,17 +12,13 @@
     }
     .desktop{height:100vh;width:100vw;display:grid;grid-template-rows:1fr 30px;}
     .workspace{position:relative;overflow:hidden;padding:10px;}
-
-    /* [수정] 3단 그리드 레이아웃 정의 (레포 | 의존성 | 상세) */
     .grid{
       height:100%;
       display:grid;
-      /* 초기 비율: 35% | 35% | 30% */
       grid-template-columns: 2fr 10px 2fr 10px 1.5fr;
       gap:10px;
       align-items:stretch;
     }
-
     .window{
       border:2px solid #0058E1;border-radius:8px 8px 0 0;background:#ECE9D8;
       box-shadow:5px 5px 15px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;
@@ -32,34 +28,19 @@
       padding:6px 8px;display:flex;align-items:center;gap:6px;user-select:none;
       flex-shrink: 0;
     }
-    .title-icon{width:16px;height:16px;flex:0 0 16px;}
-    .title-text{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .title-buttons span{
-      display:inline-block;width:18px;height:18px;margin-left:3px;background:#D64F34;color:#fff;
-      text-align:center;line-height:18px;border:1px solid #fff;font-family:"Courier New",Courier,monospace;
-    }
-    
     .toolbar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:#f5f2e8;border-bottom:1px solid #cfc9b8; flex-shrink: 0;}
-    .toolbar input[type="text"]{width:260px;padding:5px 6px;border:1px solid #9f9a87;background:#fff;font-family:inherit;}
-    .toolbar button{border:1px solid #000;background:#ECE9D8;padding:5px 10px;cursor:pointer;}
-
     .content-area { padding:10px;flex-grow:1;overflow:auto;color:#000; }
-    
     .repo-row, .dep-row {
       padding:10px;border:1px solid #ccc;background:#fff;border-radius:4px;
       display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;cursor:pointer;
     }
     .repo-row.active, .dep-row.active { outline:2px solid #3A85E1;background:#f5f9ff; }
-    .repo-title{display:flex;align-items:center;gap:8px;min-width:0;}
     .repo-name, .dep-name {font-weight:bold;color:#0058E1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;}
     .chip{font-size:11px;background:#e7eefc;border:1px solid #bfd0f5;padding:1px 6px;border-radius:10px;color:#245edc;white-space:nowrap;}
-    
     .handle{
       background:#D6D3C6; border:1px solid #9f9a87;border-radius:8px;
       user-select:none;cursor:col-resize; display:flex; align-items:center; justify-content:center;
     }
-
-    /* [신규] 3번째 창 (상세 정보) 스타일 */
     .detail-content { font-family: 'Malgun Gothic', sans-serif; }
     .detail-header { border-bottom: 1px solid #ccc; padding-bottom: 8px; margin-bottom: 8px; }
     .detail-title { font-size: 14px; font-weight: bold; }
@@ -69,14 +50,14 @@
     .detail-section h4 { margin: 0 0 5px 0; font-size: 12px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
     .detail-list { list-style: none; padding-left: 0; margin: 0; font-size: 11px; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ccc; }
     .detail-list li { padding: 4px 6px; border-bottom: 1px solid #eee; }
-    .detail-list li:last-child { border-bottom: none; }
+    .empty-state, .loading-state, .error-state { padding: 20px; text-align: center; color: #666; }
+    .error-state { color: #D64F34; font-weight: bold; text-align: left; white-space: pre-wrap; word-break: break-all; }
     .loading-spinner {
-        border: 4px solid #f3f3f3; border-top: 4px solid #3498db;
+        border: 4px solid #f0f0f0; border-top: 4px solid #3A85E1;
         border-radius: 50%; width: 30px; height: 30px;
-        animation: spin 1s linear infinite; margin: 20px auto;
+        animation: spin 1s linear infinite; margin: 0 auto 10px auto;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
     .taskbar{background:linear-gradient(to bottom,#245EDC,#3A85E1);border-top:1px solid #66A3FF;display:flex;align-items:center;gap:8px;padding:0 6px;}
     .start-button{background:linear-gradient(to bottom,#72BE4A,#55A82B);color:#fff;font-weight:bold;font-size:16px;border:2px outset #55A82B;border-radius:10px 10px 0 0;padding:2px 20px;margin-left:5px;font-style:italic;cursor:pointer;user-select:none;}
     a{color:#0058E1;text-decoration:none;} a:hover{text-decoration:underline;}
@@ -86,10 +67,9 @@
   <div class="desktop">
     <div class="workspace">
       <div class="grid" id="mainGrid">
+        <!-- 1. 내 레포지토리 목록 -->
         <div class="window" id="myReposPane">
-          <div class="title-bar">
-            <div class="title-text">{{ user_id }}'s Repositories</div>
-          </div>
+          <div class="title-bar"><div class="title-text">{{ user_id }}'s Repositories</div></div>
           <div class="toolbar">
             <input id="filterInput" type="text" placeholder="레포/의존성 검색" />
             <a href="{{ url_for('logout') }}"><button>Logout</button></a>
@@ -97,32 +77,24 @@
           <div class="content-area" id="repoList">
             {% for item in items %}
             <div class="repo-row" data-repo-id="{{ item.id }}">
-              <div class="repo-title">
-                <span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span>
-              </div>
+              <div class="repo-title"><span class="repo-name" title="{{ item.repositoryName }}">{{ item.repositoryName }}</span></div>
               <span class="chip">{{ item.dependencies | length }} dependencies</span>
             </div>
             {% endfor %}
           </div>
         </div>
-        
         <div class="handle" data-splitter-for="1"></div>
-
+        <!-- 2. 선택된 레포의 의존성 목록 -->
         <div class="window" id="dependenciesPane">
-          <div class="title-bar">
-            <div class="title-text">Dependencies</div>
-          </div>
+          <div class="title-bar"><div class="title-text">Dependencies</div></div>
           <div class="content-area" id="depsList">
              <div class="empty-state">Select a repository to see its dependencies.</div>
           </div>
         </div>
-
         <div class="handle" data-splitter-for="2"></div>
-
+        <!-- 3. 선택된 의존성의 활동 정보 -->
         <div class="window" id="activityPane">
-          <div class="title-bar">
-            <div class="title-text">OSS Activity Details</div>
-          </div>
+          <div class="title-bar"><div class="title-text">OSS Activity Details</div></div>
           <div class="content-area" id="activityDetails">
             <div class="empty-state">Select a dependency to see its latest activity.</div>
           </div>
@@ -134,85 +106,74 @@
 
   <script>
     const REPO_DATA = {{ items|tojson }};
-    
     const repoListEl = document.getElementById('repoList');
     const depsListEl = document.getElementById('depsList');
     const activityDetailsEl = document.getElementById('activityDetails');
 
-    // 1. 내 레포지토리 클릭 이벤트
     repoListEl.addEventListener('click', e => {
         const row = e.target.closest('.repo-row');
         if (!row) return;
-
         document.querySelectorAll('.repo-row').forEach(r => r.classList.remove('active'));
         row.classList.add('active');
-        
         const repoId = row.dataset.repoId;
         const repo = REPO_DATA.find(r => r.id === repoId);
-        
         renderDependencies(repo);
         clearActivityDetails();
     });
 
-    // 2. 의존성 목록 렌더링
     function renderDependencies(repo) {
-        if (!repo || !repo.dependencies) {
+        if (!repo || !repo.dependencies || repo.dependencies.length === 0) {
             depsListEl.innerHTML = '<div class="empty-state">No dependencies found.</div>';
             return;
         }
-
         depsListEl.innerHTML = repo.dependencies.map(dep => {
             const [repoFullName, version] = dep.split(' ');
-            return `<div class="dep-row" data-repo-full-name="${repoFullName}">
+            // 패키지 이름만으로는 API 호출이 불가하므로 owner/repo 형식인지 확인
+            const isRepo = repoFullName.includes('/');
+            return `<div class="dep-row ${isRepo ? '' : 'disabled'}" ${isRepo ? `data-repo-full-name="${repoFullName}"` : 'title="Cannot fetch activity for this package."'}>
                         <span class="dep-name" title="${dep}">${repoFullName}</span>
                         <span class="chip">${version || 'N/A'}</span>
                     </div>`;
         }).join('');
     }
 
-    // 3. 의존성 클릭 이벤트 -> API 호출
     depsListEl.addEventListener('click', e => {
         const row = e.target.closest('.dep-row');
-        if (!row) return;
-
+        if (!row || row.classList.contains('disabled')) return;
         document.querySelectorAll('.dep-row').forEach(r => r.classList.remove('active'));
         row.classList.add('active');
-
         const repoFullName = row.dataset.repoFullName;
         fetchAndRenderActivity(repoFullName);
     });
 
-    // 4. API 호출 및 상세 정보 렌더링
     async function fetchAndRenderActivity(repoFullName) {
-        activityDetailsEl.innerHTML = '<div class="loading-spinner"></div>';
+        // [수정] 로딩 상태 UI 표시
+        activityDetailsEl.innerHTML = `<div class="loading-state"><div class="loading-spinner"></div>Fetching latest activity for ${repoFullName}...</div>`;
         try {
             const response = await fetch(`/get_oss_activity/${repoFullName}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
             const data = await response.json();
+            // [수정] 서버에서 보낸 에러 메시지를 먼저 확인
+            if (!response.ok || data.error) {
+                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+            }
             renderActivityDetails(data);
         } catch (error) {
-            activityDetailsEl.innerHTML = `<div class="empty-state" style="color: red;">Error fetching activity:<br>${error.message}</div>`;
+            // [수정] 상세한 에러 메시지 UI 표시
+            activityDetailsEl.innerHTML = `<div class="error-state"><strong>Failed to fetch activity:</strong><br>${error.message}</div>`;
         }
     }
 
-    // 5. 상세 정보 UI 렌더링
     function renderActivityDetails(data) {
-        if (data.error) {
-             activityDetailsEl.innerHTML = `<div class="empty-state" style="color: red;">${data.error}</div>`;
-             return;
-        }
         if (!data.has_recent_event) {
             activityDetailsEl.innerHTML = `<div class="empty-state">No recent push event found for this repository.</div>`;
             return;
         }
-
         const score = data.anomaly_score;
         let scoreColor = '#666';
-        if (score > 0.8) scoreColor = '#e53e3e'; // High risk
-        else if (score > 0.5) scoreColor = '#dd6b20'; // Medium risk
-        else if (score !== null) scoreColor = '#38a169'; // Low risk
+        if (score === null || score === undefined) scoreColor = '#666';
+        else if (score > 0.8) scoreColor = '#e53e3e';
+        else if (score > 0.5) scoreColor = '#dd6b20';
+        else scoreColor = '#38a169';
         
         const commitsHtml = (data.commits || []).map(c => `<li><strong>${c.author.name}:</strong> ${c.message.split('\\n')[0]}</li>`).join('');
 
@@ -225,22 +186,22 @@
                 <div class="detail-section">
                     <h4>Anomaly Score</h4>
                     <div class="detail-score" style="background-color: ${scoreColor}; color: white;">
-                        ${score !== null ? score.toFixed(2) : 'N/A'}
+                        ${(score !== null && score !== undefined) ? score.toFixed(2) : 'N/A'}
                     </div>
                 </div>
                 <div class="detail-section">
                     <h4>Latest Push Event Details</h4>
                     <ul class="detail-list">
                         <li><strong>Actor:</strong> ${data.actor || 'N/A'}</li>
-                        <li><strong>Event Time (UTC):</strong> ${data.created_at}</li>
+                        <li><strong>Event Time (UTC):</strong> ${new Date(data.created_at).toLocaleString()}</li>
                         <li><strong>Force Push:</strong> ${data.features.force_push === 1 ? 'Yes' : 'No'}</li>
                         <li><strong>Sensitive Path Touched:</strong> ${data.features.touched_sensitive_paths === 1 ? 'Yes' : 'No'}</li>
                         <li><strong>Dependency File Changed:</strong> ${data.features.dep_change_cnt === 1 ? 'Yes' : 'No'}</li>
                     </ul>
                 </div>
                 <div class="detail-section">
-                    <h4>Commits in Push (${data.commits.length})</h4>
-                    <ul class="detail-list">${commitsHtml}</ul>
+                    <h4>Commits in Push (${(data.commits || []).length})</h4>
+                    <ul class="detail-list">${commitsHtml || '<li>No commit info</li>'}</ul>
                 </div>
             </div>`;
     }
@@ -249,14 +210,13 @@
         activityDetailsEl.innerHTML = '<div class="empty-state">Select a dependency to see its latest activity.</div>';
     }
 
-    // 스플리터 로직 (간소화 버전)
+    // 스플리터 로직 (기존과 동일)
     document.querySelectorAll('.handle').forEach(handle => {
         handle.addEventListener('mousedown', e => {
             const mainGrid = document.getElementById('mainGrid');
             const startX = e.clientX;
             const gridTemplate = getComputedStyle(mainGrid).gridTemplateColumns.split(' ').map(v => parseFloat(v));
             const splitterIndex = parseInt(handle.dataset.splitterFor) * 2 - 1;
-
             const onMouseMove = moveEvent => {
                 const dx = moveEvent.clientX - startX;
                 const newCols = [...gridTemplate];
@@ -272,7 +232,6 @@
             window.addEventListener('mouseup', onMouseUp);
         });
     });
-
   </script>
 </body>
 </html>
