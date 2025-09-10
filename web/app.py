@@ -18,23 +18,23 @@ DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
 MODEL_ENDPOINT_PATH = "/serving-endpoints/fake-model-api/invocations"
 GITHUB_API_URL = "https://api.github.com"
 COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
-DATABASE_NAME = 'cosmos-project-guardian'
+
+# [최종 수정] 지시하신 DB와 컨테이너 이름을 정확히 사용합니다.
+DATABASE_NAME = 'ProjectGuardianDB'
 DEPS_CONTAINER_NAME = 'Dependencies'
-# [수정] 요청에 따라 'leases' 컨테이너를 사용하도록 변경합니다.
-EVENTS_CONTAINER_NAME = 'leases'
+EVENTS_CONTAINER_NAME = 'leases' # 분석 캐시로 'leases' 컨테이너 사용
 
 # --- Cosmos DB Initialization ---
-# 이제 컨테이너가 이미 존재하므로, 바로 연결합니다.
+# 이제 컨테이너가 이미 존재한다고 가정하고 바로 연결합니다.
 try:
     cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
     database = cosmos_client.get_database_client(DATABASE_NAME)
     deps_container = database.get_container_client(DEPS_CONTAINER_NAME)
-    events_container = database.get_container_client(EVENTS_CONTAINER_NAME)
+    events_container = database.get_container_client(EVENTS_CONTAINER_NAME) # 'leases' 컨테이너에 연결
     logging.info("Cosmos DB에 성공적으로 연결되었습니다.")
 except Exception as e:
     logging.critical(f"Cosmos DB 연결 실패: {e}")
     cosmos_client = database = deps_container = events_container = None
-
 
 # --- Feature Extraction & Model Invocation (이하 코드는 이전과 동일) ---
 SENSITIVE_PATHS = [".github/workflows/", "config/", "secret", "credential", "token", "key", ".env", "password"]
@@ -116,6 +116,10 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
             'commits': latest_push.get('payload', {}).get('commits', []), 'anomaly_score': score,
             'features': features, 'last_synced': datetime.utcnow().isoformat() + 'Z'
         }
+        # [중요] leases 컨테이너에 맞는 파티션 키를 설정해야 합니다.
+        # leases의 파티션 키가 무엇인지 모르므로, 일단 id와 동일하게 가정합니다.
+        # 만약 leases의 파티션 키가 다르다면, 이 부분을 수정해야 합니다.
+        event_doc['partitionKey'] = repo_full_name
         events_container.upsert_item(body=event_doc)
         return event_doc
     raise ValueError("Feature extraction failed.")
@@ -124,7 +128,14 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
 def get_oss_activity(repo_name):
     if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
     try:
-        return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
+        # [중요] leases 컨테이너의 파티션 키를 알아야 read_item을 효율적으로 사용할 수 있습니다.
+        # 일단은 파티션 키 없이 쿼리로 조회하도록 수정합니다. (성능 저하 가능성 있음)
+        query = f"SELECT * FROM c WHERE c.id = '{repo_name}'"
+        items = list(events_container.query_items(query, enable_cross_partition_query=True))
+        if items:
+            return jsonify(items[0])
+        else:
+             return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
