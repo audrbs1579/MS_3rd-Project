@@ -27,7 +27,10 @@
     .detail-section h4 { margin: 0 0 5px 0; font-size: 12px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
     .detail-list { list-style: none; padding-left: 0; margin: 0; font-size: 11px; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ccc; }
     .detail-list li { padding: 4px 6px; border-bottom: 1px solid #eee; }
-    .empty-state, .loading-state, .error-state { padding: 20px; text-align: center; color: #666; }
+    /* [수정] info-state 스타일 추가 */
+    .empty-state, .loading-state, .error-state, .info-state { padding: 20px; text-align: center; color: #666; }
+    .info-state { text-align: left; background: #f0f0f0; border-radius: 4px; }
+    .info-state strong { color: #333; }
     .error-state { color: #D64F34; font-weight: bold; text-align: left; white-space: pre-wrap; word-break: break-all; }
     .loading-spinner {border: 4px solid #f0f0f0; border-top: 4px solid #3A85E1;border-radius: 50%; width: 30px; height: 30px;animation: spin 1s linear infinite; margin: 0 auto 10px auto;}
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -134,8 +137,18 @@
             }
 
             const data = await response.json();
-            if (!response.ok || data.error) {
-                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+            
+            // [수정] 응답이 'ok'가 아닐 때, 특정 오류 타입을 확인하여 별도 처리
+            if (!response.ok) {
+                if (data.error_type === 'NOT_A_GITHUB_REPO') {
+                    activityDetailsEl.innerHTML = `<div class="info-state">
+                        <strong>분석 불가: GitHub 저장소가 아닙니다.</strong><br>
+                        <p style="margin-top: 8px;">${data.message}</p>
+                    </div>`;
+                } else {
+                    throw new Error(data.message || data.error || `HTTP error! status: ${response.status}`);
+                }
+                return;
             }
             renderActivityDetails(data);
         } catch (error) {
@@ -146,7 +159,6 @@
     function renderActivityDetails(data) {
         const score = data.anomaly_score;
         let scoreColor = '#666';
-        // [수정] score 타입이 숫자인지 먼저 확인하도록 조건 강화
         if (typeof score === 'number') {
             if (score > 0.8) scoreColor = '#e53e3e';
             else if (score > 0.5) scoreColor = '#dd6b20';
@@ -155,7 +167,6 @@
         
         const commitsHtml = (data.commits || []).map(c => `<li><strong>${c.author.name}:</strong> ${c.message.split('\\n')[0]}</li>`).join('');
 
-        // [수정] 백엔드에서 'NoPushEvent' 타입을 보냈을 때를 위한 UI 처리 추가
         const detailsHtml = data.event_type === 'NoPushEvent' 
         ? `
             <div class="detail-section">

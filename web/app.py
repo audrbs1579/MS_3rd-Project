@@ -81,17 +81,15 @@ def get_anomaly_score(features: dict) -> float | None:
         response.raise_for_status()
         predictions = response.json().get('predictions')
         if predictions and isinstance(predictions, list) and predictions:
-            # [수정] 모델이 반환한 값이 숫자인지 확인하여 안정성 강화
             prediction = predictions[0]
             if isinstance(prediction, (int, float)):
                 return float(prediction)
             else:
                 logging.warning(f"Model returned a non-numeric prediction: {prediction}")
-                return None # 숫자가 아니면 None 반환
+                return None
         raise ValueError("Invalid model response format")
     except Exception as e:
         logging.error(f"Model invocation failed: {e}")
-        # 실패 시 예외를 발생시키는 대신 None을 반환하여 앱 중단 방지
         return None
 
 def sync_and_analyze_repo(repo_full_name: str, access_token: str):
@@ -109,15 +107,14 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
     
     latest_push = next((e for e in events if e['type'] == 'PushEvent'), None)
     
-    # [수정] Push 이벤트가 없을 경우, 에러 대신 기본 점수를 부여하여 항상 결과를 표시
     if not latest_push:
         logging.info(f"[{repo_full_name}] No recent PushEvent found. Assigning a low default anomaly score.")
         event_doc = {
             'id': safe_id, 'repo_full_name': repo_full_name, 'has_recent_event': True,
-            'event_id': 'N/A', 'event_type': 'NoPushEvent', # 이벤트 없음을 명시하는 타입
+            'event_id': 'N/A', 'event_type': 'NoPushEvent',
             'created_at': datetime.utcnow().isoformat() + 'Z', 'actor': 'System',
             'commits': [{'author': {'name': 'N/A'}, 'message': 'No recent push activity detected.'}],
-            'anomaly_score': 0.1, # 기본적으로 낮은 위험 점수 부여
+            'anomaly_score': 0.1,
             'features': {}, 'last_synced': datetime.utcnow().isoformat() + 'Z'
         }
         events_container.upsert_item(body=event_doc)
@@ -136,13 +133,22 @@ def sync_and_analyze_repo(repo_full_name: str, access_token: str):
         events_container.upsert_item(body=event_doc)
         return event_doc
     
-    # 특징 추출 실패 시에도 앱이 중단되지 않도록 예외 대신 값을 반환
     raise ValueError("Feature extraction failed, but proceeding.")
 
 
 @app.route('/get_oss_activity/<path:repo_name>')
 def get_oss_activity(repo_name):
     if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
+    
+    # [수정] repo_name이 'owner/repo' 형식이 맞는지 검증
+    if '/' not in repo_name:
+        logging.warning(f"Invalid repo_name format: {repo_name}. Not a GitHub repository.")
+        # 프론트엔드에서 구별할 수 있는 명확한 오류 메시지 반환
+        return jsonify({
+            "error_type": "NOT_A_GITHUB_REPO",
+            "message": f"'{repo_name}'은(는) 패키지 이름이며, 직접 연결된 GitHub 저장소가 아닙니다. 개발자 활동을 분석할 수 없습니다."
+        }), 400 # 400 Bad Request가 더 적합
+
     safe_id = repo_name.replace('/', '_').replace('.', '_')
     try:
         query = f"SELECT * FROM c WHERE c.id = '{safe_id}'"
@@ -159,7 +165,6 @@ def get_oss_activity(repo_name):
         return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except Exception as e:
         logging.error(f"Error in get_oss_activity for {repo_name}: {e}")
-        # 실패 시에도 분석을 시도하도록 로직 변경
         try:
             return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
         except Exception as sync_e:
