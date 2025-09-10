@@ -5,50 +5,35 @@ import requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 from azure.cosmos import CosmosClient
-from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24)
 
-# --- GitHub & Databricks Configuration ---
+# --- Configuration ---
 GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
 GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
-
 raw_host = os.environ.get("DATABRICKS_HOST", "")
 DATABRICKS_HOST = raw_host.split('?')[0].strip('/') if raw_host else ""
 DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
-
 MODEL_ENDPOINT_PATH = "/serving-endpoints/fake-model-api/invocations"
 GITHUB_API_URL = "https://api.github.com"
-
-# --- Cosmos DB Configuration [수정됨] ---
 COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
-# [수정] 알려주신 실제 데이터베이스 이름으로 변경
 DATABASE_NAME = 'cosmos-project-guardian'
-# [수정] 컨테이너 이름 명확화
 DEPS_CONTAINER_NAME = 'Dependencies'
-EVENTS_CONTAINER_NAME = 'OssActivity' # 새로운 컨테이너 이름
+# [수정] 요청에 따라 'leases' 컨테이너를 사용하도록 변경합니다.
+EVENTS_CONTAINER_NAME = 'leases'
 
-# [수정] 데이터베이스와 컨테이너가 없으면 자동으로 생성하도록 로직 강화
+# --- Cosmos DB Initialization ---
+# 이제 컨테이너가 이미 존재하므로, 바로 연결합니다.
 try:
     cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
-    database = cosmos_client.create_database_if_not_exists(id=DATABASE_NAME)
-    deps_container = database.create_container_if_not_exists(
-        id=DEPS_CONTAINER_NAME, 
-        partition_key={'paths': ['/userId']}
-    )
-    events_container = database.create_container_if_not_exists(
-        id=EVENTS_CONTAINER_NAME, 
-        partition_key={'paths': ['/repo_full_name']}
-    )
+    database = cosmos_client.get_database_client(DATABASE_NAME)
+    deps_container = database.get_container_client(DEPS_CONTAINER_NAME)
+    events_container = database.get_container_client(EVENTS_CONTAINER_NAME)
+    logging.info("Cosmos DB에 성공적으로 연결되었습니다.")
 except Exception as e:
-    logging.critical(f"Cosmos DB 초기화 실패: {e}")
-    # 앱 실행을 중단하거나 적절한 오류 처리가 필요할 수 있습니다.
-    # 여기서는 로깅만 하고 진행하지만, 실제 운영 환경에서는 더 강력한 처리가 필요합니다.
-    cosmos_client = None
-    database = None
-    deps_container = None
-    events_container = None
+    logging.critical(f"Cosmos DB 연결 실패: {e}")
+    cosmos_client = database = deps_container = events_container = None
 
 
 # --- Feature Extraction & Model Invocation (이하 코드는 이전과 동일) ---
@@ -58,124 +43,101 @@ DEPENDENCY_FILES = ["requirements.txt", "package.json", "pom.xml", "build.gradle
 def get_commit_details(commit_url: str, headers: dict) -> dict:
     try:
         res = requests.get(commit_url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            return res.json()
+        return res.json() if res.status_code == 200 else {}
     except requests.RequestException:
-        pass
-    return {}
+        return {}
 
 def extract_features_from_event(event: dict, access_token: str) -> dict | None:
-    if event.get('type') != 'PushEvent':
-        return None
+    if event.get('type') != 'PushEvent': return None
     payload = event.get('payload', {})
-    features = {}
-    headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
+    features, headers = {}, {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
     try:
-        dt_utc = datetime.fromisoformat(event.get('created_at').replace('Z', '+00:00'))
-        features['hour_of_day'] = dt_utc.hour
-        features['dow'] = dt_utc.weekday()
-        features['event_type'] = event.get('type')
-        features['action'] = payload.get('action', 'pushed')
-        features['repo_name'] = event.get('repo', {}).get('name').split('/')[-1]
-        commits = payload.get('commits', [])
-        features['commit_count'] = len(commits)
-        features['msg_len_avg'] = sum(len(c.get('message', '')) for c in commits) / len(commits) if commits else 0
-        touched_sensitive = 0
-        dep_changed = 0
-        for commit_info in commits[:5]:
-            commit_details = get_commit_details(commit_info.get('url'), headers)
-            files = commit_details.get('files', [])
+        dt_utc = datetime.fromisoformat(event['created_at'].replace('Z', '+00:00'))
+        features.update({
+            'hour_of_day': dt_utc.hour, 'dow': dt_utc.weekday(),
+            'event_type': event['type'], 'action': 'pushed',
+            'repo_name': event['repo']['name'].split('/')[-1],
+            'commit_count': len(payload.get('commits', [])),
+            'msg_len_avg': sum(len(c.get('message', '')) for c in payload.get('commits', [])) / len(payload.get('commits', [])) if payload.get('commits') else 0,
+            'force_push': 1 if payload.get('forced') else 0
+        })
+        touched_sensitive, dep_changed = 0, 0
+        for commit_info in payload.get('commits', [])[:5]:
+            files = get_commit_details(commit_info.get('url'), headers).get('files', [])
             for f in files:
                 filename = f.get('filename', '').lower()
-                if any(p in filename for p in SENSITIVE_PATHS):
-                    touched_sensitive = 1
-                if any(d in filename for d in DEPENDENCY_FILES):
-                    dep_changed = 1
-        features['touched_sensitive_paths'] = touched_sensitive
-        features['dep_change_cnt'] = dep_changed
-        features['force_push'] = 1 if payload.get('forced', False) else 0
+                if any(p in filename for p in SENSITIVE_PATHS): touched_sensitive = 1
+                if any(d in filename for d in DEPENDENCY_FILES): dep_changed = 1
+        features.update({'touched_sensitive_paths': touched_sensitive, 'dep_change_cnt': dep_changed})
         return features
     except Exception as e:
         logging.error(f"Feature extraction failed: {e}")
         return None
 
 def get_anomaly_score(features: dict) -> float | None:
-    if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
-        logging.warning("Databricks HOST or TOKEN not set. Returning demo score 0.5.")
-        return 0.5
-    url = f"{DATABRICKS_HOST}{MODEL_ENDPOINT_PATH}"
-    headers = {'Authorization': f'Bearer {DATABRICKS_TOKEN}', 'Content-Type': 'application/json'}
-    data_for_model = {"dataframe_records": [features]}
-    data = json.dumps(data_for_model)
+    if not DATABRICKS_HOST or not DATABRICKS_TOKEN: return 0.5
+    url, headers = f"{DATABRICKS_HOST}{MODEL_ENDPOINT_PATH}", {'Authorization': f'Bearer {DATABRICKS_TOKEN}', 'Content-Type': 'application/json'}
+    data = json.dumps({"dataframe_records": [features]})
     try:
         response = requests.post(url, headers=headers, data=data, timeout=20)
         response.raise_for_status()
         predictions = response.json().get('predictions')
-        if predictions and isinstance(predictions, list) and len(predictions) > 0:
-            logging.info(f"Score from model: {predictions[0]}")
+        if predictions and isinstance(predictions, list) and predictions:
             return predictions[0]
-        else:
-            raise ValueError("Invalid model response format")
+        raise ValueError("Invalid model response format")
     except Exception as e:
         logging.error(f"Model invocation failed: {e}")
         raise
 
 def sync_and_analyze_repo(repo_full_name: str, access_token: str):
     headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    logging.info(f"Fetching events for {repo_full_name}...")
     events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=10"
-    
     try:
         res = requests.get(events_url, headers=headers, timeout=15)
         res.raise_for_status()
         events = res.json()
     except requests.exceptions.RequestException as e:
-        error_message = f"GitHub API Error: {e}"
-        if e.response is not None:
-             error_message = f"GitHub API Error (Status {e.response.status_code}): Repository not found or private."
+        error_message = f"GitHub API Error (Status {e.response.status_code if e.response else 'N/A'}): Repository not found or private."
         raise IOError(error_message)
-
-    latest_push_event = next((event for event in events if event['type'] == 'PushEvent'), None)
     
-    if not latest_push_event:
-        logging.info(f"No recent push event for {repo_full_name}")
+    latest_push = next((e for e in events if e['type'] == 'PushEvent'), None)
+    if not latest_push:
         event_doc = {'id': repo_full_name, 'repo_full_name': repo_full_name, 'has_recent_event': False, 'last_synced': datetime.utcnow().isoformat() + 'Z'}
         events_container.upsert_item(body=event_doc)
         return event_doc
 
-    features = extract_features_from_event(latest_push_event, access_token)
+    features = extract_features_from_event(latest_push, access_token)
     if features:
         score = get_anomaly_score(features)
         event_doc = {
             'id': repo_full_name, 'repo_full_name': repo_full_name, 'has_recent_event': True,
-            'event_id': latest_push_event['id'], 'event_type': latest_push_event['type'],
-            'created_at': latest_push_event['created_at'], 'actor': latest_push_event.get('actor', {}).get('login'),
-            'commits': latest_push_event.get('payload', {}).get('commits', []), 'anomaly_score': score,
+            'event_id': latest_push['id'], 'event_type': latest_push['type'],
+            'created_at': latest_push['created_at'], 'actor': latest_push.get('actor', {}).get('login'),
+            'commits': latest_push.get('payload', {}).get('commits', []), 'anomaly_score': score,
             'features': features, 'last_synced': datetime.utcnow().isoformat() + 'Z'
         }
         events_container.upsert_item(body=event_doc)
-        logging.info(f"Analysis complete for {repo_full_name}. Score: {score}")
         return event_doc
-    
-    raise ValueError("Feature extraction failed for the latest event.")
+    raise ValueError("Feature extraction failed.")
 
 @app.route('/get_oss_activity/<path:repo_name>')
 def get_oss_activity(repo_name):
-    if 'access_token' not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    access_token = session.get('access_token')
+    if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
     try:
-        result = sync_and_analyze_repo(repo_name, access_token)
-        return jsonify(result)
+        return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/sync_my_repos')
+def sync_my_repos_route():
+    if 'user_id' not in session or 'access_token' not in session:
+        return redirect(url_for('index'))
+    sync_my_repos_to_db(session['user_id'], session['access_token'])
+    return redirect(url_for('dashboard'))
+
 @app.route('/')
 def index():
-    if 'access_token' in session:
-        return redirect(url_for('dashboard'))
-    return render_template('index.html')
+    return redirect(url_for('dashboard')) if 'access_token' in session else render_template('index.html')
 
 @app.route('/logout')
 def logout():
@@ -190,13 +152,12 @@ def login():
 @app.route('/callback')
 def callback():
     session_code = request.args.get('code')
-    token_params = { 'client_id': GITHUB_CLIENT_ID, 'client_secret': GITHUB_CLIENT_SECRET, 'code': session_code }
+    token_params = {'client_id': GITHUB_CLIENT_ID, 'client_secret': GITHUB_CLIENT_SECRET, 'code': session_code}
     headers = {'Accept': 'application/json'}
     token_res = requests.post("https://github.com/login/oauth/access_token", params=token_params, headers=headers)
     token_json = token_res.json()
     access_token = token_json.get('access_token')
-    if not access_token:
-        return "Error: Could not retrieve access token.", 400
+    if not access_token: return "Error: Could not retrieve access token.", 400
     session['access_token'] = access_token
     user_headers = {'Authorization': f'token {access_token}'}
     user_res = requests.get(f"{GITHUB_API_URL}/user", headers=user_headers)
@@ -206,31 +167,31 @@ def callback():
     return redirect(url_for('dashboard'))
 
 def sync_my_repos_to_db(user_id, access_token):
+    if not deps_container:
+        logging.error("Dependencies container is not initialized.")
+        return
     headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github+json'}
     repos_res = requests.get(f"{GITHUB_API_URL}/user/repos?type=owner&per_page=100", headers=headers)
     repos = repos_res.json() if repos_res.ok else []
     for repo in repos:
-        repo_name = repo.get('name')
         repo_full_name = repo.get('full_name')
         if not repo_full_name: continue
         sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
         sbom_res = requests.get(sbom_url, headers=headers)
         dependencies = set()
         if sbom_res.status_code == 200:
-            sbom = sbom_res.json().get('sbom', {})
-            for pkg in sbom.get('packages', []):
-                pkg_name = pkg.get('name', '')
-                if not pkg_name or repo_name.lower() in pkg_name.lower():
-                    continue
+            for pkg in sbom_res.json().get('sbom', {}).get('packages', []):
+                pkg_name, repo_name = pkg.get('name', ''), repo.get('name', '')
+                if not pkg_name or repo_name.lower() in pkg_name.lower(): continue
                 version = pkg.get('versionInfo', '')
-                repo_path = next((ext_ref.get('locator') for ext_ref in pkg.get('externalRefs', []) if ext_ref.get('referenceType') == 'vcs' and 'github.com' in ext_ref.get('locator', '')), None)
+                repo_path = next((ref.get('locator') for ref in pkg.get('externalRefs', []) if ref.get('referenceType') == 'vcs' and 'github.com' in ref.get('locator', '')), None)
                 if repo_path:
                     repo_full_name_dep = '/'.join(repo_path.split('github.com/')[1].replace('.git', '').split('/')[:2])
                     dependencies.add(f"{repo_full_name_dep} {version}".strip())
                 else:
                     dependencies.add(f"{pkg_name} {version}".strip())
         item = {
-            'id': f"{user_id}_{repo_name}", 'userId': user_id,
+            'id': f"{user_id}_{repo.get('name')}", 'userId': user_id,
             'repositoryName': repo_full_name,
             'lastUpdated': datetime.utcnow().isoformat() + 'Z',
             'dependencies': sorted(list(dependencies))
@@ -239,12 +200,12 @@ def sync_my_repos_to_db(user_id, access_token):
 
 @app.route('/dashboard')
 def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('index'))
+    if 'user_id' not in session: return redirect(url_for('index'))
+    if not deps_container:
+        return "Error: Could not connect to the database.", 500
     user_id = session['user_id']
     query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
-    items = list(deps_container.query_items(query, enable_cross_partition_query=True))
-    items.sort(key=lambda x: x.get('repositoryName', ''))
+    items = sorted(list(deps_container.query_items(query, enable_cross_partition_query=True)), key=lambda x: x.get('repositoryName', ''))
     return render_template('dashboard.html', user_id=user_id, items=items)
 
 if __name__ == '__main__':
