@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Project Guardian - Branch Activity Explorer</title>
   <style>
+    /* ===== XP 스타일 ===== */
     body{background-color:#3A6EA5;font-family:Gulim, Dotum, "Tahoma", Geneva, sans-serif;font-size:12px; margin:0; padding:0; overflow:hidden;}
     .desktop{height:100vh;width:100vw;display:grid;grid-template-rows:1fr 30px;}
     .workspace{position:relative;overflow:hidden;padding:10px;}
@@ -28,7 +29,7 @@
     .detail-list { list-style: none; padding-left: 0; margin: 0; font-size: 11px; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #ccc; }
     .detail-list li { padding: 4px 6px; border-bottom: 1px solid #eee; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-    .empty-state, .loading-state, .error-state, .info-state { padding: 14px; text-align: center; color: #666; background:#fff; border:1px dashed #bbb; border-radius:4px; }
+    .empty-state, .info-state { padding: 14px; text-align: center; color: #666; background:#fff; border:1px dashed #bbb; border-radius:4px; }
     .taskbar{background:linear-gradient(to bottom,#245EDC,#3A85E1);border-top:1px solid #66A3FF;display:flex;align-items:center;gap:8px;padding:0 6px;}
     .start-button{background:linear-gradient(to bottom,#72BE4A,#55A82B);color:#fff;font-weight:bold;font-size:16px;border:2px outset #55A82B;border-radius:10px 10px 0 0;padding:2px 20px;margin-left:5px;font-style:italic;cursor:pointer;user-select:none;}
     a{color:#0058E1;text-decoration:none;} a:hover{text-decoration:underline;}
@@ -77,8 +78,11 @@
   </div>
 
   <script>
-    // Flask에서 전달: logs = [{repo_full_name, branch, date, counts:{commits,dep_changes}, dep_files[], examples[]}, ...]
+    // 서버에서 전달됨:
+    // logs: branch_log 문서 배열
+    // repos: role:user 문서의 repos[] (폴백)
     const RAW_LOGS = {{ logs|tojson|safe }};
+    const USER_REPOS = {{ repos|tojson|safe }};
     const userId = "{{ user_id }}";
 
     // repo -> branch -> [days...]
@@ -91,7 +95,6 @@
         if (!map[repo][br]) map[repo][br] = [];
         map[repo][br].push(r);
       }
-      // 날짜 최신순
       Object.keys(map).forEach(repo => {
         Object.keys(map[repo]).forEach(br => {
           map[repo][br].sort((a,b)=> b.date.localeCompare(a.date));
@@ -110,19 +113,25 @@
     const branchFilterEl = document.getElementById('branchFilter');
     const clearBranchFilterBtn = document.getElementById('clearBranchFilter');
 
-    // Render Repos
+    // 레포 렌더(로그 없으면 repos 폴백 사용)
     function renderRepos(filter="") {
       const f = (filter||"").toLowerCase();
-      const repos = Object.keys(GROUPED).sort((a,b)=>a.localeCompare(b));
+
+      const reposFromLogs = Object.keys(GROUPED);
+      const allRepos = Array.from(new Set([ ...reposFromLogs, ...(USER_REPOS || []) ])).sort((a,b)=>a.localeCompare(b));
+
       const rows = [];
-      for (const repo of repos) {
+      for (const repo of allRepos) {
         if (f && !repo.toLowerCase().includes(f)) continue;
-        const totalBranches = Object.keys(GROUPED[repo]).length;
-        const latest = Object.values(GROUPED[repo]).map(arr=>arr[0]?.date).sort().reverse()[0] || "-";
+
+        const hasLogs = !!GROUPED[repo];
+        const latest = hasLogs ? (Object.values(GROUPED[repo]).map(arr=>arr[0]?.date).sort().reverse()[0] || "-") : "-";
+        const totalBranches = hasLogs ? Object.keys(GROUPED[repo]).length : 0;
+
         rows.push(`
           <div class="repo-row" data-repo="${repo}">
             <span class="repo-name" title="${repo}">${repo}</span>
-            <span class="chip">branches ${totalBranches}</span>
+            <span class="chip">${hasLogs ? `branches ${totalBranches}` : 'no logs yet'}</span>
             <span class="chip">latest ${latest}</span>
           </div>
         `);
@@ -130,7 +139,7 @@
       repoListEl.innerHTML = rows.length ? rows.join("") : '<div class="empty-state">표시할 레포가 없습니다.</div>';
     }
 
-    // Render Branch + Days for a repo
+    // 브랜치/일자 렌더
     function renderBranchDays(repo, filter="") {
       if (!repo || !GROUPED[repo]) {
         branchAndDaysEl.innerHTML = '<div class="empty-state">레포를 선택하세요.</div>';
@@ -141,7 +150,6 @@
       const branches = Object.keys(GROUPED[repo]).sort((a,b)=>a.localeCompare(b));
       for (const br of branches) {
         const days = GROUPED[repo][br];
-        // 브랜치 헤더
         if (f && !br.toLowerCase().includes(f) && !days.some(d=>d.date.includes(f))) continue;
 
         html += `<div class="branch-row" data-repo="${repo}" data-branch="${br}">
@@ -151,10 +159,8 @@
           <span class="chip">D ${days[0].counts.dep_changes}</span>
         </div>`;
 
-        // 일자 리스트
         for (const d of days) {
-          const rowTxt = `${d.date}`;
-          if (f && !rowTxt.includes(f) && !br.toLowerCase().includes(f)) continue;
+          if (f && !d.date.includes(f) && !br.toLowerCase().includes(f)) continue;
           html += `<div class="day-row" data-repo="${repo}" data-branch="${br}" data-day="${d.date}">
             <span class="day-name mono">${d.date}</span>
             <span class="chip">C ${d.counts.commits}</span>
@@ -165,7 +171,7 @@
       branchAndDaysEl.innerHTML = html || '<div class="empty-state">해당 필터에 일치하는 항목이 없습니다.</div>';
     }
 
-    // Fill Right Detail from one day record
+    // 우측 상세
     function fillDetail(rec) {
       if (!rec) {
         activityDetailsEl.innerHTML = '<div class="empty-state">좌측에서 선택하세요.</div>';
@@ -187,4 +193,94 @@
             <h4>Counts</h4>
             <ul class="detail-list">
               <li>Commits: <b>${rec.counts?.commits ?? 0}</b></li>
-              <li>Dependency Changes: <b>${re
+              <li>Dependency Changes: <b>${rec.counts?.dep_changes ?? 0}</b></li>
+            </ul>
+          </div>
+          <div class="detail-section">
+            <h4>Dependency Files</h4>
+            <ul class="detail-list">${depFiles}</ul>
+          </div>
+          <div class="detail-section">
+            <h4>Samples</h4>
+            <ul class="detail-list">${samples}</ul>
+          </div>
+        </div>
+      `;
+    }
+
+    // 이벤트 바인딩
+    const repoListElClick = (e)=>{
+      const row = e.target.closest('.repo-row');
+      if (!row) return;
+      document.querySelectorAll('.repo-row').forEach(r=>r.classList.remove('active'));
+      row.classList.add('active');
+      const repo = row.dataset.repo;
+      renderBranchDays(repo, branchFilterEl.value);
+      activityDetailsEl.innerHTML = '<div class="info-state" style="text-align:left;">브랜치를 선택한 뒤 날짜를 선택하면 상세가 표시됩니다.</div>';
+    };
+    repoListEl.addEventListener('click', repoListElClick);
+
+    branchAndDaysEl.addEventListener('click', (e)=>{
+      const dayRow = e.target.closest('.day-row');
+      const branchRow = e.target.closest('.branch-row');
+
+      if (branchRow && !dayRow) {
+        const repo = branchRow.dataset.repo;
+        const br = branchRow.dataset.branch;
+        const latest = GROUPED[repo][br][0];
+        document.querySelectorAll('.branch-row, .day-row').forEach(r=>r.classList.remove('active'));
+        branchRow.classList.add('active');
+        fillDetail(latest);
+        return;
+      }
+      if (dayRow) {
+        const repo = dayRow.dataset.repo;
+        const br = dayRow.dataset.branch;
+        const day = dayRow.dataset.day;
+        const rec = GROUPED[repo][br].find(x=>x.date===day);
+        document.querySelectorAll('.day-row, .branch-row').forEach(r=>r.classList.remove('active'));
+        dayRow.classList.add('active');
+        fillDetail(rec);
+      }
+    });
+
+    repoFilterEl.addEventListener('input', ()=> renderRepos(repoFilterEl.value));
+    branchFilterEl.addEventListener('input', ()=>{
+      const activeRepo = document.querySelector('.repo-row.active')?.dataset.repo;
+      renderBranchDays(activeRepo, branchFilterEl.value);
+    });
+    document.getElementById('clearBranchFilter').addEventListener('click', ()=>{
+      branchFilterEl.value = "";
+      const activeRepo = document.querySelector('.repo-row.active')?.dataset.repo;
+      renderBranchDays(activeRepo, "");
+    });
+
+    // 스플리터
+    document.querySelectorAll('.handle').forEach(handle => {
+      handle.addEventListener('mousedown', e => {
+        const mainGrid = document.getElementById('mainGrid');
+        const startX = e.clientX;
+        const nums = getComputedStyle(mainGrid).gridTemplateColumns.split(' ');
+        const px = nums.map(v=>v.endsWith('px')?parseFloat(v):v);
+        const idx = parseInt(handle.dataset.splitterFor)*2 - 1;
+        const onMove = ev => {
+          const dx = ev.clientX - startX;
+          if (typeof px[idx-1]==='number' && typeof px[idx+1]==='number') {
+            const left = Math.max(180, px[idx-1] + dx);
+            const right = Math.max(180, px[idx+1] - dx);
+            const newCols = [...px]; newCols[idx-1]=left; newCols[idx+1]=right;
+            mainGrid.style.gridTemplateColumns = newCols.map(v=> typeof v==='number'?`${v}px`:v ).join(' ');
+          }
+        };
+        const onUp = ()=>{ window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+        window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+      });
+    });
+
+    function escapeHtml(s){return (s||"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+    // 초기 렌더
+    renderRepos("");
+  </script>
+</body>
+</html>

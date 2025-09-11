@@ -360,17 +360,28 @@ def dashboard():
         return "Error: DB 연결 실패", 500
 
     user_id = session['user_id']
-    q = """
+
+    # branch_log 가져오기
+    q_logs = """
     SELECT c.repo_full_name, c.branch, c.date, c.counts, c.dep_files, c.examples
     FROM c
     WHERE c.role = "branch_log" AND c.userId = @userId
     ORDER BY c.date DESC
     """
     params = [{"name":"@userId","value":user_id}]
-    logs = list(deps_container.query_items({"query": q, "parameters": params}, enable_cross_partition_query=True))
+    logs = list(deps_container.query_items({"query": q_logs, "parameters": params}, enable_cross_partition_query=True))
 
-    # 템플릿 파일명: dashboard_branch.html  (이미 배포해둔 XP UI)
-    return render_template('dashboard_branch.html', user_id=user_id, logs=logs)
+    # role:user 문서에서 repos 폴백
+    q_user = """
+    SELECT TOP 1 c.repos
+    FROM c
+    WHERE c.role = "user" AND c.userId = @userId
+    """
+    user_doc = list(deps_container.query_items({"query": q_user, "parameters": params}, enable_cross_partition_query=True))
+    repos = user_doc[0].get("repos", []) if user_doc else []
+
+    return render_template('dashboard_branch.html', user_id=user_id, logs=logs, repos=repos)
+
 
 # -----------------------------
 # 앱 시작
