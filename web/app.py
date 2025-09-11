@@ -1,8 +1,11 @@
+# app.py (full)
+
 import logging
 import os
+import re
 import json
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 from azure.cosmos import CosmosClient
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
@@ -10,7 +13,8 @@ from azure.cosmos.exceptions import CosmosResourceNotFoundError
 # -----------------------------
 # Flask
 # -----------------------------
-app = Flask(__name__, template_folder='templates', static_folder='static')
+BASE_DIR = os.path.dirname(__file__)
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'), static_folder=os.path.join(BASE_DIR, 'static'))
 app.secret_key = os.urandom(24)
 
 # -----------------------------
@@ -22,7 +26,7 @@ GITHUB_API_URL = "https://api.github.com"
 
 COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
 DATABASE_NAME = 'ProjectGuardianDB'
-DEPS_CONTAINER_NAME = 'Dependencies'
+DEPS_CONTAINER_NAME = 'Dependencies'  # 파티션키: /userId
 
 # -----------------------------
 # Cosmos DB 초기화
@@ -39,6 +43,14 @@ except Exception as e:
 # -----------------------------
 # 브랜치 로그 스키마 유틸
 # -----------------------------
+
+# Cosmos 문서 id에 들어가면 안 되는 문자: / \ ? #
+_ILLEGAL_ID_CHARS = re.compile(r'[\/\\\?#]')
+
+def _safe_key(s: str) -> str:
+    """Cosmos id에서 금지문자를 '_'로 치환"""
+    return _ILLEGAL_ID_CHARS.sub('_', s or '')
+
 DEP_FILE_PATTERNS = (
     "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
     "requirements.txt", "Pipfile", "pyproject.toml",
@@ -52,12 +64,11 @@ def _is_dep_file(filename: str) -> bool:
     return any(fn.endswith(p.lower()) or f"/{p.lower()}" in fn for p in DEP_FILE_PATTERNS)
 
 def _safe_id_branch_log(user_id: str, repo_full_name: str, branch: str, day: str) -> str:
-    b = (branch or "").replace("/", "_")
-    return f"branch_log:{user_id}:{repo_full_name}:{b}:{day}"
+    # 필드값은 원본 유지, id만 안전화
+    return f"branch_log:{_safe_key(user_id)}:{_safe_key(repo_full_name)}:{_safe_key(branch)}:{day}"
 
 def _checkpoint_id(user_id: str, repo_full_name: str, branch: str) -> str:
-    b = (branch or "").replace("/", "_")
-    return f"checkpoint:{user_id}:{repo_full_name}:{b}"
+    return f"checkpoint:{_safe_key(user_id)}:{_safe_key(repo_full_name)}:{_safe_key(branch)}"
 
 # -----------------------------
 # GitHub API 헬퍼
@@ -106,6 +117,7 @@ def _read_checkpoint(user_id: str, repo_full_name: str, branch: str) -> str | No
         return None
     cp_id = _checkpoint_id(user_id, repo_full_name, branch)
     try:
+        # 파티션키는 반드시 userId
         cp = deps_container.read_item(item=cp_id, partition_key=user_id)
         return cp.get("last_sha")
     except CosmosResourceNotFoundError:
@@ -120,9 +132,9 @@ def _write_checkpoint(user_id: str, repo_full_name: str, branch: str, last_sha: 
     cp_doc = {
         "id": _checkpoint_id(user_id, repo_full_name, branch),
         "role": "checkpoint",
-        "userId": user_id,
-        "repo_full_name": repo_full_name,
-        "branch": branch,
+        "userId": user_id,                   # 파티션키 필수
+        "repo_full_name": repo_full_name,    # 원본 유지
+        "branch": branch,                    # 원본 유지
         "last_sha": last_sha,
         "lastUpdated": datetime.utcnow().isoformat() + "Z",
     }
@@ -144,79 +156,85 @@ def backfill_repo_all_branches(user_id: str, repo_full_name: str, access_token: 
         return
 
     for br in branches:
-        last_sha = _read_checkpoint(user_id, repo_full_name, br)
-        commits = _list_all_commits(owner, repo, br, headers)
+        try:
+            last_sha = _read_checkpoint(user_id, repo_full_name, br)
+            commits = _list_all_commits(owner, repo, br, headers)
 
-        if last_sha:
-            try:
-                idx = next(i for i,c in enumerate(commits) if c.get("sha")==last_sha)
-                commits = commits[idx+1:]
-            except StopIteration:
-                # 히스토리 재작성 등으로 체크포인트 sha 없음 → 전체 스캔
-                pass
+            if last_sha:
+                try:
+                    idx = next(i for i,c in enumerate(commits) if c.get("sha")==last_sha)
+                    commits = commits[idx+1:]  # 체크포인트 다음부터
+                except StopIteration:
+                    # 히스토리 재작성 등으로 체크포인트 sha 없음 → 전체 스캔
+                    pass
 
-        if not commits:
-            # 체크포인트만 최신으로 맞춰주기
-            if _list_all_commits(owner, repo, br, headers):
-                _write_checkpoint(user_id, repo_full_name, br, _list_all_commits(owner, repo, br, headers)[-1].get("sha"))
-            continue
+            if not commits:
+                # 커밋이 없으면 최신 sha로만 체크포인트 맞춤
+                all_commits = _list_all_commits(owner, repo, br, headers)
+                latest_sha = all_commits[-1].get("sha") if all_commits else None
+                _write_checkpoint(user_id, repo_full_name, br, latest_sha)
+                continue
 
-        buckets: dict[str, dict] = {}
-        for c in commits:
-            sha = c.get("sha")
-            commit_url = c.get("url")
-            try:
-                det = requests.get(commit_url, headers=headers, timeout=15)
-                det.raise_for_status()
-                files = det.json().get("files", [])
-            except Exception:
-                files = []
+            # 일자 버킷
+            buckets: dict[str, dict] = {}
+            for c in commits:
+                sha = c.get("sha")
+                commit_url = c.get("url")
+                try:
+                    det = requests.get(commit_url, headers=headers, timeout=15)
+                    det.raise_for_status()
+                    files = det.json().get("files", [])
+                except Exception:
+                    files = []
 
-            changed_dep_files = [f.get("filename","") for f in files if _is_dep_file(f.get("filename",""))]
+                changed_dep_files = [f.get("filename","") for f in files if _is_dep_file(f.get("filename",""))]
 
-            date_iso = (c.get("commit", {}).get("author", {}).get("date")
-                        or c.get("commit", {}).get("committer", {}).get("date")
-                        or datetime.utcnow().isoformat() + "Z")
-            day = date_iso[:10]
+                date_iso = (c.get("commit", {}).get("author", {}).get("date")
+                            or c.get("commit", {}).get("committer", {}).get("date")
+                            or datetime.utcnow().isoformat() + "Z")
+                day = date_iso[:10]
 
-            b = buckets.setdefault(day, {
-                "commits": 0,
-                "dep_changes": 0,
-                "files": set(),
-                "samples": []
-            })
-            b["commits"] += 1
-            if changed_dep_files:
-                b["dep_changes"] += len(changed_dep_files)
-                for fn in changed_dep_files:
-                    b["files"].add(fn)
-                if len(b["samples"]) < 3:
-                    msg = (c.get("commit", {}).get("message") or "")[:140]
-                    b["samples"].append({
-                        "sha": sha,
-                        "message": msg,
-                        "url": f"https://github.com/{owner}/{repo}/commit/{sha}"
-                    })
+                b = buckets.setdefault(day, {
+                    "commits": 0,
+                    "dep_changes": 0,
+                    "files": set(),
+                    "samples": []
+                })
+                b["commits"] += 1
+                if changed_dep_files:
+                    b["dep_changes"] += len(changed_dep_files)
+                    for fn in changed_dep_files:
+                        b["files"].add(fn)
+                    if len(b["samples"]) < 3:
+                        msg = (c.get("commit", {}).get("message") or "")[:140]
+                        b["samples"].append({
+                            "sha": sha,
+                            "message": msg,
+                            "url": f"https://github.com/{owner}/{repo}/commit/{sha}"
+                        })
 
-        # 일자별 문서 업서트
-        for day in sorted(buckets.keys()):
-            v = buckets[day]
-            doc = {
-                "id": _safe_id_branch_log(user_id, repo_full_name, br, day),
-                "role": "branch_log",
-                "userId": user_id,
-                "repo_full_name": repo_full_name,
-                "branch": br,
-                "date": day,
-                "counts": {"commits": v["commits"], "dep_changes": v["dep_changes"]},
-                "dep_files": sorted(list(v["files"])),
-                "examples": v["samples"],
-                "lastUpdated": datetime.utcnow().isoformat() + "Z",
-            }
-            deps_container.upsert_item(doc)
+            # 일자별 문서 업서트
+            for day in sorted(buckets.keys()):
+                v = buckets[day]
+                doc = {
+                    "id": _safe_id_branch_log(user_id, repo_full_name, br, day),
+                    "role": "branch_log",
+                    "userId": user_id,                   # 파티션키 필수
+                    "repo_full_name": repo_full_name,    # 원본 유지
+                    "branch": br,                        # 원본 유지
+                    "date": day,
+                    "counts": {"commits": v["commits"], "dep_changes": v["dep_changes"]},
+                    "dep_files": sorted(list(v["files"])),
+                    "examples": v["samples"],
+                    "lastUpdated": datetime.utcnow().isoformat() + "Z",
+                }
+                deps_container.upsert_item(doc)
 
-        # 브랜치 최신 sha로 체크포인트 갱신
-        _write_checkpoint(user_id, repo_full_name, br, commits[-1].get("sha"))
+            # 브랜치 최신 sha로 체크포인트 갱신
+            _write_checkpoint(user_id, repo_full_name, br, commits[-1].get("sha"))
+
+        except Exception as e:
+            logging.error(f"[{repo_full_name}] backfill 실패: {e}")
 
 # -----------------------------
 # OAuth & 라우팅
@@ -288,11 +306,11 @@ def sync_my_repos_to_db(user_id: str, access_token: str):
 
     # role:"user" 얇은 연결 정보 저장
     user_doc = {
-        "id": f"user:{user_id}",
+        "id": f"user:{_safe_key(user_id)}",   # 안전화
         "role": "user",
-        "userId": user_id,
+        "userId": user_id,                    # 파티션키 값(원본)
         "gh_login": user_id,
-        "repos": repo_full_names,
+        "repos": repo_full_names,             # 원본 목록
         "createdAt": datetime.utcnow().isoformat() + "Z",
         "lastUpdated": datetime.utcnow().isoformat() + "Z",
     }
@@ -300,10 +318,7 @@ def sync_my_repos_to_db(user_id: str, access_token: str):
 
     # 각 레포 모든 브랜치 백필
     for full_name in repo_full_names:
-        try:
-            backfill_repo_all_branches(user_id, full_name, access_token)
-        except Exception as e:
-            logging.error(f"[{full_name}] backfill 실패: {e}")
+        backfill_repo_all_branches(user_id, full_name, access_token)
 
 # -----------------------------
 # 조회 API (레포/브랜치/기간)
@@ -335,7 +350,7 @@ def api_branch_logs():
     return jsonify(items)
 
 # -----------------------------
-# 대시보드 (브랜치/일자 로그)
+# 대시보드 (브랜치/일자 로그) - dashboard_branch.html 사용
 # -----------------------------
 @app.route('/dashboard')
 def dashboard():
@@ -354,6 +369,7 @@ def dashboard():
     params = [{"name":"@userId","value":user_id}]
     logs = list(deps_container.query_items({"query": q, "parameters": params}, enable_cross_partition_query=True))
 
+    # 템플릿 파일명: dashboard_branch.html  (이미 배포해둔 XP UI)
     return render_template('dashboard_branch.html', user_id=user_id, logs=logs)
 
 # -----------------------------

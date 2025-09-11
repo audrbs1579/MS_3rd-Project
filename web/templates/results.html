@@ -4,133 +4,70 @@
     <meta charset="UTF-8">
     <title>Analysis Results</title>
     <style>
-        body {
-            background-color: #3A6EA5; 
-            font-family: Tahoma, Geneva, sans-serif;
-            font-size: 12px; 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden;
-        }
-        .window {
-            width: 600px; 
-            /* min-height: 400px;  <-- 이 부분을 수정합니다. */
-            height: 90vh; /* <-- 뷰포트 높이의 90%로 설정 */
-            border: 2px solid #0058E1;
-            border-radius: 8px 8px 0 0; 
-            background-color: #ECE9D8;
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.5); 
-            position: absolute;
-            top: 50%; 
-            left: 50%; 
-            transform: translate(-50%, -50%);
-            display: flex; 
-            flex-direction: column;
-        }
-        .title-bar {
-            background: linear-gradient(to bottom, #0058E1, #3A85E1); 
-            color: white;
-            font-weight: bold; 
-            padding: 5px 10px; 
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px; 
-            display: flex; 
-            justify-content: space-between;
-            align-items: center; 
-            cursor: move;
-        }
-        .title-bar-buttons span {
-            display: inline-block; 
-            width: 20px; 
-            height: 20px; 
-            margin-left: 2px;
-            background-color: #D64F34; 
-            color: white; 
-            text-align: center;
-            line-height: 20px; 
-            border: 1px solid white; 
-            font-family: 'Courier New', Courier, monospace;
-        }
-        .content { 
-            padding: 20px; 
-            flex-grow: 1; 
-            /* overflow-y: auto; <-- 이 부분을 추가합니다. */
-            overflow-y: auto; 
-            color: #000; 
-        }
-        .content h1 { 
-            font-size: 24px; 
-            color: #0058E1; 
-        }
-        .taskbar {
-            position: absolute; 
-            bottom: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 30px;
-            background: linear-gradient(to bottom, #245EDC, #3A85E1);
-            border-top: 1px solid #66A3FF; 
-            display: flex; 
-            align-items: center;
-        }
-        .start-button {
-            background: linear-gradient(to bottom, #72BE4A, #55A82B); 
-            color: white;
-            font-weight: bold; 
-            font-size: 16px; 
-            border: 2px outset #55A82B;
-            border-radius: 10px 10px 0 0; 
-            padding: 2px 20px; 
-            margin-left: 5px;
-            font-style: italic; 
-            cursor: pointer;
-        }
-        button {
-            border: 1px solid #000; 
-            background-color: #ECE9D8; 
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-        a { 
-            color: #0058E1; 
-            text-decoration: none; 
-        }
-        a:hover { 
-            text-decoration: underline; 
-        }
-        ul { 
-            list-style-type: none; 
-            padding-left: 0; 
-        }
-        li { 
-            background-color: #FFF; 
-            padding: 8px; 
-            border: 1px solid #DDD; 
-            margin-bottom: 5px; 
-        }
+        body { background-color: #3A6EA5; font-family: Tahoma, Geneva, sans-serif; font-size: 12px; margin: 0; padding: 0; overflow: hidden; }
+        .window { width: 900px; height: 90vh; border: 2px solid #0058E1; border-radius: 8px 8px 0 0; background-color: #ECE9D8; box-shadow: 5px 5px 15px rgba(0,0,0,0.5); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; }
+        .title-bar { background: linear-gradient(to bottom, #0058E1, #3A85E1); color: white; font-weight: bold; padding: 5px 10px; border-top-left-radius: 5px; border-top-right-radius: 5px; display: flex; justify-content: space-between; align-items: center; cursor: move; }
+        .title-bar-buttons span { display: inline-block; width: 20px; height: 20px; margin-left: 2px; background-color: #D64F34; color: white; text-align: center; line-height: 20px; border: 1px solid white; font-family: 'Courier New', Courier, monospace; }
+        .content { padding: 16px; flex-grow: 1; overflow-y: auto; color: #000; }
+        table { width: 100%; border-collapse: collapse; background:#fff; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; font-size:12px; }
+        th { background:#f3f3f3; text-align:left; }
+        code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+        .taskbar { position: absolute; bottom: 0; left: 0; width: 100%; height: 30px; background: linear-gradient(to bottom, #245EDC, #3A85E1); border-top: 1px solid #66A3FF; display: flex; align-items: center; }
+        .start-button { background: linear-gradient(to bottom, #72BE4A, #55A82B); color: white; font-weight: bold; font-size: 16px; border: 2px outset #55A82B; border-radius: 10px 10px 0 0; padding: 2px 20px; margin-left: 5px; font-style: italic; cursor: pointer; }
+        a { color: #0058E1; text-decoration: none; } a:hover { text-decoration: underline; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
     </style>
 </head>
 <body>
     <div class="window">
         <div class="title-bar">
-            <span>Analysis for: {{ repo_full_name }}</span>
+            <span>Analysis for: {{ repo_full_name }} <span class="mono">@ {{ branch or '-' }}</span></span>
             <div class="title-bar-buttons"><span>_</span><span>☐</span><span>X</span></div>
         </div>
         <div class="content">
-            <p><a href="{{ url_for('dashboard') }}">Back to Dashboard</a></p>
+            <p><a href="{{ url_for('dashboard') }}">◀ Back to Dashboard</a></p>
+
             {% if error %}
-                <p style="color: red;"><strong>Error:</strong> {{ error }}</p>
+              <p style="color: #D64F34;"><strong>Error:</strong> {{ error }}</p>
             {% else %}
-                <h2>Detected Open Source Dependencies:</h2>
-                {% if dependencies %}
-                    <ul>
-                        {% for dep in dependencies %}
-                            <li>{{ dep }}</li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p>No dependencies found.</p>
-                {% endif %}
+              <h2 style="font-size:16px;color:#0058E1;margin:8px 0;">Daily Branch Logs</h2>
+              {% if logs and logs|length > 0 %}
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width:110px;">Date (UTC)</th>
+                      <th style="width:70px;">Commits</th>
+                      <th style="width:110px;">Dep Changes</th>
+                      <th>Dep Files</th>
+                      <th style="width:260px;">Samples</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in logs %}
+                    <tr>
+                      <td class="mono">{{ r.date }}</td>
+                      <td>{{ r.counts.commits }}</td>
+                      <td>{{ r.counts.dep_changes }}</td>
+                      <td>
+                        {% if r.dep_files and r.dep_files|length>0 %}
+                          {% for f in r.dep_files %}<div class="mono">{{ f }}</div>{% endfor %}
+                        {% else %} - {% endif %}
+                      </td>
+                      <td>
+                        {% if r.examples and r.examples|length>0 %}
+                          {% for s in r.examples %}
+                            <div><a href="{{ s.url }}" target="_blank">{{ s.sha[:7] }}</a> – {{ s.message }}</div>
+                          {% endfor %}
+                        {% else %} - {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              {% else %}
+                <p>해당 범위에 로그가 없습니다.</p>
+              {% endif %}
             {% endif %}
         </div>
     </div>
