@@ -463,26 +463,62 @@ def dashboard():
     if not deps_container:
         return "Error: DB 연결 실패", 500
 
-    user_id = session['user_id']
+    try:
+        user_id = session['user_id']
+        q_logs = """
+        SELECT c.repo_full_name, c.branch, c.date, c.counts, c.dep_files, c.examples
+        FROM c
+        WHERE c.role = "branch_log" AND c.userId = @userId
+        ORDER BY c.date DESC
+        """
+        params = [{"name":"@userId","value":user_id}]
+        logs = list(deps_container.query_items({"query": q_logs, "parameters": params}, enable_cross_partition_query=True))
 
-    q_logs = """
-    SELECT c.repo_full_name, c.branch, c.date, c.counts, c.dep_files, c.examples
-    FROM c
-    WHERE c.role = "branch_log" AND c.userId = @userId
-    ORDER BY c.date DESC
-    """
-    params = [{"name":"@userId","value":user_id}]
-    logs = list(deps_container.query_items({"query": q_logs, "parameters": params}, enable_cross_partition_query=True))
+        q_user = """
+        SELECT TOP 1 c.repos
+        FROM c
+        WHERE c.role = "user" AND c.userId = @userId
+        """
+        user_doc = list(deps_container.query_items({"query": q_user, "parameters": params}, enable_cross_partition_query=True))
+        repos = user_doc[0].get("repos", []) if user_doc else []
 
-    q_user = """
-    SELECT TOP 1 c.repos
-    FROM c
-    WHERE c.role = "user" AND c.userId = @userId
-    """
-    user_doc = list(deps_container.query_items({"query": q_user, "parameters": params}, enable_cross_partition_query=True))
-    repos = user_doc[0].get("repos", []) if user_doc else []
+        return render_template('dashboard_branch.html', user_id=user_id, logs=logs, repos=repos)
+    except Exception as e:
+        # 여기로 떨어지면 템플릿/데이터 문제니 내용 보여주기
+        logging.exception("dashboard render failed")
+        return {"error": "dashboard render failed", "detail": str(e)}, 500
 
-    return render_template('dashboard_branch.html', user_id=user_id, logs=logs, repos=repos)
+
+@app.route('/healthz')
+def healthz():
+    return 'ok', 200
+
+@app.route('/whoami')
+def whoami():
+    # 세션/토큰 상태와 템플릿 경로 확인
+    return {
+        "has_session": "access_token" in session,
+        "user_id": session.get("user_id"),
+        "template_folder": app.template_folder,
+        "static_folder": app.static_folder
+    }, 200
+
+@app.route('/debug_dashboard')
+def debug_dashboard():
+    # 템플릿 대신 텍스트로 데이터만 뽑아보기
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return "no session.user_id; try /login", 200
+        from azure.cosmos import exceptions as cexc
+        q = """SELECT TOP 5 c.repo_full_name, c.branch, c.date, c.counts
+               FROM c WHERE c.role="branch_log" AND c.userId=@u ORDER BY c.date DESC"""
+        params = [{"name":"@u","value":user_id}]
+        items = list(deps_container.query_items({"query":q, "parameters":params}, enable_cross_partition_query=True))
+        return {"user_id": user_id, "items_len": len(items), "sample": items[:3]}, 200
+    except Exception as e:
+        return {"error": str(e)}, 500
+
 
 # -----------------------------
 # Run
