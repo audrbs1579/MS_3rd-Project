@@ -7,189 +7,233 @@ from flask import Flask, render_template, request, redirect, session, url_for, j
 from azure.cosmos import CosmosClient
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
-app = Flask(__name__, template_folder='templates')
+# -----------------------------
+# Flask
+# -----------------------------
+app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
 
-# --- Configuration ---
+# -----------------------------
+# Config (환경변수)
+# -----------------------------
 GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
 GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
-raw_host = os.environ.get("DATABRICKS_HOST", "")
-DATABRICKS_HOST = raw_host.split('?')[0].strip('/') if raw_host else ""
-DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
-MODEL_ENDPOINT_PATH = "/serving-endpoints/fake-model-api/invocations"
 GITHUB_API_URL = "https://api.github.com"
+
 COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
 DATABASE_NAME = 'ProjectGuardianDB'
 DEPS_CONTAINER_NAME = 'Dependencies'
-EVENTS_CONTAINER_NAME = 'leases'
 
-# --- Cosmos DB Initialization ---
+# -----------------------------
+# Cosmos DB 초기화
+# -----------------------------
 try:
     cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
     database = cosmos_client.get_database_client(DATABASE_NAME)
     deps_container = database.get_container_client(DEPS_CONTAINER_NAME)
-    events_container = database.get_container_client(EVENTS_CONTAINER_NAME)
-    logging.info("Cosmos DB에 성공적으로 연결되었습니다.")
+    logging.info("Cosmos DB 연결 성공")
 except Exception as e:
     logging.critical(f"Cosmos DB 연결 실패: {e}")
-    cosmos_client = database = deps_container = events_container = None
+    cosmos_client = database = deps_container = None
 
-# --- Feature Extraction & Model Invocation ---
-SENSITIVE_PATHS = [".github/workflows/", "config/", "secret", "credential", "token", "key", ".env", "password"]
-DEPENDENCY_FILES = ["requirements.txt", "package.json", "pom.xml", "build.gradle", "go.mod", "Cargo.toml"]
+# -----------------------------
+# 브랜치 로그 스키마 유틸
+# -----------------------------
+DEP_FILE_PATTERNS = (
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "requirements.txt", "Pipfile", "pyproject.toml",
+    "pom.xml", "build.gradle", "gradle.properties",
+    "go.mod", "go.sum",
+    "Cargo.toml", "Cargo.lock",
+)
 
-def get_commit_details(commit_url: str, headers: dict) -> dict:
-    try:
-        res = requests.get(commit_url, headers=headers, timeout=10)
-        return res.json() if res.status_code == 200 else {}
-    except requests.RequestException:
-        return {}
+def _is_dep_file(filename: str) -> bool:
+    fn = (filename or "").lower()
+    return any(fn.endswith(p.lower()) or f"/{p.lower()}" in fn for p in DEP_FILE_PATTERNS)
 
-def extract_features_from_event(event: dict, access_token: str) -> dict | None:
-    if event.get('type') != 'PushEvent': return None
-    payload = event.get('payload', {})
-    features, headers = {}, {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    try:
-        dt_utc = datetime.fromisoformat(event['created_at'].replace('Z', '+00:00'))
-        features.update({
-            'hour_of_day': dt_utc.hour, 'dow': dt_utc.weekday(),
-            'event_type': event['type'], 'action': 'pushed',
-            'repo_name': event['repo']['name'].split('/')[-1],
-            'commit_count': len(payload.get('commits', [])),
-            'msg_len_avg': sum(len(c.get('message', '')) for c in payload.get('commits', [])) / len(payload.get('commits', [])) if payload.get('commits') else 0,
-            'force_push': 1 if payload.get('forced') else 0
-        })
-        touched_sensitive, dep_changed = 0, 0
-        for commit_info in payload.get('commits', [])[:5]:
-            files = get_commit_details(commit_info.get('url'), headers).get('files', [])
-            for f in files:
-                filename = f.get('filename', '').lower()
-                if any(p in filename for p in SENSITIVE_PATHS): touched_sensitive = 1
-                if any(d in filename for d in DEPENDENCY_FILES): dep_changed = 1
-        features.update({'touched_sensitive_paths': touched_sensitive, 'dep_change_cnt': dep_changed})
-        return features
-    except Exception as e:
-        logging.error(f"Feature extraction failed: {e}")
+def _safe_id_branch_log(user_id: str, repo_full_name: str, branch: str, day: str) -> str:
+    b = (branch or "").replace("/", "_")
+    return f"branch_log:{user_id}:{repo_full_name}:{b}:{day}"
+
+def _checkpoint_id(user_id: str, repo_full_name: str, branch: str) -> str:
+    b = (branch or "").replace("/", "_")
+    return f"checkpoint:{user_id}:{repo_full_name}:{b}"
+
+# -----------------------------
+# GitHub API 헬퍼
+# -----------------------------
+def _headers(access_token: str) -> dict:
+    return {
+        'Authorization': f'token {access_token}',
+        'Accept': 'application/vnd.github.v3+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+    }
+
+def _list_all_branches(repo_full_name: str, headers: dict) -> list[str]:
+    branches = []
+    page = 1
+    while True:
+        url = f"{GITHUB_API_URL}/repos/{repo_full_name}/branches?per_page=100&page={page}"
+        r = requests.get(url, headers=headers, timeout=15)
+        if not r.ok:
+            logging.warning(f"[{repo_full_name}] listBranches 실패: {r.status_code} {r.text[:200]}")
+            break
+        data = r.json()
+        if not data:
+            break
+        branches.extend([b.get("name") for b in data if b.get("name")])
+        page += 1
+    return branches
+
+def _list_all_commits(owner: str, repo: str, branch: str, headers: dict) -> list[dict]:
+    commits, page = [], 1
+    while True:
+        url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits?sha={branch}&per_page=100&page={page}"
+        r = requests.get(url, headers=headers, timeout=20)
+        if not r.ok:
+            logging.warning(f"[{owner}/{repo}@{branch}] listCommits 실패: {r.status_code} {r.text[:200]}")
+            break
+        data = r.json()
+        if not data:
+            break
+        commits.extend(data)
+        page += 1
+    commits.reverse()  # 오래된→최신
+    return commits
+
+def _read_checkpoint(user_id: str, repo_full_name: str, branch: str) -> str | None:
+    if not deps_container:
         return None
-
-def get_anomaly_score(features: dict) -> float | None:
-    if not DATABRICKS_HOST or not DATABRICKS_TOKEN: return 0.5
-    url, headers = f"{DATABRICKS_HOST}{MODEL_ENDPOINT_PATH}", {'Authorization': f'Bearer {DATABRICKS_TOKEN}', 'Content-Type': 'application/json'}
-    data = json.dumps({"dataframe_records": [features]})
+    cp_id = _checkpoint_id(user_id, repo_full_name, branch)
     try:
-        response = requests.post(url, headers=headers, data=data, timeout=20)
-        response.raise_for_status()
-        predictions = response.json().get('predictions')
-        if predictions and isinstance(predictions, list) and predictions:
-            prediction = predictions[0]
-            if isinstance(prediction, (int, float)):
-                return float(prediction)
-            else:
-                logging.warning(f"Model returned a non-numeric prediction: {prediction}")
-                return None
-        raise ValueError("Invalid model response format")
-    except Exception as e:
-        logging.error(f"Model invocation failed: {e}")
-        return None
-
-def sync_and_analyze_repo(repo_full_name: str, access_token: str):
-    safe_id = repo_full_name.replace('/', '_').replace('.', '_')
-    headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github.v3+json'}
-    events_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/events?per_page=100"
-    
-    try:
-        res = requests.get(events_url, headers=headers, timeout=15)
-        res.raise_for_status()
-        events = res.json()
-    except requests.exceptions.RequestException as e:
-        error_message = f"GitHub API Error (Status {e.response.status_code if e.response else 'N/A'}): Repository '{repo_full_name}' not found or private."
-        raise IOError(error_message)
-    
-    latest_push = next((e for e in events if e['type'] == 'PushEvent'), None)
-    
-    if not latest_push:
-        logging.info(f"[{repo_full_name}] No recent PushEvent found. Assigning a low default anomaly score.")
-        event_doc = {
-            'id': safe_id, 'repo_full_name': repo_full_name, 'has_recent_event': True,
-            'event_id': 'N/A', 'event_type': 'NoPushEvent',
-            'created_at': datetime.utcnow().isoformat() + 'Z', 'actor': 'System',
-            'commits': [{'author': {'name': 'N/A'}, 'message': 'No recent push activity detected.'}],
-            'anomaly_score': 0.1,
-            'features': {}, 'last_synced': datetime.utcnow().isoformat() + 'Z'
-        }
-        events_container.upsert_item(body=event_doc)
-        return event_doc
-
-    features = extract_features_from_event(latest_push, access_token)
-    if features:
-        score = get_anomaly_score(features)
-        event_doc = {
-            'id': safe_id, 'repo_full_name': repo_full_name, 'has_recent_event': True,
-            'event_id': latest_push['id'], 'event_type': latest_push['type'],
-            'created_at': latest_push['created_at'], 'actor': latest_push.get('actor', {}).get('login'),
-            'commits': latest_push.get('payload', {}).get('commits', []), 'anomaly_score': score,
-            'features': features, 'last_synced': datetime.utcnow().isoformat() + 'Z'
-        }
-        events_container.upsert_item(body=event_doc)
-        return event_doc
-    
-    raise ValueError("Feature extraction failed, but proceeding.")
-
-
-@app.route('/get_oss_activity/<path:repo_name>')
-def get_oss_activity(repo_name):
-    if 'access_token' not in session: return jsonify({"error": "Unauthorized"}), 401
-    
-    # [수정] repo_name이 'owner/repo' 형식이 맞는지 검증
-    if '/' not in repo_name:
-        logging.warning(f"Invalid repo_name format: {repo_name}. Not a GitHub repository.")
-        # 프론트엔드에서 구별할 수 있는 명확한 오류 메시지 반환
-        return jsonify({
-            "error_type": "NOT_A_GITHUB_REPO",
-            "message": f"'{repo_name}'은(는) 패키지 이름이며, 직접 연결된 GitHub 저장소가 아닙니다. 개발자 활동을 분석할 수 없습니다."
-        }), 400 # 400 Bad Request가 더 적합
-
-    safe_id = repo_name.replace('/', '_').replace('.', '_')
-    try:
-        query = f"SELECT * FROM c WHERE c.id = '{safe_id}'"
-        items = list(events_container.query_items(query, enable_cross_partition_query=True))
-        if items:
-            item = items[0]
-            last_synced = datetime.fromisoformat(item['last_synced'].replace('Z', '+00:00'))
-            if datetime.now(timezone.utc) - last_synced > timedelta(hours=1):
-                raise CosmosResourceNotFoundError("Stale data, forcing refresh")
-            return jsonify(item)
-        else:
-            return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
+        cp = deps_container.read_item(item=cp_id, partition_key=user_id)
+        return cp.get("last_sha")
     except CosmosResourceNotFoundError:
-        return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
+        return None
     except Exception as e:
-        logging.error(f"Error in get_oss_activity for {repo_name}: {e}")
-        try:
-            return jsonify(sync_and_analyze_repo(repo_name, session['access_token']))
-        except Exception as sync_e:
-            return jsonify({"error": str(sync_e)}), 500
+        logging.warning(f"checkpoint read 실패: {e}")
+        return None
 
-@app.route('/sync_my_repos')
-def sync_my_repos_route():
-    if 'user_id' not in session or 'access_token' not in session:
-        return redirect(url_for('index'))
-    sync_my_repos_to_db(session['user_id'], session['access_token'])
-    return redirect(url_for('dashboard'))
+def _write_checkpoint(user_id: str, repo_full_name: str, branch: str, last_sha: str | None):
+    if not deps_container:
+        return
+    cp_doc = {
+        "id": _checkpoint_id(user_id, repo_full_name, branch),
+        "role": "checkpoint",
+        "userId": user_id,
+        "repo_full_name": repo_full_name,
+        "branch": branch,
+        "last_sha": last_sha,
+        "lastUpdated": datetime.utcnow().isoformat() + "Z",
+    }
+    deps_container.upsert_item(cp_doc)
 
+# -----------------------------
+# 백필(브랜치 전체 → 일자별 branch_log 저장)
+# -----------------------------
+def backfill_repo_all_branches(user_id: str, repo_full_name: str, access_token: str):
+    headers = _headers(access_token)
+    if '/' not in repo_full_name:
+        logging.warning(f"INVALID repo: {repo_full_name}")
+        return
+
+    owner, repo = repo_full_name.split("/", 1)
+    branches = _list_all_branches(repo_full_name, headers)
+    if not branches:
+        logging.info(f"[{repo_full_name}] 브랜치 없음")
+        return
+
+    for br in branches:
+        last_sha = _read_checkpoint(user_id, repo_full_name, br)
+        commits = _list_all_commits(owner, repo, br, headers)
+
+        if last_sha:
+            try:
+                idx = next(i for i,c in enumerate(commits) if c.get("sha")==last_sha)
+                commits = commits[idx+1:]
+            except StopIteration:
+                # 히스토리 재작성 등으로 체크포인트 sha 없음 → 전체 스캔
+                pass
+
+        if not commits:
+            # 체크포인트만 최신으로 맞춰주기
+            if _list_all_commits(owner, repo, br, headers):
+                _write_checkpoint(user_id, repo_full_name, br, _list_all_commits(owner, repo, br, headers)[-1].get("sha"))
+            continue
+
+        buckets: dict[str, dict] = {}
+        for c in commits:
+            sha = c.get("sha")
+            commit_url = c.get("url")
+            try:
+                det = requests.get(commit_url, headers=headers, timeout=15)
+                det.raise_for_status()
+                files = det.json().get("files", [])
+            except Exception:
+                files = []
+
+            changed_dep_files = [f.get("filename","") for f in files if _is_dep_file(f.get("filename",""))]
+
+            date_iso = (c.get("commit", {}).get("author", {}).get("date")
+                        or c.get("commit", {}).get("committer", {}).get("date")
+                        or datetime.utcnow().isoformat() + "Z")
+            day = date_iso[:10]
+
+            b = buckets.setdefault(day, {
+                "commits": 0,
+                "dep_changes": 0,
+                "files": set(),
+                "samples": []
+            })
+            b["commits"] += 1
+            if changed_dep_files:
+                b["dep_changes"] += len(changed_dep_files)
+                for fn in changed_dep_files:
+                    b["files"].add(fn)
+                if len(b["samples"]) < 3:
+                    msg = (c.get("commit", {}).get("message") or "")[:140]
+                    b["samples"].append({
+                        "sha": sha,
+                        "message": msg,
+                        "url": f"https://github.com/{owner}/{repo}/commit/{sha}"
+                    })
+
+        # 일자별 문서 업서트
+        for day in sorted(buckets.keys()):
+            v = buckets[day]
+            doc = {
+                "id": _safe_id_branch_log(user_id, repo_full_name, br, day),
+                "role": "branch_log",
+                "userId": user_id,
+                "repo_full_name": repo_full_name,
+                "branch": br,
+                "date": day,
+                "counts": {"commits": v["commits"], "dep_changes": v["dep_changes"]},
+                "dep_files": sorted(list(v["files"])),
+                "examples": v["samples"],
+                "lastUpdated": datetime.utcnow().isoformat() + "Z",
+            }
+            deps_container.upsert_item(doc)
+
+        # 브랜치 최신 sha로 체크포인트 갱신
+        _write_checkpoint(user_id, repo_full_name, br, commits[-1].get("sha"))
+
+# -----------------------------
+# OAuth & 라우팅
+# -----------------------------
 @app.route('/')
 def index():
     return redirect(url_for('dashboard')) if 'access_token' in session else render_template('index.html')
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('index'))
 
 @app.route('/login')
 def login():
     scope = "repo read:user"
     return redirect(f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}&scope={scope}")
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
 
 @app.route('/callback')
 def callback():
@@ -199,54 +243,122 @@ def callback():
     token_res = requests.post("https://github.com/login/oauth/access_token", params=token_params, headers=headers)
     token_json = token_res.json()
     access_token = token_json.get('access_token')
-    if not access_token: return "Error: Could not retrieve access token.", 400
+    if not access_token:
+        return "Error: Could not retrieve access token.", 400
+
     session['access_token'] = access_token
-    user_headers = {'Authorization': f'token {access_token}'}
+
+    user_headers = _headers(access_token)
     user_res = requests.get(f"{GITHUB_API_URL}/user", headers=user_headers)
     user_info = user_res.json()
-    session['user_id'] = user_info.get('login')
-    sync_my_repos_to_db(user_info.get('login'), access_token)
+    user_login = user_info.get('login')
+
+    if not user_login:
+        return "Error: GitHub user not found", 400
+
+    session['user_id'] = user_login
+    # 내 레포 목록 동기화 + 브랜치 전구간 백필
+    sync_my_repos_to_db(user_login, access_token)
+
     return redirect(url_for('dashboard'))
 
-def sync_my_repos_to_db(user_id, access_token):
-    if not deps_container: return
-    headers = {'Authorization': f'token {access_token}', 'Accept': 'application/vnd.github+json'}
-    repos_res = requests.get(f"{GITHUB_API_URL}/user/repos?type=owner&per_page=100", headers=headers)
-    repos = repos_res.json() if repos_res.ok else []
-    for repo in repos:
-        repo_full_name = repo.get('full_name')
-        if not repo_full_name: continue
-        sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
-        sbom_res = requests.get(sbom_url, headers=headers)
-        dependencies = set()
-        if sbom_res.status_code == 200:
-            for pkg in sbom_res.json().get('sbom', {}).get('packages', []):
-                pkg_name, repo_name = pkg.get('name', ''), repo.get('name', '')
-                if not pkg_name or repo_name.lower() in pkg_name.lower(): continue
-                version = pkg.get('versionInfo', '')
-                repo_path = next((ref.get('locator') for ref in pkg.get('externalRefs', []) if ref.get('referenceType') == 'vcs' and 'github.com' in ref.get('locator', '')), None)
-                if repo_path:
-                    repo_full_name_dep = '/'.join(repo_path.split('github.com/')[1].replace('.git', '').split('/')[:2])
-                    dependencies.add(f"{repo_full_name_dep} {version}".strip())
-                else:
-                    dependencies.add(f"{pkg_name} {version}".strip())
-        item = {
-            'id': f"{user_id}_{repo.get('name')}", 'userId': user_id,
-            'repositoryName': repo_full_name,
-            'lastUpdated': datetime.utcnow().isoformat() + 'Z',
-            'dependencies': sorted(list(dependencies))
-        }
-        deps_container.upsert_item(body=item)
+# -----------------------------
+# 내 레포 → role:user + 브랜치 백필
+# -----------------------------
+def sync_my_repos_to_db(user_id: str, access_token: str):
+    if not deps_container:
+        return
+    headers = _headers(access_token)
 
+    # 내 레포 전체 수집 (소유자 기준)
+    repos, page = [], 1
+    while True:
+        url = f"{GITHUB_API_URL}/user/repos?type=owner&per_page=100&page={page}"
+        r = requests.get(url, headers=headers, timeout=20)
+        if not r.ok:
+            logging.error(f"list repos 실패: {r.status_code} {r.text[:200]}")
+            break
+        data = r.json()
+        if not data:
+            break
+        repos.extend(data)
+        page += 1
+
+    repo_full_names = [r.get("full_name") for r in repos if r.get("full_name")]
+
+    # role:"user" 얇은 연결 정보 저장
+    user_doc = {
+        "id": f"user:{user_id}",
+        "role": "user",
+        "userId": user_id,
+        "gh_login": user_id,
+        "repos": repo_full_names,
+        "createdAt": datetime.utcnow().isoformat() + "Z",
+        "lastUpdated": datetime.utcnow().isoformat() + "Z",
+    }
+    deps_container.upsert_item(user_doc)
+
+    # 각 레포 모든 브랜치 백필
+    for full_name in repo_full_names:
+        try:
+            backfill_repo_all_branches(user_id, full_name, access_token)
+        except Exception as e:
+            logging.error(f"[{full_name}] backfill 실패: {e}")
+
+# -----------------------------
+# 조회 API (레포/브랜치/기간)
+# -----------------------------
+@app.route('/api/branch_logs')
+def api_branch_logs():
+    if 'user_id' not in session:
+        return jsonify({"error":"Unauthorized"}), 401
+
+    user_id = session['user_id']
+    repo = request.args.get("repo")
+    branch = request.args.get("branch")
+    since = request.args.get("since")  # YYYY-MM-DD
+    until = request.args.get("until")  # YYYY-MM-DD
+
+    if not repo:
+        return jsonify({"error":"repo is required"}), 400
+
+    where = ['c.role = "branch_log"', 'c.userId = @userId', 'c.repo_full_name = @repo']
+    params = [{"name":"@userId","value":user_id}, {"name":"@repo","value":repo}]
+    if branch:
+        where.append("c.branch = @branch"); params.append({"name":"@branch","value":branch})
+    if since and until:
+        where.append("c.date BETWEEN @since AND @until")
+        params.extend([{"name":"@since","value":since},{"name":"@until","value":until}])
+
+    q = f"SELECT c.repo_full_name, c.branch, c.date, c.counts, c.dep_files, c.examples FROM c WHERE {' AND '.join(where)} ORDER BY c.date DESC"
+    items = list(deps_container.query_items({"query": q, "parameters": params}, enable_cross_partition_query=True))
+    return jsonify(items)
+
+# -----------------------------
+# 대시보드 (브랜치/일자 로그)
+# -----------------------------
 @app.route('/dashboard')
 def dashboard():
-    if 'user_id' not in session: return redirect(url_for('index'))
-    if not deps_container: return "Error: Could not connect to the database.", 500
-    user_id = session['user_id']
-    query = f"SELECT * FROM c WHERE c.userId = '{user_id}'"
-    items = sorted(list(deps_container.query_items(query, enable_cross_partition_query=True)), key=lambda x: x.get('repositoryName', ''))
-    return render_template('dashboard.html', user_id=user_id, items=items)
+    if 'user_id' not in session:
+        return redirect(url_for('index'))
+    if not deps_container:
+        return "Error: DB 연결 실패", 500
 
+    user_id = session['user_id']
+    q = """
+    SELECT c.repo_full_name, c.branch, c.date, c.counts, c.dep_files, c.examples
+    FROM c
+    WHERE c.role = "branch_log" AND c.userId = @userId
+    ORDER BY c.date DESC
+    """
+    params = [{"name":"@userId","value":user_id}]
+    logs = list(deps_container.query_items({"query": q, "parameters": params}, enable_cross_partition_query=True))
+
+    return render_template('dashboard_branch.html', user_id=user_id, logs=logs)
+
+# -----------------------------
+# 앱 시작
+# -----------------------------
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
