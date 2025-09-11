@@ -1,27 +1,30 @@
-import logging
 import os
 import re
 import json
-import requests
+import logging
 from datetime import datetime, timedelta
+
+import requests
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
 from azure.cosmos import CosmosClient
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
-# -----------------------------
-# Flask
-# -----------------------------
-BASE_DIR = os.path.dirname(__file__)
+# =========================
+# Flask & Paths
+# =========================
+BASE_DIR = os.path.dirname(__file__)  # .../web
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
 app = Flask(
     __name__,
-    template_folder=os.path.join(BASE_DIR, 'templates'),
-    static_folder=os.path.join(BASE_DIR, 'static'),
+    template_folder=TEMPLATES_DIR,
+    static_folder=None,  # 정적파일 없음(템플릿에 인라인)
 )
 app.secret_key = os.urandom(24)
 
-# -----------------------------
+# =========================
 # Config
-# -----------------------------
+# =========================
 GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
 GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
 GITHUB_API_URL = "https://api.github.com"
@@ -30,12 +33,12 @@ COSMOS_CONN_STR = os.environ.get('COSMOS_DB_CONNECTION_STRING')
 DATABASE_NAME = 'ProjectGuardianDB'
 DEPS_CONTAINER_NAME = 'Dependencies'  # partitionKey: /userId
 
-# 로컬 일자 버킷을 위해 시간대 오프셋(예: KST=+9)
+# 로컬 일자 버킷을 위해 시간대 오프셋(예: 한국 9)
 TZ_OFFSET_HOURS = int(os.environ.get("TZ_OFFSET_HOURS", "0"))
 
-# -----------------------------
+# =========================
 # Cosmos
-# -----------------------------
+# =========================
 try:
     cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
     database = cosmos_client.get_database_client(DATABASE_NAME)
@@ -45,9 +48,9 @@ except Exception as e:
     logging.critical(f"Cosmos DB 연결 실패: {e}")
     cosmos_client = database = deps_container = None
 
-# -----------------------------
+# =========================
 # Helpers
-# -----------------------------
+# =========================
 _ILLEGAL_ID_CHARS = re.compile(r'[\/\\\?#]')
 
 def _safe_key(s: str) -> str:
@@ -78,9 +81,9 @@ def _safe_id_branch_log(user_id: str, repo_full_name: str, branch: str, day: str
 def _checkpoint_id(user_id: str, repo_full_name: str, branch: str) -> str:
     return f"checkpoint:{_safe_key(user_id)}:{_safe_key(repo_full_name)}:{_safe_key(branch)}"
 
-# -----------------------------
+# =========================
 # GitHub API wrappers
-# -----------------------------
+# =========================
 def _list_all_branches(repo_full_name: str, headers: dict) -> list[str]:
     branches = []
     page = 1
@@ -140,9 +143,9 @@ def _write_checkpoint(user_id: str, repo_full_name: str, branch: str, last_sha: 
     }
     deps_container.upsert_item(cp_doc)
 
-# -----------------------------
+# =========================
 # Backfill: repo 모든 브랜치 → 일자별 branch_log
-# -----------------------------
+# =========================
 def backfill_repo_all_branches(user_id: str, repo_full_name: str, access_token: str):
     headers = _headers(access_token)
     if '/' not in repo_full_name:
@@ -231,9 +234,9 @@ def backfill_repo_all_branches(user_id: str, repo_full_name: str, access_token: 
         except Exception as e:
             logging.error(f"[{repo_full_name}] backfill 실패: {e}")
 
-# -----------------------------
-# OAuth & Routes
-# -----------------------------
+# =========================
+# OAuth & core routes
+# =========================
 @app.route('/')
 def index():
     return redirect(url_for('dashboard')) if 'access_token' in session else render_template('index.html')
@@ -315,9 +318,9 @@ def sync_my_repos_route():
     sync_my_repos_to_db(session['user_id'], session['access_token'])
     return redirect(url_for('dashboard'))
 
-# -----------------------------
+# =========================
 # Query APIs
-# -----------------------------
+# =========================
 @app.route('/api/branch_logs')
 def api_branch_logs():
     if 'user_id' not in session:
@@ -342,7 +345,7 @@ def api_branch_logs():
     items = list(deps_container.query_items({"query": q, "parameters": params}, enable_cross_partition_query=True))
     return jsonify(items)
 
-# ---- 신규: 특정 repo/branch/일자의 커밋 목록(최신순) ----
+# 특정 repo/branch/일자의 커밋 목록(최신순)
 @app.route('/api/commits_by_day')
 def api_commits_by_day():
     if 'access_token' not in session:
@@ -370,7 +373,6 @@ def api_commits_by_day():
             "per_page": 100
         }
 
-        # 페이징
         commits = []
         page = 1
         headers = _headers(access_token)
@@ -412,7 +414,7 @@ def api_commits_by_day():
         logging.exception("api_commits_by_day failed")
         return jsonify({"error": str(e)}), 500
 
-# ---- 신규: 커밋 상세 ----
+# 커밋 상세
 @app.route('/api/commit_detail')
 def api_commit_detail():
     if 'access_token' not in session:
@@ -453,18 +455,19 @@ def api_commit_detail():
         "files": out_files
     })
 
-# -----------------------------
+# =========================
 # Dashboard
-# -----------------------------
+# =========================
 @app.route('/dashboard')
 def dashboard():
     if 'user_id' not in session:
-        return redirect(url_for('index'))
+        return render_template('index.html')
     if not deps_container:
         return "Error: DB 연결 실패", 500
 
     try:
         user_id = session['user_id']
+
         q_logs = """
         SELECT c.repo_full_name, c.branch, c.date, c.counts, c.dep_files, c.examples
         FROM c
@@ -484,45 +487,35 @@ def dashboard():
 
         return render_template('dashboard_branch.html', user_id=user_id, logs=logs, repos=repos)
     except Exception as e:
-        # 여기로 떨어지면 템플릿/데이터 문제니 내용 보여주기
         logging.exception("dashboard render failed")
-        return {"error": "dashboard render failed", "detail": str(e)}, 500
+        return {"error":"dashboard render failed", "detail": str(e)}, 500
 
-
-@app.route('/healthz')
+# =========================
+# Debug/health
+# =========================
+@app.route("/healthz")
 def healthz():
-    return 'ok', 200
+    return "ok", 200
 
-@app.route('/whoami')
+@app.route("/whoami")
 def whoami():
-    # 세션/토큰 상태와 템플릿 경로 확인
     return {
         "has_session": "access_token" in session,
         "user_id": session.get("user_id"),
-        "template_folder": app.template_folder,
-        "static_folder": app.static_folder
+        "template_dir": app.template_folder,
     }, 200
 
-@app.route('/debug_dashboard')
-def debug_dashboard():
-    # 템플릿 대신 텍스트로 데이터만 뽑아보기
+@app.route("/__tpl")
+def __tpl():
     try:
-        user_id = session.get('user_id')
-        if not user_id:
-            return "no session.user_id; try /login", 200
-        from azure.cosmos import exceptions as cexc
-        q = """SELECT TOP 5 c.repo_full_name, c.branch, c.date, c.counts
-               FROM c WHERE c.role="branch_log" AND c.userId=@u ORDER BY c.date DESC"""
-        params = [{"name":"@u","value":user_id}]
-        items = list(deps_container.query_items({"query":q, "parameters":params}, enable_cross_partition_query=True))
-        return {"user_id": user_id, "items_len": len(items), "sample": items[:3]}, 200
+        files = sorted(os.listdir(app.template_folder or '.')) if app.template_folder else []
+        return {"template_dir": app.template_folder, "files": files}, 200
     except Exception as e:
-        return {"error": str(e)}, 500
+        return {"template_dir": app.template_folder, "error": str(e)}, 500
 
-
-# -----------------------------
-# Run
-# -----------------------------
+# =========================
+# Run (local)
+# =========================
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
