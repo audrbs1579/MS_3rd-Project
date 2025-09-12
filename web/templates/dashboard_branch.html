@@ -1,291 +1,290 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-8">
   <title>Branch Activity – {{ user_id }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body{margin:0;font:14px/1.4 Tahoma, Geneva, Verdana, sans-serif;color:#111;}
-    header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #ddd}
-    .hint{color:#666;font-size:12px;margin-left:8px}
-    .btn{padding:6px 10px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
+    /* XP 느낌의 기본 폰트 */
+    html,body{font-family:Tahoma, Arial, sans-serif;margin:0;padding:0}
+    header,footer{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center;justify-content:space-between}
+    main{display:grid;grid-template-columns:320px 1fr 1fr;gap:12px;padding:12px}
+    .col{border-left:1px solid #e5e5e5;padding:8px}
+    .col:first-child{border-left:none}
+    h2{margin:0 0 8px 0;font-size:16px}
+    input[type=text]{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px}
+    .btn{padding:8px 12px;border:1px solid #333;border-radius:4px;background:#fff;cursor:pointer}
+    .btn:hover{background:#f6f6f6}
+    .tag{display:inline-block;padding:2px 8px;border:1px solid #ccc;border-radius:999px;font-size:12px;margin-left:6px}
+    .repo-chip{display:inline-block;margin:4px 6px 0 0;padding:6px 10px;border:1px solid #ddd;border-radius:12px;cursor:pointer}
+    .repo-chip:hover{background:#f7f7f7}
 
-    .wrap{display:grid;grid-template-columns: 320px 8px 1fr 8px 520px; height: calc(100vh - 50px);}
-    .pane{overflow:auto}
-    .handle{background:#e5e5e5;cursor:col-resize}
-
-    /* repo chips */
-    .repo-bar{padding:12px}
-    .chip{display:inline-block;border:1px solid #ccc;border-radius:14px;padding:4px 10px;margin:0 8px 8px 0;background:#fafafa;cursor:pointer}
-    .chip.active{background:#e7f1ff;border-color:#7fb3ff}
-    .filter{width:100%;padding:7px;border:1px solid #ccc;margin-bottom:10px}
-
-    /* day header */
-    .day{margin:12px 12px 8px 12px;background:rgb(255,149,0);color:#fff;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
-    .box{margin:0 12px 12px 12px;border:1px dashed #ccc;border-radius:6px;padding:10px}
-
-    .branch-row{display:flex;align-items:center;gap:8px;margin:10px 12px}
-    .branch-name{font-weight:bold}
-    .pill{font-size:12px;border:1px solid #ccc;border-radius:999px;padding:2px 8px;background:#f5f5f5}
-    .toggle{margin-left:auto}
-
-    .commit{display:flex;justify-content:space-between;align-items:center;border:1px solid #eee;border-radius:6px;padding:8px 10px;margin:6px 0;background:#fff}
-    .sha{font-family:monospace;border:1px solid #cfe2ff;background:#eaf3ff;border-radius:12px;padding:2px 8px}
-    .newdot{width:10px;height:10px;border-radius:50%;background:#25b45a;margin-right:6px;display:inline-block;vertical-align:middle}
+    .date-head{margin:12px 0 8px 0;padding:10px 12px;border-radius:6px;background:rgb(255,149,0);color:#fff;display:flex;align-items:center;justify-content:space-between}
+    .branch-row{padding:8px 4px;border-bottom:1px solid #eee}
+    .commit-panel{border:1px dashed #ccc;border-radius:6px;padding:10px;max-height:360px;overflow:auto}
+    .commit-item{display:flex;align-items:center;justify-content:space-between;border:1px solid #eee;border-radius:8px;padding:10px;margin:6px 0}
+    .sha{font-family:ui-monospace, Consolas, monospace;font-size:12px;border:1px solid #ddd;border-radius:999px;padding:2px 8px}
+    .green-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#28a745;margin-right:6px}
     .muted{color:#666;font-size:12px}
-    .empty{color:#666;padding:12px}
-
-    /* commit detail */
-    #detail{padding:12px}
-    pre{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:10px}
+    .detail{white-space:pre-wrap}
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <strong>Branch Activity – {{ user_id }}</strong>
-      <span class="hint">KST로 표시 / 1분마다 자동 새로고침</span>
-    </div>
-    <div>
-      <button id="btnSync" class="btn">동기화</button>
-      <a href="{{ url_for('logout') }}"><button class="btn">Logout</button></a>
-    </div>
-  </header>
-
-  <div class="wrap" id="grid">
-    <!-- Repositories -->
-    <section class="pane" id="reposPane">
-      <div class="repo-bar">
-        <input id="repoFilter" class="filter" placeholder="owner/repo 필터"/>
-        <div id="repoChips"></div>
-      </div>
-    </section>
-    <div class="handle" id="split1"></div>
-
-    <!-- Days & Branches -->
-    <section class="pane" id="daysPane">
-      <div id="daysRoot"></div>
-    </section>
-    <div class="handle" id="split2"></div>
-
-    <!-- Commit Detail -->
-    <section class="pane" id="detailPane">
-      <div id="detail" class="muted">왼쪽에서 커밋을 선택하세요.</div>
-    </section>
+<header>
+  <div><strong>Branch Activity – {{ user_id }}</strong> <span class="muted">KST로 표시 / 클릭 시에만 조회</span></div>
+  <div>
+    <button id="btnSync" class="btn">동기화(로그인 유지)</button>
+    <a class="btn" href="{{ url_for('logout') }}">Logout</a>
   </div>
+</header>
 
-  <script>
-    // ----- Server data -----
-    const RAW_LOGS = {{ logs|tojson|safe }};
-    const USER_REPOS = {{ repos|tojson|safe }};
-    const USER_ID = "{{ user_id }}";
+<main>
+  <!-- Repositories -->
+  <section class="col">
+    <h2>Repositories</h2>
+    <input id="repoFilter" type="text" placeholder="owner/repo 필터">
+    <div id="repoList" style="margin-top:8px"></div>
+  </section>
 
-    // ----- State keepers -----
-    let currentRepo = null;
-    const openBranches = new Set();        // 'YYYY-MM-DD::branch'
-    const selectedCommit = { repo:null, sha:null };
+  <!-- Days & Branches -->
+  <section class="col">
+    <h2>Days & Branches</h2>
+    <div id="dayBranch"></div>
+  </section>
 
-    // ----- Helpers -----
-    const qs = sel => document.querySelector(sel);
-    const ce = (t, cls) => { const e=document.createElement(t); if(cls) e.className=cls; return e; };
-    const fmtKST = iso => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      return d.toLocaleString("ko-KR", { timeZone:"Asia/Seoul", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit" });
-    };
-    const withinMin = (iso, m) => {
-      if (!iso) return false;
-      const t = new Date(iso).getTime();
-      return (Date.now() - t) <= m*60*1000;
-    };
+  <!-- Commit Detail -->
+  <section class="col">
+    <h2>Commit Detail</h2>
+    <div id="detail">왼쪽에서 커밋을 선택하세요.</div>
+  </section>
+</main>
 
-    // ----- Build repo chips -----
-    const chipWrap = qs('#repoChips');
-    function renderRepoChips(repos) {
-      chipWrap.innerHTML = '';
-      (repos || []).forEach(full => {
-        const short = full.split('/').pop();
-        const chip = ce('span','chip');
-        chip.textContent = short;
-        chip.title = full;
-        chip.addEventListener('click', ()=>{ document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); chip.classList.add('active'); currentRepo = full; loadLogs(full); });
-        chipWrap.appendChild(chip);
-      });
+<footer>
+  <span class="muted">© dashboard</span>
+</footer>
+
+<script>
+  const USER_ID = "{{ user_id }}";
+
+  // -------------- DOM 헬퍼 --------------
+  const qs = (s, el=document)=>el.querySelector(s);
+  const qsa = (s, el=document)=>Array.from(el.querySelectorAll(s));
+  const elRepoList = qs('#repoList');
+  const elDayBranch = qs('#dayBranch');
+  const elDetail = qs('#detail');
+  const elRepoFilter = qs('#repoFilter');
+
+  // -------------- 상태 --------------
+  let allRepos = [];        // API로 가져온 전체 repo
+  let selectedRepo = null;  // "owner/repo"
+  let branchesCache = {};   // { repo : [ {name, sha}, ... ] }
+  let commitsCache = {};    // { repo|branch : [ commits ] }
+
+  // -------------- 초기화 --------------
+  document.addEventListener('DOMContentLoaded', async () => {
+    await loadRepos();
+    wireEvents();
+  });
+
+  function wireEvents() {
+    elRepoFilter.addEventListener('input', renderRepos);
+    qs('#btnSync').addEventListener('click', async ()=>{
+      // 단순히 repo 재조회만 수행 (GitHub API 호출)
+      await loadRepos(true);
+    });
+  }
+
+  // -------------- API 호출 --------------
+  async function apiGet(url, params={}) {
+    const q = new URLSearchParams(params);
+    const res = await fetch(url + (q.toString() ? `?${q}` : ''));
+    if (!res.ok) {
+      let err = await res.text();
+      throw new Error(err || res.statusText);
     }
-    renderRepoChips(USER_REPOS);
+    return res.json();
+  }
 
-    // Filter
-    qs('#repoFilter').addEventListener('input', e=>{
-      const q = e.target.value.toLowerCase();
-      [...chipWrap.children].forEach(ch=>{
-        ch.style.display = ch.title.toLowerCase().includes(q) ? '' : 'none';
+  async function loadRepos(force=false) {
+    const data = await apiGet('/api/my_repos');
+    allRepos = data.repos || [];
+    // 이름만 보여달라 했으므로 chip에는 repo.name 만 표시, 클릭 시 full_name 사용
+    renderRepos();
+    if (force) {
+      // 캐시 초기화
+      branchesCache = {};
+      commitsCache = {};
+      elDayBranch.innerHTML = '';
+      elDetail.textContent = '왼쪽에서 커밋을 선택하세요.';
+    }
+  }
+
+  function renderRepos() {
+    const f = (elRepoFilter.value || '').toLowerCase();
+    elRepoList.innerHTML = '';
+    allRepos
+      .filter(r => (r.full_name||'').toLowerCase().includes(f))
+      .forEach(r => {
+        const chip = document.createElement('button');
+        chip.className = 'repo-chip';
+        chip.textContent = r.name || r.full_name;
+        chip.title = r.full_name;
+        chip.onclick = ()=>selectRepo(r.full_name);
+        elRepoList.appendChild(chip);
       });
+  }
+
+  async function selectRepo(full_name) {
+    selectedRepo = full_name;
+    elDayBranch.innerHTML = '브랜치 불러오는 중...';
+
+    if (!branchesCache[full_name]) {
+      const data = await apiGet('/api/branches', {repo: full_name});
+      branchesCache[full_name] = data.branches || [];
+    }
+    const branches = branchesCache[full_name];
+
+    // 브랜치 목록을 간단히 렌더. 각 브랜치를 클릭하면 해당 커밋을 '지금' 조회.
+    const wrap = document.createElement('div');
+    if (!branches.length) {
+      wrap.textContent = '브랜치 없음';
+      elDayBranch.replaceChildren(wrap);
+      return;
+    }
+
+    branches.forEach(b => {
+      const row = document.createElement('div');
+      row.className = 'branch-row';
+
+      const head = document.createElement('div');
+      head.style.display = 'flex';
+      head.style.alignItems = 'center';
+      head.style.justifyContent = 'space-between';
+      head.innerHTML = `
+        <div>
+          <strong>${b.name}</strong>
+          <span class="tag">C ?</span>
+        </div>
+        <button class="btn">열기</button>
+      `;
+
+      const panel = document.createElement('div');
+      panel.className = 'commit-panel';
+      panel.style.display = 'none';
+      panel.textContent = '커밋을 불러오려면 "열기"를 누르세요.';
+
+      head.querySelector('.btn').onclick = async () => {
+        // 버튼 토글
+        const opened = panel.style.display !== 'none';
+        if (opened) {
+          panel.style.display = 'none';
+          head.querySelector('.btn').textContent = '열기';
+          return;
+        }
+        head.querySelector('.btn').textContent = '닫기';
+        panel.style.display = 'block';
+        await loadCommitsForBranch(full_name, b.name, panel, head);
+      };
+
+      row.appendChild(head);
+      row.appendChild(panel);
+      wrap.appendChild(row);
     });
 
-    // ----- Days & Branches renderer -----
-    const daysRoot = qs('#daysRoot');
+    elDayBranch.replaceChildren(wrap);
+  }
 
-    function groupByDay(logs){
-      const map = new Map(); // day -> [docs]
-      logs.forEach(d=>{
-        const day = d.date;
-        if(!map.has(day)) map.set(day, []);
-        map.get(day).push(d);
-      });
-      // sort day desc
-      return [...map.entries()].sort((a,b)=> b[0].localeCompare(a[0]));
+  async function loadCommitsForBranch(repo, branch, panel, headEl) {
+    panel.innerHTML = '조회 중...';
+
+    const key = `${repo}|${branch}`;
+    if (!commitsCache[key]) {
+      // since는 선택 안하면 전체(페이지 제한 내). 필요 시 UI 만들어서 기간 지정 가능
+      const data = await apiGet('/api/commits', {repo, branch});
+      commitsCache[key] = data.commits || [];
+    }
+    const commits = commitsCache[key];
+
+    // 헤더의 C 배지 갱신
+    const tag = headEl.querySelector('.tag');
+    tag.textContent = `C ${commits.length}`;
+
+    if (!commits.length) {
+      panel.textContent = '커밋 없음';
+      return;
     }
 
-    function renderDays(logs){
-      daysRoot.innerHTML = '';
-      if(!logs || !logs.length){
-        daysRoot.innerHTML = '<div class="empty">선택한 저장소의 기록이 없습니다.</div>';
-        return;
-      }
-      const grouped = groupByDay(logs);
-      grouped.forEach(([day, arr])=>{
-        const header = ce('div','day');
-        header.innerHTML = `<div>${day}</div><div class="muted">${arr.length} item(s)</div>`;
-        daysRoot.appendChild(header);
+    // 최신순으로 표시, 3분 이내 커밋엔 초록 체크
+    panel.innerHTML = '';
+    const now = Date.now();
+    commits.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'commit-item';
 
-        arr.forEach(doc=>{
-          const row = ce('div','branch-row');
-          const pillC = ce('span','pill'); pillC.textContent = `C ${doc.counts?.commits ?? doc.commit_count ?? 0}`;
-          const pillD = ce('span','pill'); pillD.textContent = `D ${doc.counts?.dep_files ?? doc.dep_changed ?? 0}`;
-          const name = ce('span','branch-name'); name.textContent = doc.branch;
+      const isFresh = (() => {
+        if (!c.date) return false;
+        const d = new Date(c.date).getTime();
+        return (now - d) <= 3 * 60 * 1000; // 3분
+      })();
 
-          const btn = ce('button','btn toggle'); btn.textContent = '접기';
-          const key = `${day}::${doc.branch}`;
-          if(!openBranches.has(key)) openBranches.add(key);
+      const left = document.createElement('div');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      left.style.gap = '6px';
+      left.innerHTML = `
+        ${isFresh ? '<span class="green-dot" title="3분 이내"></span>' : ''}
+        <span>${escapeHtml(c.message || '(no message)')}</span>
+      `;
 
-          const box = ce('div','box');
-          if(!doc.examples || !doc.examples.length){
-            box.innerHTML = '<div class="muted">커밋 없음</div>';
-          }else{
-            box.innerHTML = '';
-            doc.examples
-              .sort((a,b)=> (b.commit_time||'').localeCompare(a.commit_time||''))
-              .forEach(c=>{
-                const item = ce('div','commit');
-                const left = ce('div');
-                const right = ce('div');
-                const newIcon = withinMin(c.commit_time,3) ? '<span class="newdot"></span>' : '';
-                left.innerHTML = `${newIcon}${(c.message||'').replace(/[<>&]/g,s=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}`;
-                right.innerHTML = `<span class="sha">${(c.sha||'').slice(0,7)}</span>`;
-                item.appendChild(left); item.appendChild(right);
-                item.addEventListener('click',()=> showCommitDetail(doc.repo_full_name, c.sha));
-                box.appendChild(item);
-              });
-          }
+      const right = document.createElement('div');
+      right.innerHTML = `<span class="sha">${(c.sha || '').slice(0,7)}</span>`;
 
-          btn.addEventListener('click', ()=>{
-            if(box.style.display==='none'){ box.style.display=''; btn.textContent='접기'; openBranches.add(key); }
-            else { box.style.display='none'; btn.textContent='펼치기'; openBranches.delete(key); }
-          });
-          if(!openBranches.has(key)){ box.style.display='none'; btn.textContent='펼치기'; }
+      item.appendChild(left);
+      item.appendChild(right);
 
-          row.appendChild(name);
-          row.appendChild(pillC);
-          row.appendChild(pillD);
-          row.appendChild(btn);
-          daysRoot.appendChild(row);
-          daysRoot.appendChild(box);
-        });
+      item.onclick = ()=>showCommitDetail(repo, c.sha);
+      panel.appendChild(item);
+    });
+  }
+
+  async function showCommitDetail(repo, sha) {
+    elDetail.textContent = '상세 조회 중...';
+    const d = await apiGet('/api/commit_detail', {repo, sha});
+
+    // KST로 변환 표기
+    let kst = '';
+    if (d.date) {
+      kst = new Date(d.date).toLocaleString("ko-KR", {
+        timeZone: "Asia/Seoul",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
       });
     }
 
-    // ----- Load logs for repo -----
-    async function loadLogs(repoFull){
-      try{
-        const r = await fetch(`/api/branch_logs?userId=${encodeURIComponent(USER_ID)}&repo=${encodeURIComponent(repoFull)}`);
-        const data = await r.json();
-        renderDays(data);
-      }catch(e){
-        console.error(e);
-        daysRoot.innerHTML = '<div class="empty">불러오기 실패</div>';
-      }
-    }
+    const files = d.files || [];
+    const stats = d.stats || {};
 
-    // ----- Commit detail -----
-    const detailEl = qs('#detail');
-    async function showCommitDetail(repo, sha){
-      selectedCommit.repo = repo; selectedCommit.sha = sha;
-      detailEl.innerHTML = '불러오는 중...';
-      try{
-        const r = await fetch(`/api/commit_detail?repo=${encodeURIComponent(repo)}&sha=${encodeURIComponent(sha)}`);
-        const d = await r.json();
-        if(d.error){ detailEl.textContent = d.error; return; }
-        const info = d.commit || {};
-        const msg = (info.message||'').trim();
-        const author = info.author?.name || d.author?.login || 'unknown';
-        const when = info.author?.date || info.committer?.date;
-        const files = (d.files||[]).map(f=>`- ${f.filename} (${f.status}) +${f.additions} -${f.deletions}`).join('\n');
-        detailEl.innerHTML = `
-          <div><strong>${repo}</strong> @ <code>${sha.slice(0,7)}</code></div>
-          <div class="muted">by ${author} • ${fmtKST(when)}</div>
-          <h4>Message</h4>
-          <pre>${msg.replace(/[<>&]/g,s=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}</pre>
-          <h4>Files</h4>
-          <pre>${files || '(no files)'}</pre>
-        `;
-      }catch(e){
-        detailEl.textContent = '상세 조회 실패';
-      }
-    }
+    const html = `
+      <div class="detail">
+        <div><strong>${escapeHtml(d.message || '')}</strong></div>
+        <div class="muted" style="margin:6px 0">${escapeHtml(d.author||'')} • ${kst}</div>
+        <div style="margin:6px 0">SHA: <code>${d.sha}</code> · <a href="${d.html_url}" target="_blank">GitHub에서 보기</a></div>
+        <div style="margin:6px 0">총 변경: ${stats.total ?? 0} (+${stats.additions ?? 0} / -${stats.deletions ?? 0})</div>
+        <hr>
+        <div><strong>Files</strong></div>
+        <ul>
+          ${files.map(f => `
+            <li>${escapeHtml(f.filename)} — ${f.status} (+${f.additions} / -${f.deletions})</li>
+          `).join("")}
+        </ul>
+      </div>
+    `;
+    elDetail.innerHTML = html;
+  }
 
-    // ----- Initial render from RAW_LOGS -----
-    // 초기엔 repo 칩만 그려져 있고, 사용자가 클릭 시 해당 repo 로딩
-    // 혹은 최근에 가장 많이 등장한 repo 자동 선택
-    if (USER_REPOS && USER_REPOS.length){
-      currentRepo = USER_REPOS[0];
-      // 첫 칩 활성화
-      const firstChip = document.querySelector('.chip');
-      if(firstChip){ firstChip.classList.add('active'); }
-      loadLogs(currentRepo);
-    }
-
-    // ----- Auto refresh (keep open & selection) -----
-    setInterval(async ()=>{
-      if(!currentRepo) return;
-      const prevOpen = new Set(openBranches);
-      const prevSel = {...selectedCommit};
-      await loadLogs(currentRepo);
-      openBranches.clear(); prevOpen.forEach(k=>openBranches.add(k));
-      if(prevSel.repo && prevSel.sha){
-        // detail은 다시 열어줌
-        showCommitDetail(prevSel.repo, prevSel.sha);
-      }
-    }, 60*1000);
-
-    // ----- Splitters (정방향) -----
-    function bindSplitter(handleId, leftPane, rightPane){
-      const handle = document.getElementById(handleId);
-      let startX, startLeftW, startRightW;
-      handle.addEventListener('mousedown', (e)=>{
-        startX = e.clientX;
-        const l = document.getElementById(leftPane);
-        const r = document.getElementById(rightPane);
-        startLeftW = l.getBoundingClientRect().width;
-        startRightW = r.getBoundingClientRect().width;
-
-        function move(ev){
-          const dx = ev.clientX - startX;
-          l.style.width = (startLeftW + dx) + 'px';
-          r.style.width = (startRightW - dx) + 'px';
-        }
-        function up(){
-          window.removeEventListener('mousemove', move);
-          window.removeEventListener('mouseup', up);
-        }
-        window.addEventListener('mousemove', move);
-        window.addEventListener('mouseup', up);
-      });
-    }
-    bindSplitter('split1','reposPane','daysPane');
-    bindSplitter('split2','daysPane','detailPane');
-
-    // ----- Buttons -----
-    qs('#btnSync').addEventListener('click', ()=>{ window.location.href = "{{ url_for('sync_my_repos') }}"; });
-  </script>
+  function escapeHtml(s){
+    return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+</script>
 </body>
 </html>

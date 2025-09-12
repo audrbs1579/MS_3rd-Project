@@ -1,21 +1,24 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8"/>
-  <title>Project Guardian - Login</title>
+  <meta charset="utf-8">
+  <title>로그인 – Branch Activity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:14px/1.4 Tahoma, Geneva, Verdana, sans-serif}
-    .card{border:1px solid #ddd;border-radius:8px;padding:24px 28px;min-width:320px}
-    .btn{padding:8px 12px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer}
-    h1{margin:0 0 8px 0}
-    p{color:#555}
+    html,body{font-family:Tahoma, Arial, sans-serif;margin:0;padding:0}
+    .wrap{max-width:640px;margin:64px auto;padding:0 16px}
+    .card{border:1px solid #ddd;border-radius:6px;padding:24px}
+    .btn{display:inline-block;padding:10px 16px;border:1px solid #333;border-radius:4px;background:#fff;cursor:pointer}
+    .btn:hover{background:#f6f6f6}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Project Guardian</h1>
-    <p>AI 기반 개발자 활동 분석·의존성 변화 감지</p>
-    <a href="{{ url_for('login') }}"><button class="btn">GitHub로 로그인</button></a>
+  <div class="wrap">
+    <div class="card">
+      <h1>Branch Activity 대시보드</h1>
+      <p>GitHub로 로그인하여 내 리포지토리의 브랜치/커밋을 조회합니다. (조회 시점에만 GitHub API를 호출합니다.)</p>
+      <a class="btn" href="{{ url_for('login') }}">GitHub로 로그인</a>
+    </div>
   </div>
 </body>
 </html>
