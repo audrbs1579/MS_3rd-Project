@@ -9,14 +9,14 @@
       --bg:#f7f7f8; --panel:#ffffff; --text:#222; --muted:#6b7280; --border:#e5e7eb;
       --ring:#3b82f6; --accent:#ff9500; --chip:#f1f5f9; --chip-border:#e2e8f0;
       --shadow-sm:0 1px 8px rgba(0,0,0,.05); --shadow-md:0 6px 24px rgba(0,0,0,.08);
-      --soft:#f3f4f6; --link:#2563eb;
+      --soft:#f3f4f6; --link:#2563eb; --plus:#16a34a; --minus:#dc2626;
     }
     @media (prefers-color-scheme: dark){
       :root{
         --bg:#0c0d0f; --panel:#121317; --text:#eaeaea; --muted:#a6adbb; --border:#23262d;
         --ring:#60a5fa; --accent:#ffb86b; --chip:#151821; --chip-border:#222630;
         --shadow-sm:0 1px 8px rgba(0,0,0,.6); --shadow-md:0 6px 24px rgba(0,0,0,.55);
-        --soft:#181b20; --link:#60a5fa;
+        --soft:#181b20; --link:#60a5fa; --plus:#22c55e; --minus:#f87171;
       }
     }
     *{box-sizing:border-box}
@@ -72,12 +72,16 @@
     .green-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#28a745;box-shadow:0 0 0 3px rgba(40,167,69,.15)}
     .dot-placeholder{width:10px;height:10px;display:inline-block}
 
-    /* Branch rows: 오렌지 강조 */
+    /* Branch rows: 오렌지 강조 + 그리드 헤더(제목 1fr / 정보 / 버튼) */
     .branch-card{border:1px solid var(--border);border-radius:12px;background:var(--panel);margin:10px 0;box-shadow:var(--shadow-sm)}
-    .branch-head{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--accent);color:#fff;padding:10px 12px;border-radius:12px 12px 0 0}
-    .branch-left{display:flex;align-items:center;gap:8px}
+    .branch-head{
+      display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:10px;
+      background:var(--accent); color:#fff; padding:10px 12px; border-radius:12px 12px 0 0;
+    }
+    .branch-title{display:flex;align-items:center;gap:8px;min-width:0;font-size:16px;font-weight:700}
+    .branch-title .name{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .branch-info{display:flex;align-items:center;gap:10px;font-size:12px;opacity:.95}
     .tag{display:inline-block;padding:2px 8px;border:1px solid rgba(255,255,255,.6);border-radius:999px;font-size:12px}
-    .branch-meta{font-size:12px;opacity:.9}
     .open-btn .btn{background:#fff;color:#111;border-color:#111}
     .commit-panel{border-top:1px dashed var(--border);padding:10px;border-radius:0 0 12px 12px;max-height:380px;overflow:auto;background:color-mix(in oklab, var(--panel) 92%, var(--bg))}
     .commit-item{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:10px;padding:10px;margin:8px 0;background:var(--panel);box-shadow:var(--shadow-sm);transition:.15s ease}
@@ -93,6 +97,8 @@
     .files{background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px}
     .files ul{margin:0 0 0 18px;padding:0}
     .only-link a{color:var(--link);text-decoration:underline}
+    .plus{color:var(--plus);font-weight:700}
+    .minus{color:var(--minus);font-weight:700}
   </style>
 </head>
 <body>
@@ -160,7 +166,7 @@
   let selectedRepo = null;          // "owner/repo"
   let branchesCache = {};           // { repo : [ {name, sha}, ... ] }
   let commitsCache = {};            // { "repo|branch" : [ commits ] }
-  let repoFreshMap = {};            // { repo_full_name : boolean } // 3분 이내 커밋 존재 여부
+  let repoFreshMap = {};            // { repo_full_name : boolean }
 
   // UI 유지
   const openedBranches = new Set(); // `${repo}|${branch}`
@@ -196,6 +202,18 @@
       if (v >= 1) return `${v}${name} 전`;
     }
     return '방금';
+  }
+
+  // ✅ 브랜치 정렬: main 우선, 없으면 이름순
+  function sortBranches(list){
+    const hasMain = list.some(b => (b.name||'') === 'main');
+    const byName = (a,b)=> (a.name||'').localeCompare(b.name||'');
+    if (!hasMain) return list.slice().sort(byName);
+    return list.slice().sort((a,b)=>{
+      if ((a.name||'') === 'main') return -1;
+      if ((b.name||'') === 'main') return 1;
+      return byName(a,b);
+    });
   }
 
   // --- API ---
@@ -253,7 +271,9 @@
     // 브랜치 목록
     const data = await apiGet('/api/branches', {repo: full_name});
     branchesCache[full_name] = data.branches || [];
-    const branches = branchesCache[full_name].slice();
+
+    // ✅ 정렬 적용
+    const branches = sortBranches(branchesCache[full_name]);
 
     // 최신 커밋 메타 & 레포 fresh 계산
     let repoFresh = false;
@@ -273,7 +293,7 @@
     repoFreshMap[full_name] = repoFresh;
     renderRepos(); // 레포 리스트의 초록점 갱신
 
-    // 렌더 (오렌지 헤더)
+    // 렌더 (오렌지 헤더 with grid)
     const frag = document.createDocumentFragment();
     branches.forEach(b=>{
       const card = document.createElement('div');
@@ -282,11 +302,16 @@
       const head = document.createElement('div');
       head.className = 'branch-head';
 
-      const left = document.createElement('div');
-      left.className = 'branch-left';
-      left.innerHTML = `
-        ${b._isFresh ? '<span class="green-dot" title="3분 이내"></span>' : '<span style="width:10px;height:10px;display:inline-block"></span>'}
-        <strong>${b.name}</strong>
+      const title = document.createElement('div');
+      title.className = 'branch-title branch-left';
+      title.innerHTML = `
+        ${b._isFresh ? '<span class="green-dot" title="3분 이내"></span>' : '<span class="dot-placeholder"></span>'}
+        <span class="name">${escapeHtml(b.name)}</span>
+      `;
+
+      const info = document.createElement('div');
+      info.className = 'branch-info';
+      info.innerHTML = `
         <span class="tag">C ${b._commitCount ?? 0}</span>
         <span class="branch-meta">${b._latestISO ? new Date(b._latestISO).toLocaleString('ko-KR',{ timeZone:'Asia/Seoul'}) : '—'}</span>
       `;
@@ -322,7 +347,8 @@
         loadCommitsForBranch(full_name, b.name, panel, head);
       }
 
-      head.appendChild(left);
+      head.appendChild(title);
+      head.appendChild(info);
       head.appendChild(right);
       card.appendChild(head);
       card.appendChild(panel);
@@ -351,8 +377,9 @@
     const isFresh = commits.length ? (Date.now() - (new Date(commits[0].date).getTime())) <= 3*60*1000 : false;
     const leftPack = headEl.querySelector('.branch-left');
     if (leftPack){
-      leftPack.firstElementChild?.remove();
-      leftPack.insertAdjacentHTML('afterbegin', isFresh ? '<span class="green-dot" title="3분 이내"></span>' : '<span style="width:10px;height:10px;display:inline-block"></span>');
+      const first = leftPack.firstElementChild;
+      if (first) leftPack.removeChild(first);
+      leftPack.insertAdjacentHTML('afterbegin', isFresh ? '<span class="green-dot" title="3분 이내"></span>' : '<span class="dot-placeholder"></span>');
     }
 
     if (!commits.length) {
@@ -414,9 +441,13 @@
 
     const files = d.files || [];
     const stats = d.stats || {};
+    const total = stats.total ?? 0;
+    const adds  = stats.additions ?? 0;
+    const dels  = stats.deletions ?? 0;
 
     elDetail.innerHTML = `
       <div class="detail-wrap">
+        <!-- 메타 -->
         <div class="kv">
           <dl>
             <dt>제목</dt>
@@ -430,23 +461,26 @@
           </dl>
         </div>
 
-        <div class="files">
-          <div style="font-weight:700;margin-bottom:6px">Files</div>
-          <ul>
-            ${files.map(f => `
-              <li>${escapeHtml(f.filename)} — ${f.status} (+${f.additions} / -${f.deletions})</li>
-            `).join("")}
-          </ul>
-        </div>
-
+        <!-- 변경 (중간 섹션) -->
         <div class="kv">
           <dl>
-            <dt>변경 및</dt>
-            <dd>총 ${stats.total ?? 0} (+${stats.additions ?? 0} / -${stats.deletions ?? 0})</dd>
+            <dt>변경</dt>
+            <dd>총 ${total} (<span class="plus">+${adds}</span> / <span class="minus">-${dels}</span>)</dd>
           </dl>
           <div class="only-link" style="margin-top:6px">
             <a href="${d.html_url}" target="_blank" rel="noopener">GitHub에서 보기</a>
           </div>
+        </div>
+
+        <!-- 파일 -->
+        <div class="files">
+          <div style="font-weight:700;margin-bottom:6px">Files</div>
+          <ul>
+            ${files.map(f => `
+              <li>${escapeHtml(f.filename)} — ${f.status}
+                (<span class="plus">+${f.additions}</span> / <span class="minus">-${f.deletions}</span>)</li>
+            `).join("")}
+          </ul>
         </div>
       </div>
     `;
