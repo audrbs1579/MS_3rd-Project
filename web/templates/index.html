@@ -1,43 +1,38 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <title>Project Guardian - Login</title>
-    <style>
-        body { background-color: #3A6EA5; font-family: Tahoma, Geneva, sans-serif; font-size: 12px; margin: 0; padding: 0; overflow: hidden; }
-        .window { width: 600px; min-height: 400px; border: 2px solid #0058E1; border-radius: 8px 8px 0 0; background-color: #ECE9D8; box-shadow: 5px 5px 15px rgba(0,0,0,0.5); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; }
-        .title-bar { background: linear-gradient(to bottom, #0058E1, #3A85E1); color: white; font-weight: bold; padding: 5px 10px; border-top-left-radius: 5px; border-top-right-radius: 5px; display: flex; justify-content: space-between; align-items: center; cursor: move; }
-        .title-bar-buttons span { display: inline-block; width: 20px; height: 20px; margin-left: 2px; background-color: #D64F34; color: white; text-align: center; line-height: 20px; border: 1px solid white; font-family: 'Courier New', Courier, monospace; }
-        .content { padding: 20px; flex-grow: 1; color: #000; overflow-y: auto; }
-        .taskbar { position: absolute; bottom: 0; left: 0; width: 100%; height: 30px; background: linear-gradient(to bottom, #245EDC, #3A85E1); border-top: 1px solid #66A3FF; display: flex; align-items: center; }
-        .start-button { background: linear-gradient(to bottom, #72BE4A, #55A82B); color: white; font-weight: bold; font-size: 16px; border: 2px outset #55A82B; border-radius: 10px 10px 0 0; padding: 2px 20px; margin-left: 5px; font-style: italic; cursor: pointer; }
-        button { border: 1px solid #000; background-color: #ECE9D8; padding: 5px 10px; cursor: pointer; }
-        a { color: #0058E1; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        ul { list-style-type: none; padding-left: 0; }
-        li { background-color: #FFF; padding: 8px; border: 1px solid #DDD; margin-bottom: 5px; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Project Guardian - Login</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; }
+    header, footer { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
+    footer { border-top: 1px solid #ddd; border-bottom: none; position: sticky; bottom: 0; }
+    main { min-height: calc(100vh - 92px); padding: 16px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+    .card { width: 420px; border: 1px solid #ddd; border-radius: 4px; padding: 16px; background: #fff; }
+    .row { margin-bottom: 10px; }
+    .btn { padding: 8px 12px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    .muted { color: #666; font-size: 12px; }
+  </style>
 </head>
 <body>
-    <div class="window">
-        <div class="title-bar">
-            <span>Project Guardian - Login</span>
-            <div class="title-bar-buttons"><span>_</span><span>☐</span><span>X</span></div>
-        </div>
-        <div class="content">
-            <h1 style="font-size:20px;color:#0058E1;margin-top:0;">Project Guardian</h1>
-            <p>브랜치 전구간(처음→최신) 활동을 수집하고, 의존성 파일 변경을 하이라이트합니다.</p>
-            <ul>
-              <li>웹앱은 조회 전용, 수집·집계는 서버/배치에서 수행</li>
-              <li>브랜치/일자별 <code class="mono">branch_log</code> 문서 조회</li>
-              <li>package.json, requirements.txt, pom.xml, go.mod 등 자동 감지</li>
-            </ul>
-            <br>
-            <a href="{{ url_for('login') }}"><button>GitHub 계정으로 시작하기</button></a>
-        </div>
+  <header>
+    <strong>Project Guardian</strong>
+    <span class="muted">/ Login</span>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="row"><h2 style="margin:0 0 8px 0;">GitHub 계정으로 시작</h2></div>
+      <div class="row">AI 기반 브랜치/커밋 활동 요약과 의존성 변경 탐지 대시보드입니다.</div>
+      <div class="row">
+        <a href="{{ url_for('login') }}"><button class="btn">GitHub 로그인</button></a>
+      </div>
+      <div class="row muted">로그인 후 대시보드에서 레포를 선택해 활동을 조회할 수 있습니다.</div>
     </div>
-    <div class="taskbar">
-        <div class="start-button">start</div>
-    </div>
+  </main>
+
+  <footer>
+    <span class="muted">© Project Guardian</span>
+  </footer>
 </body>
 </html>
