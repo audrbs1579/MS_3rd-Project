@@ -4,49 +4,42 @@
   <meta charset="UTF-8">
   <title>Analysis Results</title>
   <style>
-    body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; }
-    header, footer { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
-    footer { border-top: 1px solid #ddd; border-bottom: none; position: sticky; bottom: 0; }
-    main { min-height: calc(100vh - 92px); padding: 16px; box-sizing: border-box; }
-    .btn { padding: 6px 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
-    .list { margin: 10px 0 0 0; padding: 0; list-style: none; }
-    .item { padding: 6px 8px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 6px; background: #fff; }
-    .error { color: #b00020; white-space: pre-wrap; }
-    .muted { color: #666; font-size: 12px; }
-    .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    body { font-family: Tahoma, "Microsoft Sans Serif", Gulim, Dotum, sans-serif; font-size:14px; margin:0; }
+    header, footer { padding:8px 12px; border-bottom:1px solid #ddd; background:#f7f7f7; }
+    footer { border-top:1px solid #ddd; border-bottom:none; position:sticky; bottom:0; }
+    main { min-height:calc(100vh - 92px); padding:16px; box-sizing:border-box; }
+    .btn { padding:6px 10px; border:1px solid #ccc; background:#fff; cursor:pointer; }
+    .list { margin:10px 0 0; padding:0; list-style:none; }
+    .item { padding:6px 8px; border:1px solid #eee; border-radius:4px; margin-bottom:6px; }
+    .error { color:#b00020; white-space:pre-wrap; }
+    .muted { color:#666; font-size:12px; }
+    .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
   </style>
 </head>
 <body>
-  <header>
-    <strong>Project Guardian</strong>
-    <span class="muted">/ Analysis Results</span>
-  </header>
-
-  <main>
-    <div style="margin-bottom:10px;">
-      <a href="{{ url_for('dashboard') }}"><button class="btn">대시보드로 돌아가기</button></a>
-    </div>
-
-    <h2 style="margin:8px 0;">Repository: <span class="mono">{{ repo_full_name }}</span></h2>
-
-    {% if error %}
-      <div class="error"><strong>Error:</strong> {{ error }}</div>
+<header>
+  <strong>Project Guardian</strong> <span class="muted">/ Results</span>
+</header>
+<main>
+  <p><a href="{{ url_for('dashboard') }}"><button class="btn">대시보드로 돌아가기</button></a></p>
+  <h2>Repository: <span class="mono">{{ repo_full_name }}</span></h2>
+  {% if error %}
+    <div class="error"><strong>Error:</strong> {{ error }}</div>
+  {% else %}
+    <h3>Detected Dependencies</h3>
+    {% if dependencies and dependencies|length>0 %}
+      <ul class="list">
+        {% for dep in dependencies %}
+          <li class="item">{{ dep }}</li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <h3 style="margin:14px 0 8px 0;">Detected Dependencies</h3>
-      {% if dependencies and dependencies|length > 0 %}
-        <ul class="list">
-          {% for dep in dependencies %}
-            <li class="item">{{ dep }}</li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <div class="muted">No dependencies found.</div>
-      {% endif %}
+      <div class="muted">No dependencies found.</div>
     {% endif %}
-  </main>
-
-  <footer>
-    <span class="muted">© Project Guardian</span>
-  </footer>
+  {% endif %}
+</main>
+<footer>
+  <span class="muted">© Project Guardian</span>
+</footer>
 </body>
 </html>

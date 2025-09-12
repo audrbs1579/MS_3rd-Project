@@ -4,48 +4,91 @@
   <meta charset="UTF-8">
   <title>Branch Activity (Basic)</title>
   <style>
-    /* 최소한의 기본 스타일 */
-    body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; }
+    /* XP 느낌 폰트 */
+    body { font-family: Tahoma, "Microsoft Sans Serif", Gulim, Dotum, sans-serif; font-size: 14px; margin: 0; }
+
     header, footer { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
     footer { border-top: 1px solid #ddd; border-bottom: none; position: sticky; bottom: 0; }
-    main { height: calc(100vh - 92px); padding: 8px; box-sizing: border-box; display: grid; grid-template-columns: 260px 6px 1fr 6px 420px; gap: 8px; }
+
+    /* 3분할 + 리사이저 */
+    main { height: calc(100vh - 92px); padding: 8px; box-sizing: border-box;
+           display: grid; grid-template-columns: 260px 6px 1fr 6px 420px; gap: 8px; }
     section { border: 1px solid #ddd; border-radius: 4px; display: flex; flex-direction: column; min-height: 0; }
     section > h3 { margin: 0; padding: 8px; border-bottom: 1px solid #eee; background: #fafafa; font-size: 14px; }
     .content { padding: 8px; overflow: auto; }
-    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 6px; background: #fff; cursor: pointer; }
-    .row:hover { background: #f9f9f9; }
+
     .btn { padding: 6px 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
     .btn:disabled { opacity: .6; cursor: not-allowed; }
     .input { padding: 6px 8px; border: 1px solid #ccc; }
+
     .muted { color: #666; font-size: 12px; }
     .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
-    .pill { font-size: 12px; border: 1px solid #ccc; padding: 0 6px; border-radius: 999px; background: #f3f3f3; }
     .empty { color: #666; }
     .error { color: #b00020; white-space: pre-wrap; }
     .hr { height:1px; background:#eee; margin:8px 0; }
+
     /* 리사이저 핸들 */
     .handle { background: #e1e1e1; cursor: col-resize; border: 1px solid #d0d0d0; }
-    /* 접히는 커밋 박스 */
-    .branch-header { display:flex; align-items:center; gap:8px; padding:4px 0; font-weight: normal; }
+
+    /* 날짜 헤더 */
+    .day-header {
+      margin: 12px 0 8px 0;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: rgb(255,149,0);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: bold;
+    }
+
+    /* 브랜치 / 커밋 박스 */
+    .branch-header {
+      display:flex; align-items:center; gap:8px;
+      margin: 6px 0 4px 0;
+      padding: 6px 0;
+      border: 1px solid #ddd; border-radius: 4px;
+      background: transparent;
+      font-weight: 400;
+    }
     .branch-name-thin { font-weight: 400; }
-    .commit-box { border:1px solid #ddd; border-radius:4px; padding:8px; margin:6px 0 10px 16px; max-height: 240px; overflow:auto; background:#fff; }
-    .commit-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:4px; margin-bottom:6px; cursor:pointer; }
-    .commit-item:hover { background:#f9f9f9; }
+
+    .commit-box {
+      border:1px solid #ddd; border-radius:4px;
+      margin: 6px 0 10px 16px;
+      padding: 8px;
+      max-height: 240px;
+      overflow:auto;
+      background: transparent;
+    }
+    .commit-item {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      margin-bottom:6px; padding:6px 8px; border:1px solid #eee; border-radius:4px;
+      background: transparent; cursor:pointer;
+    }
+    .commit-item:hover { background:#fafafa; }
+
+    /* 레포 목록 */
+    .row { display:flex; align-items:center; justify-content:space-between; gap:8px;
+           padding:6px 8px; border:1px solid #eee; border-radius:4px; margin-bottom:6px; background:#fff; cursor:pointer; }
+    .row:hover { background:#f9f9f9; }
+    .pill { font-size: 12px; border: 1px solid #ccc; padding: 0 6px; border-radius: 999px; background: #f3f3f3; }
   </style>
 </head>
 <body>
   <header>
     <strong>{{ user_id }}</strong>
-    <span class="muted">/ Branch Activity (Basic)</span>
+    <span class="muted">/ Branch Activity</span>
   </header>
 
   <main id="grid">
-    <!-- 좌: 레포 -->
+    <!-- Repositories -->
     <section>
       <h3>Repositories</h3>
       <div class="content">
         <div style="display:flex; gap:6px; margin-bottom:8px;">
-          <input id="repoFilter" class="input" placeholder="repo 필터 (이름만 표시)" style="flex:1;">
+          <input id="repoFilter" class="input" placeholder="repo 필터">
           <button id="btnResync" class="btn">재동기화</button>
         </div>
         <div id="repoList"></div>
@@ -54,12 +97,12 @@
 
     <div class="handle" data-splitter="left"></div>
 
-    <!-- 중: 날짜 기준 -->
+    <!-- Days & Branches -->
     <section>
       <h3>Days & Branches</h3>
       <div class="content">
         <div style="display:flex; gap:6px; margin-bottom:8px;">
-          <input id="dayFilter" class="input" placeholder="YYYY-MM-DD / 브랜치" style="flex:1;">
+          <input id="dayFilter" class="input" placeholder="YYYY-MM-DD / branch">
           <button id="btnClear" class="btn">Clear</button>
         </div>
         <div id="daysPanel"><div class="empty">레포를 선택하세요.</div></div>
@@ -68,7 +111,7 @@
 
     <div class="handle" data-splitter="right"></div>
 
-    <!-- 우: 커밋 상세 -->
+    <!-- Commit Detail -->
     <section>
       <h3>Commit Detail</h3>
       <div class="content" id="detailPanel"><div class="empty">커밋을 선택하세요.</div></div>
@@ -82,221 +125,179 @@
   </footer>
 
   <script>
-    // 초기 데이터
+    /* --- JS: 데이터 렌더 & 핸들러 (생략 없이 전체) --- */
     const RAW_LOGS = {{ logs|tojson|safe }};
     const USER_REPOS = {{ repos|tojson|safe }};
     const USER_ID = "{{ user_id }}";
 
-    // 상태
-    let grouped = groupLogs(RAW_LOGS); // repo -> branch -> [days...]
+    let grouped = groupLogs(RAW_LOGS);
     let currentRepo = Object.keys(grouped)[0] || (USER_REPOS[0] || null);
     let autoTimer = null;
 
-    // ---- 유틸 ----
-    function groupLogs(logs) {
-      const map = {};
-      for (const r of logs) {
+    function groupLogs(logs){
+      const map={};
+      for(const r of logs){
         (map[r.repo_full_name] ||= {});
         (map[r.repo_full_name][r.branch] ||= []);
         map[r.repo_full_name][r.branch].push(r);
       }
-      for (const repo of Object.keys(map)) {
-        for (const br of Object.keys(map[repo])) {
+      for(const repo of Object.keys(map)){
+        for(const br of Object.keys(map[repo])){
           map[repo][br].sort((a,b)=> b.date.localeCompare(a.date));
         }
       }
       return map;
     }
-    function groupByDate(repo) {
-      const out = {};
-      if (!repo || !grouped[repo]) return out;
-      for (const br of Object.keys(grouped[repo])) {
-        for (const rec of grouped[repo][br]) (out[rec.date] ||= []).push(rec);
+    function groupByDate(repo){
+      const out={};
+      if(!repo||!grouped[repo]) return out;
+      for(const br of Object.keys(grouped[repo])){
+        for(const rec of grouped[repo][br]) (out[rec.date] ||= []).push(rec);
       }
       return Object.fromEntries(Object.entries(out).sort((a,b)=> b[0].localeCompare(a[0])));
     }
-    function repoDisplayName(full) {
-      const parts = (full||'').split('/');
-      return parts.length===2 ? parts[1] : full;
-    }
-    function escapeHtml(s){return (s||"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]) )}
-    function setLastRefreshed(){ document.getElementById('lastRefreshed').textContent = ' / ' + new Date().toLocaleString(); }
+    function repoDisplayName(full){const p=(full||'').split('/');return p.length===2?p[1]:full;}
+    function escapeHtml(s){return (s||"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+    function setLastRefreshed(){document.getElementById('lastRefreshed').textContent=' / '+new Date().toLocaleString();}
 
-    // ---- 렌더: 레포 목록 (표시는 repo 이름만) ----
-    function renderRepos() {
-      const box = document.getElementById('repoList');
-      const filter = document.getElementById('repoFilter').value.toLowerCase();
-      const fromLogs = Object.keys(grouped);
-      const all = Array.from(new Set([...fromLogs, ...(USER_REPOS || [])])).sort();
-      if (!all.length) { box.innerHTML = '<div class="empty">레포 없음</div>'; return; }
-      box.innerHTML = all
-        .filter(full => !filter || repoDisplayName(full).toLowerCase().includes(filter))
-        .map(full => {
-          const latest = grouped[full] ? (Object.values(grouped[full]).map(a=>a[0]?.date).sort().reverse()[0] || '-') : '-';
+    function renderRepos(){
+      const box=document.getElementById('repoList');
+      const filter=document.getElementById('repoFilter').value.toLowerCase();
+      const fromLogs=Object.keys(grouped);
+      const all=Array.from(new Set([...fromLogs, ...(USER_REPOS||[])])).sort();
+      if(!all.length){box.innerHTML='<div class="empty">레포 없음</div>';return;}
+      box.innerHTML=all.filter(f=>!filter||repoDisplayName(f).toLowerCase().includes(filter))
+        .map(full=>{
+          const latest=grouped[full]?Object.values(grouped[full]).map(a=>a[0]?.date).sort().reverse()[0]||'-':'-';
           return `<div class="row" data-repo="${full}" onclick="selectRepo('${full}')">
                     <span>${repoDisplayName(full)}</span>
                     <span class="pill">latest ${latest}</span>
                   </div>`;
         }).join('');
     }
-    window.selectRepo = function(repo) { currentRepo = repo; renderDays(); };
+    window.selectRepo=function(repo){currentRepo=repo;renderDays();};
 
-    // ---- 렌더: 날짜 기준(브랜치 얇게 + 아래 스크롤 박스) ----
-    function renderDays() {
-      const panel = document.getElementById('daysPanel');
-      if (!currentRepo || !grouped[currentRepo]) { panel.innerHTML = '<div class="empty">레포를 선택하세요.</div>'; return; }
-      const filter = document.getElementById('dayFilter').value.toLowerCase();
-      const byDate = groupByDate(currentRepo);
-      let html = '';
-      for (const [day, recs] of Object.entries(byDate)) {
-        if (filter && !day.includes(filter)) continue;
-        html += `<div style="margin:10px 0 6px 0; font-weight:bold;"><span class="mono">${day}</span> <span class="muted">${recs.length} item(s)</span></div>`;
-        const seen = new Set();
-        for (const r of recs) {
-          if (seen.has(r.branch)) continue; seen.add(r.branch);
-          const rowText = `${r.branch} ${day}`.toLowerCase();
-          if (filter && !rowText.includes(filter)) continue;
-
-          const boxId = btoa(currentRepo+'|'+r.branch+'|'+r.date);
-          html += `
+    function renderDays(){
+      const panel=document.getElementById('daysPanel');
+      if(!currentRepo||!grouped[currentRepo]){panel.innerHTML='<div class="empty">레포를 선택하세요.</div>';return;}
+      const filter=document.getElementById('dayFilter').value.toLowerCase();
+      const byDate=groupByDate(currentRepo);
+      let html='';
+      for(const [day,recs] of Object.entries(byDate)){
+        if(filter&&!day.includes(filter)) continue;
+        html+=`<div class="day-header"><span class="mono">${day}</span><span>${recs.length} item(s)</span></div>`;
+        const seen=new Set();
+        for(const r of recs){
+          if(seen.has(r.branch)) continue; seen.add(r.branch);
+          const boxId=btoa(currentRepo+'|'+r.branch+'|'+r.date);
+          html+=`
             <div class="branch-header">
               <span class="branch-name-thin">${r.branch}</span>
               <span class="pill">C ${r.counts.commits}</span>
               <span class="pill">D ${r.counts.dep_changes}</span>
-              <button class="btn" onclick="toggleLoad('${currentRepo}','${r.branch}','${r.date}','${boxId}', this)">불러오기</button>
+              <button class="btn" onclick="toggleLoad('${currentRepo}','${r.branch}','${r.date}','${boxId}',this)">불러오기</button>
             </div>
             <div id="${boxId}" class="commit-box" style="display:none;"></div>
           `;
         }
       }
-      panel.innerHTML = html || '<div class="empty">결과 없음</div>';
+      panel.innerHTML=html||'<div class="empty">결과 없음</div>';
     }
 
-    // 불러오기/접기 토글 + 해당 날짜 커밋 전부 로드(최신순)
-    window.toggleLoad = async function(repo, branch, day, hostId, btn){
-      const host = document.getElementById(hostId);
-      if (host.style.display === 'block') {
-        host.style.display = 'none'; btn.textContent = '불러오기'; return;
-      }
-      btn.disabled = true; btn.textContent = '로딩…';
-      try {
-        const q = new URLSearchParams({repo, branch, day}).toString();
-        const res = await fetch('/api/commits_by_day?'+q);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'fetch failed');
-        if (!Array.isArray(data) || data.length === 0) {
-          host.innerHTML = '<div class="empty">커밋 없음</div>';
-        } else {
-          host.innerHTML = data.map(c => `
-            <div class="commit-item" onclick="loadCommitDetail('${repo}','${c.sha}')">
-              <span title="${escapeHtml(c.message||'')}">${escapeHtml(c.message||'')}</span>
-              <span class="pill mono">${c.sha.slice(0,7)}</span>
-            </div>
-          `).join('');
-        }
-        host.style.display = 'block';
-        btn.textContent = '접기';
-      } catch(e) {
-        host.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        host.style.display = 'block';
-        btn.textContent = '접기';
-      } finally {
-        btn.disabled = false;
-      }
+    window.toggleLoad=async function(repo,branch,day,hostId,btn){
+      const host=document.getElementById(hostId);
+      if(host.style.display==='block'){host.style.display='none';btn.textContent='불러오기';return;}
+      btn.disabled=true;btn.textContent='로딩…';
+      try{
+        const q=new URLSearchParams({repo,branch,day}).toString();
+        const res=await fetch('/api/commits_by_day?'+q);
+        const data=await res.json();
+        if(!res.ok) throw new Error(data.error||'fetch failed');
+        host.innerHTML=(Array.isArray(data)&&data.length)?
+          data.map(c=>`<div class="commit-item" onclick="loadCommitDetail('${repo}','${c.sha}')">
+                        <span title="${escapeHtml(c.message||'')}">${escapeHtml(c.message||'')}</span>
+                        <span class="pill mono">${c.sha.slice(0,7)}</span>
+                      </div>`).join('')
+          :'<div class="empty">커밋 없음</div>';
+        host.style.display='block';btn.textContent='접기';
+      }catch(e){host.innerHTML=`<div class="error">${escapeHtml(e.message)}</div>`;host.style.display='block';btn.textContent='접기';}
+      finally{btn.disabled=false;}
     };
 
-    // ---- 커밋 상세 ----
-    window.loadCommitDetail = async function(repo, sha){
-      const panel = document.getElementById('detailPanel');
-      panel.innerHTML = '<div class="muted">로딩 중…</div>';
-      try {
-        const q = new URLSearchParams({repo, sha}).toString();
-        const res = await fetch('/api/commit_detail?'+q);
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error || 'fetch failed');
-
-        const files = (d.files||[]).map(f => `
+    window.loadCommitDetail=async function(repo,sha){
+      const panel=document.getElementById('detailPanel');
+      panel.innerHTML='<div class="muted">로딩 중…</div>';
+      try{
+        const q=new URLSearchParams({repo,sha}).toString();
+        const res=await fetch('/api/commit_detail?'+q);
+        const d=await res.json();
+        if(!res.ok) throw new Error(d.error||'fetch failed');
+        const files=(d.files||[]).map(f=>`
           <div style="margin-bottom:6px;">
             <div class="mono">${escapeHtml(f.filename)} <span class="muted">(${f.status} +${f.additions}/-${f.deletions})</span></div>
-            ${f.patch ? `<pre class="mono" style="white-space:pre-wrap; background:#f7f7f7; border:1px solid #eee; padding:6px;">${escapeHtml(f.patch)}</pre>` : ''}
-          </div>`).join('') || '<div class="empty">변경 파일 없음</div>';
-
-        panel.innerHTML = `
+            ${f.patch?`<pre class="mono" style="white-space:pre-wrap; background:#f7f7f7; border:1px solid #eee; padding:6px;">${escapeHtml(f.patch)}</pre>`:''}
+          </div>`).join('')||'<div class="empty">변경 파일 없음</div>';
+        panel.innerHTML=`
           <div><strong>${repoDisplayName(repo)}</strong> <span class="mono">@ ${d.sha.slice(0,7)}</span></div>
-          <div class="muted">${escapeHtml(d.author || '')} • ${escapeHtml(d.date || '')}</div>
+          <div class="muted">${escapeHtml(d.author||'')} • ${escapeHtml(d.date||'')}</div>
           <div class="hr"></div>
-          <div><strong>Message</strong><div>${escapeHtml(d.message || '')}</div></div>
+          <div><strong>Message</strong><div>${escapeHtml(d.message||'')}</div></div>
           <div class="hr"></div>
-          <div><strong>Stats</strong>
-            <div class="muted">total ${d.stats?.total ?? 0} / +${d.stats?.additions ?? 0} / -${d.stats?.deletions ?? 0}</div>
-          </div>
+          <div><strong>Stats</strong><div class="muted">total ${d.stats?.total??0} / +${d.stats?.additions??0} / -${d.stats?.deletions??0}</div></div>
           <div class="hr"></div>
           <div><strong>Files</strong>${files}</div>
           <div class="hr"></div>
-          <div><a href="${d.html_url}" target="_blank">GitHub에서 보기</a></div>
-        `;
-      } catch(e) {
-        panel.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-      }
+          <div><a href="${d.html_url}" target="_blank">GitHub에서 보기</a></div>`;
+      }catch(e){panel.innerHTML=`<div class="error">${escapeHtml(e.message)}</div>`;}
     };
 
-    // ---- 1분 자동 새로고침 (현재 레포만) ----
     async function refreshActiveRepo(){
-      if (!currentRepo) return;
-      try {
-        const url = '/api/branch_logs?'+new URLSearchParams({repo: currentRepo}).toString();
-        const res = await fetch(url);
-        const items = await res.json();
-        if (!res.ok) throw new Error(items.error || 'fetch failed');
-        const tmp = groupLogs(items);
-        grouped[currentRepo] = tmp[currentRepo] || {};
-        renderDays();
-        setLastRefreshed();
-      } catch(e) { console.warn('auto refresh failed:', e); }
+      if(!currentRepo) return;
+      try{
+        const url='/api/branch_logs?'+new URLSearchParams({repo:currentRepo}).toString();
+        const res=await fetch(url);const items=await res.json();
+        if(!res.ok) throw new Error(items.error||'fetch failed');
+        const tmp=groupLogs(items);grouped[currentRepo]=tmp[currentRepo]||{};
+        renderDays();setLastRefreshed();
+      }catch(e){console.warn('auto refresh failed',e);}
     }
-    function startAuto(){ if (autoTimer) clearInterval(autoTimer); autoTimer = setInterval(refreshActiveRepo, 60_000); }
+    function startAuto(){if(autoTimer) clearInterval(autoTimer);autoTimer=setInterval(refreshActiveRepo,60000);}
 
-    // ---- 리사이저 (좌/우 핸들) ----
     (function initSplitters(){
-      const grid = document.getElementById('grid');
-      const handles = document.querySelectorAll('.handle');
-      handles.forEach(h => {
-        h.addEventListener('mousedown', (e)=>{
+      const grid=document.getElementById('grid');
+      const handles=document.querySelectorAll('.handle');
+      handles.forEach(h=>{
+        h.addEventListener('mousedown',e=>{
           e.preventDefault();
-          const startX = e.clientX;
-          const cols = getComputedStyle(grid).gridTemplateColumns.split(' ');
-          // px만 남김
-          const vals = cols.map(v => v.endsWith('px') ? parseFloat(v) : v);
-          const isLeft = h.dataset.splitter === 'left';   // [0]=left pane, [2]=middle pane
-          const leftIdx  = isLeft ? 0 : 2;
-          const rightIdx = isLeft ? 2 : 4;
-
+          const startX=e.clientX;
+          const cols=getComputedStyle(grid).gridTemplateColumns.split(' ');
+          const vals=cols.map(v=>v.endsWith('px')?parseFloat(v):v);
+          const side=h.dataset.splitter;const L=(side==='left')?0:2;const R=(side==='left')?2:4;
           function onMove(ev){
-            const dx = ev.clientX - startX;
-            const left = Math.max(180, vals[leftIdx] + dx*(isLeft?1:0) + dx*(isLeft?0:-1));
-            const right= Math.max(260, vals[rightIdx] + dx*(isLeft?-1:1));
-            const newCols = [...vals];
-            newCols[leftIdx]  = left;
-            newCols[rightIdx] = right;
-            grid.style.gridTemplateColumns = newCols.map(v => typeof v==='number' ? `${v}px` : v).join(' ');
+            const dx=ev.clientX-startX;
+            let leftW=vals[L], rightW=vals[R];
+            if(typeof leftW==='number' && typeof rightW==='number'){
+              if(side==='left'){leftW=Math.max(180,vals[L]+dx); rightW=Math.max(260,vals[R]-dx);}
+              else{leftW=Math.max(260,vals[L]-dx); rightW=Math.max(260,vals[R]+dx);}
+              const newCols=[...vals];newCols[L]=leftW;newCols[R]=rightW;
+              grid.style.gridTemplateColumns=newCols.map(v=>typeof v==='number'?`${v}px`:v).join(' ');
+            }
           }
-          function onUp(){ window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
+          function onUp(){window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);}
+          window.addEventListener('mousemove',onMove);
+          window.addEventListener('mouseup',onUp);
         });
       });
     })();
 
-    // ---- 이벤트 ----
-    document.getElementById('btnResync').onclick = () => location.href = "{{ url_for('sync_my_repos_route') }}";
-    document.getElementById('btnManualRefresh').onclick = refreshActiveRepo;
-    document.getElementById('btnClear').onclick = () => { document.getElementById('dayFilter').value = ""; renderDays(); };
-    document.getElementById('repoFilter').oninput = renderRepos;
-    document.getElementById('dayFilter').oninput = renderDays;
+    document.getElementById('btnResync').onclick=()=>location.href="{{ url_for('sync_my_repos_route') }}";
+    document.getElementById('btnManualRefresh').onclick=refreshActiveRepo;
+    document.getElementById('btnClear').onclick=()=>{document.getElementById('dayFilter').value="";renderDays();};
+    document.getElementById('repoFilter').oninput=renderRepos;
+    document.getElementById('dayFilter').oninput=renderDays;
 
-    // ---- 초기 렌더 ----
     renderRepos();
-    if (currentRepo) selectRepo(currentRepo);
+    if(currentRepo) selectRepo(currentRepo);
     startAuto(); setLastRefreshed();
   </script>
 </body>
