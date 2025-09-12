@@ -22,8 +22,10 @@
     .error { color: #b00020; white-space: pre-wrap; }
     .hr { height:1px; background:#eee; margin:8px 0; }
     .handle { background: #e1e1e1; cursor: col-resize; border: 1px solid #d0d0d0; }
+
     .day-header { margin: 12px 0 8px 0; padding: 10px 12px; border-radius: 6px;
-      background: rgb(255,149,0); color: #fff; display: flex; align-items: center; justify-content: space-between; font-weight: bold; }
+      background: rgb(255,149,0); /* Apple system orange */ color: #fff;
+      display: flex; align-items: center; justify-content: space-between; font-weight: bold; }
     .branch-header { display:flex; align-items:center; gap:8px; margin: 6px 0 4px 0; padding: 6px 0;
       border: 1px solid #ddd; border-radius: 4px; background: transparent; font-weight: 400; }
     .branch-name-thin { font-weight: 400; }
@@ -113,7 +115,7 @@
     }
     function repoDisplayName(full){const p=(full||'').split('/');return p.length===2?p[1]:full;}
     function escapeHtml(s){return (s||"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-    function setLastRefreshed(){document.getElementById('lastRefreshed').textContent=' / '+new Date().toLocaleString();}
+    function setLastRefreshed(){document.getElementById('lastRefreshed').textContent=' / '+new Date().toLocaleString("ko-KR",{timeZone:"Asia/Seoul"});}
 
     function renderRepos(){
       const box=document.getElementById('repoList');

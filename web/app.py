@@ -8,7 +8,6 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from azure.cosmos import CosmosClient
-from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24)
@@ -22,8 +21,7 @@ GITHUB_API_URL = "https://api.github.com"
 
 COSMOS_CONN_STR = os.environ.get("COSMOS_DB_CONNECTION_STRING")
 DB_NAME = "ProjectGuardianDB"
-DEPS_CONTAINER = "Dependencies"   # pk: /userId
-LOGS_CONTAINER = "BranchLogs"     # pk: /userId
+DEPS_CONTAINER_NAME = "Dependencies"   # pk: /userId  (role=user/repo/branch_log/checkpoint)
 
 # -------------------------
 # Cosmos DB init
@@ -31,12 +29,11 @@ LOGS_CONTAINER = "BranchLogs"     # pk: /userId
 try:
     cosmos_client = CosmosClient.from_connection_string(COSMOS_CONN_STR)
     db = cosmos_client.get_database_client(DB_NAME)
-    deps_container = db.get_container_client(DEPS_CONTAINER)
-    logs_container = db.get_container_client(LOGS_CONTAINER)
+    deps_container = db.get_container_client(DEPS_CONTAINER_NAME)  # 모든 문서(role 포함) 단일 컨테이너 사용
     logging.info("Cosmos DB connected")
 except Exception as e:
     logging.exception("Cosmos init failed")
-    deps_container = logs_container = None
+    deps_container = None
 
 # -------------------------
 # GitHub session (retry + timeout)
@@ -212,7 +209,7 @@ def callback():
     u.raise_for_status()
     session["user_id"] = u.json().get("login")
 
-    # IMPORTANT: Do NOT backfill here. Keep callback light.
+    # 콜백에서는 무거운 작업 금지
     return redirect(url_for("dashboard"))
 
 @app.route("/logout")
@@ -224,26 +221,33 @@ def logout():
 def dashboard():
     if "user_id" not in session:
         return redirect(url_for("index"))
-    if not logs_container:
+    if not deps_container:
         return "DB connection failed", 500
 
     user_id = session["user_id"]
-    # Load existing branch logs for user
-    logs = list(logs_container.query_items(
-        f"SELECT * FROM c WHERE c.userId=@uid ORDER BY c.date DESC",
-        parameters=[{"name":"@uid","value":user_id}],
+
+    # Dependencies 컨테이너에서 내 branch_log만 로드
+    logs = list(deps_container.query_items(
+        query=(
+            "SELECT * FROM c "
+            "WHERE c.userId = @uid AND c.role = 'branch_log' "
+            "ORDER BY c.date DESC"
+        ),
+        parameters=[{"name": "@uid", "value": user_id}],
         enable_cross_partition_query=True
     ))
-    # Repo list from logs + fallback to GitHub user repos
+
+    # 레포 목록: branch_log에 있는 레포 + GH API 소유 레포
     repos_from_logs = {doc.get("repo_full_name") for doc in logs if doc.get("repo_full_name")}
     headers = _user_headers()
     repos_from_github = _list_user_repos(headers) if headers else []
     repos = sorted(set(repos_from_logs) | set(repos_from_github))
+
     return render_template("dashboard_branch.html", user_id=user_id, logs=logs, repos=repos)
 
 @app.route("/sync_my_repos")
 def sync_my_repos():
-    # Optional: trigger async job somewhere. Keep this lightweight or implement small sync here.
+    # (옵션) 별도 백그라운드 동기화 트리거 지점. 현재는 대시보드로 복귀만.
     return redirect(url_for("dashboard"))
 
 # -------- API: front-end uses these --------
@@ -251,20 +255,20 @@ def sync_my_repos():
 def api_branch_logs():
     if "user_id" not in session:
         return jsonify({"error":"unauthorized"}), 401
-    if not logs_container:
+    if not deps_container:
         return jsonify({"error":"db not ready"}), 500
+
     repo = request.args.get("repo", "")
     user_id = session["user_id"]
     if not repo:
         return jsonify([])
 
-    # Expect stored docs shape:
-    # { role:"branch_log", userId, repo_full_name, branch, date:"YYYY-MM-DD", counts:{commits,dep_changes}, ... }
-    query = ("SELECT * FROM c "
-             "WHERE c.userId=@uid AND c.repo_full_name=@r AND c.role='branch_log' "
-             "ORDER BY c.date DESC")
-    items = list(logs_container.query_items(
-        query,
+    items = list(deps_container.query_items(
+        query=(
+            "SELECT * FROM c "
+            "WHERE c.userId=@uid AND c.repo_full_name=@r AND c.role='branch_log' "
+            "ORDER BY c.date DESC"
+        ),
         parameters=[{"name":"@uid","value":user_id},{"name":"@r","value":repo}],
         enable_cross_partition_query=True
     ))
@@ -276,7 +280,7 @@ def api_commits_by_day():
         return jsonify({"error":"unauthorized"}), 401
     repo = request.args.get("repo", "")
     branch = request.args.get("branch", "")
-    day = request.args.get("day", "")  # YYYY-MM-DD
+    day = request.args.get("day", "")  # YYYY-MM-DD (KST 기준으로 UI 전달)
     if not (repo and branch and day):
         return jsonify({"error":"missing params"}), 400
     headers = _user_headers()
