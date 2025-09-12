@@ -9,12 +9,14 @@
       --bg:#f7f7f8; --panel:#ffffff; --text:#222; --muted:#6b7280; --border:#e5e7eb;
       --ring:#3b82f6; --accent:#ff9500; --chip:#f1f5f9; --chip-border:#e2e8f0;
       --shadow-sm:0 1px 8px rgba(0,0,0,.05); --shadow-md:0 6px 24px rgba(0,0,0,.08);
+      --soft:#f3f4f6;
     }
     @media (prefers-color-scheme: dark){
       :root{
         --bg:#0c0d0f; --panel:#121317; --text:#eaeaea; --muted:#a6adbb; --border:#23262d;
         --ring:#60a5fa; --accent:#ffb86b; --chip:#151821; --chip-border:#222630;
         --shadow-sm:0 1px 8px rgba(0,0,0,.6); --shadow-md:0 6px 24px rgba(0,0,0,.55);
+        --soft:#181b20;
       }
     }
     *{box-sizing:border-box}
@@ -32,13 +34,13 @@
     main{
       display:grid;grid-template-columns:320px 1fr 1fr;gap:14px;padding:14px;max-width:1400px;margin:0 auto
     }
-    @media (max-width: 1080px){
-      main{grid-template-columns:1fr;gap:12px}
-    }
+    @media (max-width:1080px){ main{grid-template-columns:1fr;gap:12px} }
     .col{
       border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;box-shadow:var(--shadow-sm)
     }
     h2{margin:0 0 10px 0;font-size:15px;letter-spacing:.2px}
+
+    /* Inputs & buttons */
     input[type=text]{
       width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:transparent;color:inherit;
       outline:none;transition:border .15s ease, box-shadow .15s ease
@@ -50,21 +52,21 @@
     .btn:hover{background:color-mix(in oklab, var(--text) 6%, transparent)}
     .btn:focus{outline:3px solid var(--ring);outline-offset:2px}
 
-    /* Chips */
-    .repo-chip{
-      display:inline-block;margin:6px 6px 0 0;padding:8px 12px;border:1px solid var(--chip-border);
-      border-radius:999px;cursor:pointer;background:var(--chip);transition:.15s ease;font-size:13px
+    /* Repositories: 카드형 리스트 */
+    .repo-item{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:12px;border:1px solid var(--chip-border);border-radius:12px;background:var(--chip);
+      margin:8px 0;cursor:pointer;transition:transform .12s ease, box-shadow .12s ease
     }
-    .repo-chip:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-    .repo-chip:focus{outline:3px solid var(--ring);outline-offset:2px}
+    .repo-item:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+    .repo-name{font-weight:600}
+    .repo-meta{font-size:12px;color:var(--muted)}
+    .repo-item:focus{outline:3px solid var(--ring);outline-offset:2px}
 
     /* Branch & commits */
     .branch-row{padding:8px 4px;border-bottom:1px dashed var(--border)}
+    .row-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
     .tag{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;font-size:12px;margin-left:6px;background:rgba(0,0,0,.03)}
-    .date-head{
-      margin:12px 0 8px 0;padding:10px 12px;border-radius:10px;background:var(--accent);
-      color:#fff;display:flex;align-items:center;justify-content:space-between
-    }
     .commit-panel{border:1px dashed var(--border);border-radius:10px;padding:10px;max-height:420px;overflow:auto;background:color-mix(in oklab, var(--panel) 80%, var(--bg))}
     .commit-item{
       display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:10px;
@@ -73,11 +75,16 @@
     .commit-item:hover{transform:translateY(-1px);box-shadow:var(--shadow-md)}
     .sha{font-family:ui-monospace,Consolas,monospace;font-size:12px;border:1px solid var(--border);border-radius:999px;padding:2px 8px}
     .green-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#28a745;margin-right:6px;box-shadow:0 0 0 3px rgba(40,167,69,.15)}
-    .detail{white-space:pre-wrap;line-height:1.6}
-
-    /* Small helpers */
-    .row-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
     .kicker{font-size:12px;color:var(--muted)}
+
+    /* Commit Detail: 섹션 구분 */
+    .detail-wrap{display:grid;gap:10px}
+    .kv{background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px}
+    .kv dl{margin:0;display:grid;grid-template-columns:120px 1fr;row-gap:8px;column-gap:10px;align-items:start}
+    .kv dt{font-weight:700;color:var(--muted)}
+    .kv dd{margin:0}
+    .files{background:var(--soft);border:1px solid var(--border);border-radius:10px;padding:10px}
+    .files ul{margin:0 0 0 18px;padding:0}
   </style>
 </head>
 <body>
@@ -97,10 +104,10 @@
     <div id="repoList" style="margin-top:8px"></div>
   </section>
 
-  <!-- Days & Branches -->
+  <!-- Branches -->
   <section class="col">
     <h2>Branches</h2>
-    <div class="kicker">브랜치를 클릭해 커밋 패널을 열고 조회하세요.</div>
+    <div class="kicker">브랜치를 클릭해 커밋 패널을 열고 조회하세요. (최신 커밋 날짜 순)</div>
     <div id="dayBranch" style="margin-top:8px"></div>
   </section>
 
@@ -130,7 +137,7 @@
   let allRepos = [];        // API로 가져온 전체 repo
   let selectedRepo = null;  // "owner/repo"
   let branchesCache = {};   // { repo : [ {name, sha}, ... ] }
-  let commitsCache = {};    // { repo|branch : [ commits ] }
+  let commitsCache = {};    // { "repo|branch" : [ commits ] }
 
   // -------------- 초기화 --------------
   document.addEventListener('DOMContentLoaded', async () => {
@@ -156,6 +163,7 @@
     return res.json();
   }
 
+  // -------------- Repositories --------------
   async function loadRepos(force=false) {
     const data = await apiGet('/api/my_repos');
     allRepos = data.repos || [];
@@ -174,15 +182,41 @@
     allRepos
       .filter(r => (r.full_name||'').toLowerCase().includes(f))
       .forEach(r => {
-        const chip = document.createElement('button');
-        chip.className = 'repo-chip';
-        chip.textContent = r.name || r.full_name;
-        chip.title = r.full_name;
-        chip.onclick = ()=>selectRepo(r.full_name);
-        elRepoList.appendChild(chip);
+        const item = document.createElement('button');
+        item.className = 'repo-item';
+        item.title = r.full_name;
+        item.onclick = ()=>selectRepo(r.full_name);
+
+        const left = document.createElement('div');
+        left.className = 'repo-name';
+        left.textContent = r.name || r.full_name;
+
+        const right = document.createElement('div');
+        right.className = 'repo-meta';
+        right.textContent = r.pushed_at ? ('pushed ' + timeAgo(new Date(r.pushed_at))) : '';
+
+        item.appendChild(left);
+        item.appendChild(right);
+        elRepoList.appendChild(item);
       });
   }
 
+  function timeAgo(d){
+    const seconds = Math.floor((Date.now() - d.getTime())/1000);
+    const units = [
+      ['일', 86400],
+      ['시간', 3600],
+      ['분', 60],
+      ['초', 1],
+    ];
+    for (const [name, s] of units){
+      const v = Math.floor(seconds / s);
+      if (v >= 1) return `${v}${name} 전`;
+    }
+    return '방금';
+  }
+
+  // -------------- Branches (최신 커밋 날짜순 정렬) --------------
   async function selectRepo(full_name) {
     selectedRepo = full_name;
     elDayBranch.innerHTML = '브랜치 불러오는 중...';
@@ -191,8 +225,22 @@
       const data = await apiGet('/api/branches', {repo: full_name});
       branchesCache[full_name] = data.branches || [];
     }
-    const branches = branchesCache[full_name];
+    const branches = branchesCache[full_name].slice(); // 복사본
 
+    // 각 브랜치의 최신 커밋 날짜 미리 확보 후 정렬
+    await Promise.all(branches.map(async (b) => {
+      const key = `${full_name}|${b.name}`;
+      if (!commitsCache[key]) {
+        const data = await apiGet('/api/commits', {repo: full_name, branch: b.name});
+        commitsCache[key] = data.commits || [];
+      }
+      const list = commitsCache[key];
+      b._latestDate = list.length ? (new Date(list[0].date).getTime() || 0) : 0;
+      b._commitCount = list.length;
+    }));
+    branches.sort((a,b)=> (b._latestDate||0) - (a._latestDate||0));
+
+    // 렌더
     const wrap = document.createElement('div');
     if (!branches.length) {
       wrap.textContent = '브랜치 없음';
@@ -206,10 +254,12 @@
 
       const head = document.createElement('div');
       head.className = 'row-head';
+      const when = b._latestDate ? new Date(b._latestDate).toLocaleString('ko-KR',{ timeZone:'Asia/Seoul'}) : '—';
       head.innerHTML = `
         <div>
           <strong>${b.name}</strong>
-          <span class="tag">C ?</span>
+          <span class="tag">C ${b._commitCount ?? '?'}</span>
+          <span class="muted" style="margin-left:6px;font-size:12px">${when}</span>
         </div>
         <button class="btn">열기</button>
       `;
@@ -249,6 +299,7 @@
     }
     const commits = commitsCache[key];
 
+    // 헤더의 C 배지 갱신
     const tag = headEl.querySelector('.tag');
     tag.textContent = `C ${commits.length}`;
 
@@ -274,21 +325,26 @@
       left.style.alignItems = 'center';
       left.style.gap = '6px';
       left.innerHTML = `
-        ${isFresh ? '<span class="green-dot" title="3분 이내"></span>' : ''}
         <span>${escapeHtml(c.message || '(no message)')}</span>
       `;
 
       const right = document.createElement('div');
-      right.innerHTML = `<span class="sha">${(c.sha || '').slice(0,7)}</span>`;
+      right.style.display = 'flex';
+      right.style.alignItems = 'center';
+      right.style.gap = '6px';
+      right.innerHTML = `
+        ${isFresh ? '<span class="green-dot" title="3분 이내"></span>' : ''}
+        <span class="sha">${(c.sha || '').slice(0,7)}</span>
+      `;
 
       item.appendChild(left);
       item.appendChild(right);
-
       item.onclick = ()=>showCommitDetail(repo, c.sha);
       panel.appendChild(item);
     });
   }
 
+  // -------------- Commit Detail (회색 섹션 구분) --------------
   async function showCommitDetail(repo, sha) {
     elDetail.textContent = '상세 조회 중...';
     const d = await apiGet('/api/commit_detail', {repo, sha});
@@ -305,22 +361,32 @@
     const files = d.files || [];
     const stats = d.stats || {};
 
-    const html = `
-      <div class="detail">
-        <div><strong>${escapeHtml(d.message || '')}</strong></div>
-        <div class="muted" style="margin:6px 0">${escapeHtml(d.author||'')} • ${kst}</div>
-        <div style="margin:6px 0">SHA: <code>${d.sha}</code> · <a href="${d.html_url}" target="_blank" rel="noopener">GitHub에서 보기</a></div>
-        <div style="margin:6px 0">총 변경: ${stats.total ?? 0} (+${stats.additions ?? 0} / -${stats.deletions ?? 0})</div>
-        <hr style="border:none;border-top:1px solid var(--border)">
-        <div><strong>Files</strong></div>
-        <ul style="margin:8px 0 0 18px;padding:0">
-          ${files.map(f => `
-            <li>${escapeHtml(f.filename)} — ${f.status} (+${f.additions} / -${f.deletions})</li>
-          `).join("")}
-        </ul>
+    elDetail.innerHTML = `
+      <div class="detail-wrap">
+        <div class="kv">
+          <dl>
+            <dt>제목</dt>
+            <dd><strong>${escapeHtml(d.message || '')}</strong></dd>
+            <dt>작성자</dt>
+            <dd>${escapeHtml(d.author||'')}</dd>
+            <dt>날짜(KST)</dt>
+            <dd>${kst || '—'}</dd>
+            <dt>SHA</dt>
+            <dd><code>${d.sha}</code> · <a href="${d.html_url}" target="_blank" rel="noopener">GitHub에서 보기</a></dd>
+            <dt>변경</dt>
+            <dd>총 ${stats.total ?? 0} (+${stats.additions ?? 0} / -${stats.deletions ?? 0})</dd>
+          </dl>
+        </div>
+        <div class="files">
+          <div style="font-weight:700;margin-bottom:6px">Files</div>
+          <ul>
+            ${files.map(f => `
+              <li>${escapeHtml(f.filename)} — ${f.status} (+${f.additions} / -${f.deletions})</li>
+            `).join("")}
+          </ul>
+        </div>
       </div>
     `;
-    elDetail.innerHTML = html;
   }
 
   function escapeHtml(s){
