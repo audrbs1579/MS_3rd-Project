@@ -5,28 +5,79 @@
   <title>Branch Activity – {{ user_id }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    /* XP 느낌의 기본 폰트 */
-    html,body{font-family:Tahoma, Arial, sans-serif;margin:0;padding:0}
-    header,footer{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center;justify-content:space-between}
-    main{display:grid;grid-template-columns:320px 1fr 1fr;gap:12px;padding:12px}
-    .col{border-left:1px solid #e5e5e5;padding:8px}
-    .col:first-child{border-left:none}
-    h2{margin:0 0 8px 0;font-size:16px}
-    input[type=text]{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px}
-    .btn{padding:8px 12px;border:1px solid #333;border-radius:4px;background:#fff;cursor:pointer}
-    .btn:hover{background:#f6f6f6}
-    .tag{display:inline-block;padding:2px 8px;border:1px solid #ccc;border-radius:999px;font-size:12px;margin-left:6px}
-    .repo-chip{display:inline-block;margin:4px 6px 0 0;padding:6px 10px;border:1px solid #ddd;border-radius:12px;cursor:pointer}
-    .repo-chip:hover{background:#f7f7f7}
+    :root{
+      --bg:#f7f7f8; --panel:#ffffff; --text:#222; --muted:#6b7280; --border:#e5e7eb;
+      --ring:#3b82f6; --accent:#ff9500; --chip:#f1f5f9; --chip-border:#e2e8f0;
+      --shadow-sm:0 1px 8px rgba(0,0,0,.05); --shadow-md:0 6px 24px rgba(0,0,0,.08);
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg:#0c0d0f; --panel:#121317; --text:#eaeaea; --muted:#a6adbb; --border:#23262d;
+        --ring:#60a5fa; --accent:#ffb86b; --chip:#151821; --chip-border:#222630;
+        --shadow-sm:0 1px 8px rgba(0,0,0,.6); --shadow-md:0 6px 24px rgba(0,0,0,.55);
+      }
+    }
+    *{box-sizing:border-box}
+    html,body{font-family:Tahoma, Arial, sans-serif;margin:0;padding:0;background:var(--bg);color:var(--text)}
+    a{color:inherit}
+    code{font-family:ui-monospace,Consolas,monaco,monospace}
 
-    .date-head{margin:12px 0 8px 0;padding:10px 12px;border-radius:6px;background:rgb(255,149,0);color:#fff;display:flex;align-items:center;justify-content:space-between}
-    .branch-row{padding:8px 4px;border-bottom:1px solid #eee}
-    .commit-panel{border:1px dashed #ccc;border-radius:6px;padding:10px;max-height:360px;overflow:auto}
-    .commit-item{display:flex;align-items:center;justify-content:space-between;border:1px solid #eee;border-radius:8px;padding:10px;margin:6px 0}
-    .sha{font-family:ui-monospace, Consolas, monospace;font-size:12px;border:1px solid #ddd;border-radius:999px;padding:2px 8px}
-    .green-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#28a745;margin-right:6px}
-    .muted{color:#666;font-size:12px}
-    .detail{white-space:pre-wrap}
+    header,footer{
+      padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;justify-content:space-between;background:var(--panel)
+    }
+    footer{border-top:1px solid var(--border);border-bottom:none;color:var(--muted)}
+    header strong{font-weight:700}
+    .muted{color:var(--muted);font-size:12px}
+
+    main{
+      display:grid;grid-template-columns:320px 1fr 1fr;gap:14px;padding:14px;max-width:1400px;margin:0 auto
+    }
+    @media (max-width: 1080px){
+      main{grid-template-columns:1fr;gap:12px}
+    }
+    .col{
+      border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;box-shadow:var(--shadow-sm)
+    }
+    h2{margin:0 0 10px 0;font-size:15px;letter-spacing:.2px}
+    input[type=text]{
+      width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:transparent;color:inherit;
+      outline:none;transition:border .15s ease, box-shadow .15s ease
+    }
+    input[type=text]:focus{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent)}
+    .btn{
+      padding:8px 12px;border:1px solid var(--text);border-radius:10px;background:transparent;cursor:pointer;transition:.15s ease;font-weight:600
+    }
+    .btn:hover{background:color-mix(in oklab, var(--text) 6%, transparent)}
+    .btn:focus{outline:3px solid var(--ring);outline-offset:2px}
+
+    /* Chips */
+    .repo-chip{
+      display:inline-block;margin:6px 6px 0 0;padding:8px 12px;border:1px solid var(--chip-border);
+      border-radius:999px;cursor:pointer;background:var(--chip);transition:.15s ease;font-size:13px
+    }
+    .repo-chip:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+    .repo-chip:focus{outline:3px solid var(--ring);outline-offset:2px}
+
+    /* Branch & commits */
+    .branch-row{padding:8px 4px;border-bottom:1px dashed var(--border)}
+    .tag{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;font-size:12px;margin-left:6px;background:rgba(0,0,0,.03)}
+    .date-head{
+      margin:12px 0 8px 0;padding:10px 12px;border-radius:10px;background:var(--accent);
+      color:#fff;display:flex;align-items:center;justify-content:space-between
+    }
+    .commit-panel{border:1px dashed var(--border);border-radius:10px;padding:10px;max-height:420px;overflow:auto;background:color-mix(in oklab, var(--panel) 80%, var(--bg))}
+    .commit-item{
+      display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:10px;
+      padding:10px;margin:8px 0;background:var(--panel);box-shadow:var(--shadow-sm);transition:.15s ease
+    }
+    .commit-item:hover{transform:translateY(-1px);box-shadow:var(--shadow-md)}
+    .sha{font-family:ui-monospace,Consolas,monospace;font-size:12px;border:1px solid var(--border);border-radius:999px;padding:2px 8px}
+    .green-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#28a745;margin-right:6px;box-shadow:0 0 0 3px rgba(40,167,69,.15)}
+    .detail{white-space:pre-wrap;line-height:1.6}
+
+    /* Small helpers */
+    .row-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .kicker{font-size:12px;color:var(--muted)}
   </style>
 </head>
 <body>
@@ -48,14 +99,15 @@
 
   <!-- Days & Branches -->
   <section class="col">
-    <h2>Days & Branches</h2>
-    <div id="dayBranch"></div>
+    <h2>Branches</h2>
+    <div class="kicker">브랜치를 클릭해 커밋 패널을 열고 조회하세요.</div>
+    <div id="dayBranch" style="margin-top:8px"></div>
   </section>
 
   <!-- Commit Detail -->
   <section class="col">
     <h2>Commit Detail</h2>
-    <div id="detail">왼쪽에서 커밋을 선택하세요.</div>
+    <div id="detail" class="kicker">왼쪽에서 커밋을 선택하세요.</div>
   </section>
 </main>
 
@@ -89,7 +141,6 @@
   function wireEvents() {
     elRepoFilter.addEventListener('input', renderRepos);
     qs('#btnSync').addEventListener('click', async ()=>{
-      // 단순히 repo 재조회만 수행 (GitHub API 호출)
       await loadRepos(true);
     });
   }
@@ -108,10 +159,8 @@
   async function loadRepos(force=false) {
     const data = await apiGet('/api/my_repos');
     allRepos = data.repos || [];
-    // 이름만 보여달라 했으므로 chip에는 repo.name 만 표시, 클릭 시 full_name 사용
     renderRepos();
     if (force) {
-      // 캐시 초기화
       branchesCache = {};
       commitsCache = {};
       elDayBranch.innerHTML = '';
@@ -144,7 +193,6 @@
     }
     const branches = branchesCache[full_name];
 
-    // 브랜치 목록을 간단히 렌더. 각 브랜치를 클릭하면 해당 커밋을 '지금' 조회.
     const wrap = document.createElement('div');
     if (!branches.length) {
       wrap.textContent = '브랜치 없음';
@@ -157,9 +205,7 @@
       row.className = 'branch-row';
 
       const head = document.createElement('div');
-      head.style.display = 'flex';
-      head.style.alignItems = 'center';
-      head.style.justifyContent = 'space-between';
+      head.className = 'row-head';
       head.innerHTML = `
         <div>
           <strong>${b.name}</strong>
@@ -174,7 +220,6 @@
       panel.textContent = '커밋을 불러오려면 "열기"를 누르세요.';
 
       head.querySelector('.btn').onclick = async () => {
-        // 버튼 토글
         const opened = panel.style.display !== 'none';
         if (opened) {
           panel.style.display = 'none';
@@ -199,13 +244,11 @@
 
     const key = `${repo}|${branch}`;
     if (!commitsCache[key]) {
-      // since는 선택 안하면 전체(페이지 제한 내). 필요 시 UI 만들어서 기간 지정 가능
       const data = await apiGet('/api/commits', {repo, branch});
       commitsCache[key] = data.commits || [];
     }
     const commits = commitsCache[key];
 
-    // 헤더의 C 배지 갱신
     const tag = headEl.querySelector('.tag');
     tag.textContent = `C ${commits.length}`;
 
@@ -214,7 +257,6 @@
       return;
     }
 
-    // 최신순으로 표시, 3분 이내 커밋엔 초록 체크
     panel.innerHTML = '';
     const now = Date.now();
     commits.forEach(c => {
@@ -251,7 +293,6 @@
     elDetail.textContent = '상세 조회 중...';
     const d = await apiGet('/api/commit_detail', {repo, sha});
 
-    // KST로 변환 표기
     let kst = '';
     if (d.date) {
       kst = new Date(d.date).toLocaleString("ko-KR", {
@@ -268,11 +309,11 @@
       <div class="detail">
         <div><strong>${escapeHtml(d.message || '')}</strong></div>
         <div class="muted" style="margin:6px 0">${escapeHtml(d.author||'')} • ${kst}</div>
-        <div style="margin:6px 0">SHA: <code>${d.sha}</code> · <a href="${d.html_url}" target="_blank">GitHub에서 보기</a></div>
+        <div style="margin:6px 0">SHA: <code>${d.sha}</code> · <a href="${d.html_url}" target="_blank" rel="noopener">GitHub에서 보기</a></div>
         <div style="margin:6px 0">총 변경: ${stats.total ?? 0} (+${stats.additions ?? 0} / -${stats.deletions ?? 0})</div>
-        <hr>
+        <hr style="border:none;border-top:1px solid var(--border)">
         <div><strong>Files</strong></div>
-        <ul>
+        <ul style="margin:8px 0 0 18px;padding:0">
           ${files.map(f => `
             <li>${escapeHtml(f.filename)} — ${f.status} (+${f.additions} / -${f.deletions})</li>
           `).join("")}
