@@ -103,14 +103,14 @@
 
   <script>
     /* --------------------- 초기 데이터 --------------------- */
-    const RAW_LOGS = {{ logs|tojson|safe }};      // /dashboard 에서 내려주는 사용자 branch_log 집합
-    const USER_REPOS = {{ repos|tojson|safe }};   // 사용자의 저장소 목록
+    const RAW_LOGS = {{ logs|tojson|safe }};
+    const USER_REPOS = {{ repos|tojson|safe }};
     const USER_ID = "{{ user_id }}";
 
     /* 상태: 선택/열림 유지 */
-    let currentRepo = null;        // "owner/repo"
-    const openBranchKeys = new Set(); // 예: "2025-09-12|webdevelop"
-    const scrollMemory = { days: 0 }; // 스크롤 위치 유지
+    let currentRepo = null;
+    const openBranchKeys = new Set();
+    const scrollMemory = { days: 0 };
     let AUTO_TIMER = null;
 
     /* 도구 */
@@ -176,12 +176,10 @@
     const daysPane = qs('#daysPane');
 
     function groupByDayAndBranch(logs) {
-      // 입력: branch_log 문서들(여러 레포), 여기서는 currentRepo만 필터
-      // 필드 가정: date, repo, branch, commits[], dep_changes, commit_count 등
       const by = {};
       logs.forEach(l=>{
         if(l.repo_full_name !== currentRepo) return;
-        const day = l.date;                  // YYYY-MM-DD
+        const day = l.date;
         const branch = l.branch;
         if(!by[day]) by[day] = {};
         if(!by[day][branch]) by[day][branch] = { commits: [], commit_count: 0, dep_changes: 0 };
@@ -190,7 +188,6 @@
         slot.dep_changes += (l.counts && l.counts.dep_files_changed) || l.dep_changes || 0;
         (l.examples || l.commits || []).forEach(c=> slot.commits.push(c));
       });
-      // 최신순으로 정렬
       const days = Object.keys(by).sort((a,b)=> (a>b?-1:1));
       return { days, by };
     }
@@ -198,7 +195,6 @@
     function renderDays() {
       const f = qs('#dayFilter').value.trim().toLowerCase();
       const { days, by } = groupByDayAndBranch(RAW_LOGS);
-      // 스크롤 위치 기억/복원
       daysPane.scrollTop = scrollMemory.days || 0;
       daysPane.innerHTML = '';
 
@@ -206,14 +202,12 @@
       if(days.length===0){ daysPane.innerHTML = '<div class="empty">로그가 없습니다.</div>'; return; }
 
       days.forEach(day=>{
-        // 날짜 헤더
         const dayBox = document.createElement('div');
         const header = document.createElement('div');
         header.className = 'date-header';
         header.innerHTML = `<div><b>${day}</b></div><div class="meta">${Object.keys(by[day]).length} item(s)</div>`;
         dayBox.appendChild(header);
 
-        // 브랜치들(이름 오름차순)
         Object.keys(by[day]).sort().forEach(branch=>{
           const key = branchKey(day, branch);
           const info = by[day][branch];
@@ -229,9 +223,6 @@
              <span class="pill">D ${info.dep_changes||0}</span>
              <button style="margin-left:auto" class="btnToggle">${row.classList.contains('open')?'접기':'펼치기'}</button>`;
           head.addEventListener('click', (ev)=>{
-            if(ev.target.classList.contains('btnToggle')){
-              // 토글 버튼으로도 되지만 전체 영역 클릭 시에도 토글
-            }
             row.classList.toggle('open');
             const opened = row.classList.contains('open');
             qs('.btnToggle', head).textContent = opened? '접기' : '펼치기';
@@ -242,7 +233,6 @@
           const body = document.createElement('div');
           body.className = 'branch-body';
 
-          // 커밋 최신순
           const commits = (info.commits || []).slice().sort((a,b)=>{
             const da = (a.timestamp || a.date || a.committer?.date || a.author?.date || '');
             const db = (b.timestamp || b.date || b.committer?.date || b.author?.date || '');
@@ -258,17 +248,12 @@
               item.className = 'commit';
               const left = document.createElement('div');
               left.className = 'commit-msg';
-              // 메시지 한 줄
               const msg = (c.message || c.commit?.message || '').split('\n')[0] || '(no message)';
-              // 좌측: (신규표시) 메시지
               left.innerHTML = `${isFresh(iso)?'<span class="fresh">NEW</span>':''}<span title="${msg}">${msg}</span>`;
               const right = document.createElement('div');
-              right.innerHTML = `
-                <span class="sha" title="${iso?fmtKST(iso):''}">${shortSha(c.sha || c.id || c.node_id || '')}</span>
-              `;
+              right.innerHTML = `<span class="sha" title="${iso?fmtKST(iso):''}">${shortSha(c.sha || c.id || c.node_id || '')}</span>`;
               item.appendChild(left); item.appendChild(right);
 
-              // 상세 요청
               item.addEventListener('click', ()=>{
                 renderCommitDetail({
                   repo: currentRepo, branch,
@@ -291,7 +276,6 @@
         daysPane.appendChild(dayBox);
       });
 
-      // 마지막 갱신 표시
       qs('#lastRefresh').textContent = `갱신: ${fmtKST(new Date().toISOString())}`;
     }
 
@@ -299,10 +283,7 @@
     const detailPane = qs('#detailPane');
     async function renderCommitDetail(meta){
       try{
-        // 백엔드 상세 API가 있다면 호출, 없으면 meta로 표시
-        // const q = new URLSearchParams({ repo: meta.repo, sha: meta.sha });
-        // const r = await fetch('/api/commit_detail?'+q); const d = await r.json();
-        const d = meta; // 프론트 메타만으로 표시
+        const d = meta;
         detailPane.innerHTML = `
           <ul class="kv">
             <li><b>Repository</b><span>${d.repo}</span></li>
@@ -322,7 +303,6 @@
     /* --------------------- 동작 --------------------- */
     function selectRepo(full){
       currentRepo = full;
-      // Days 스크롤/열림 유지 초기화
       scrollMemory.days = 0;
       openBranchKeys.clear();
       renderDays();
@@ -332,27 +312,17 @@
     qs('#btnClearFilter').addEventListener('click', ()=>{ qs('#dayFilter').value=''; renderDays(); });
     qs('#repoFilter').addEventListener('input', renderRepos);
     qs('#dayFilter').addEventListener('input', renderDays);
-    qs('#btnSync').addEventListener('click', ()=>{ window.location.href = "{{ url_for('sync_my_repos_route') }}"; });
+    // 🔧 엔드포인트 이름 수정: sync_my_repos
+    qs('#btnSync').addEventListener('click', ()=>{ window.location.href = "{{ url_for('sync_my_repos') }}"; });
 
     // 창 열림 상태/스크롤 유지하며 갱신
     async function autoRefresh(){
       try{
-        // 현재 스크롤/열림 상태 기억
         scrollMemory.days = daysPane.scrollTop;
-
-        // 서버에서 최신 데이터를 다시 가져오기 (페이지 리로드 없이)
-        const r = await fetch("{{ url_for('dashboard') }}", { headers:{ 'X-Requested-With':'fetch' }});
-        const html = await r.text();
-
-        // 응답에서 RAW_LOGS/USER_REPOS json만 추출하도록 백엔드가 지원하면 좋지만,
-        // 여기서는 간단히 window.location.reload() 대체 없이 기존 데이터를 사용한다고 가정.
-        // ※ 실제 최신화를 원하면 별도 /api/branch_logs 같은 JSON 엔드포인트를 두는 것을 권장.
-        // ----> 이미 백엔드에 /dashboard 가 템플릿을 렌더하므로, 아래는 예비: noop
-
+        // (API로 RAW_LOGS를 갱신하는 부분을 붙일 수 있음)
       }catch(_e){
-        // 네트워크 실패 시 조용히 무시
       }finally{
-        renderDays(); // 열린 상태/스크롤 유지 반영하여 다시 렌더
+        renderDays();
       }
     }
 
@@ -365,13 +335,11 @@
     renderRepos();
     startAutoRefresh();
 
-    // 최초 자동 선택(첫 레포)
     if(USER_REPOS && USER_REPOS.length){
       const first = (USER_REPOS[0].repositoryName || USER_REPOS[0]);
       selectRepo(first);
     }
 
-    // 페이지 이탈 시 타이머 정리
     window.addEventListener('beforeunload', ()=> AUTO_TIMER && clearInterval(AUTO_TIMER));
   </script>
 </body>
