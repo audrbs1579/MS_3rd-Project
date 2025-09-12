@@ -35,7 +35,7 @@
       margin: 12px 0 8px 0;
       padding: 10px 12px;
       border-radius: 6px;
-      background: rgb(255,149,0);
+      background: rgb(255,149,0); /* Apple system orange */
       color: #fff;
       display: flex;
       align-items: center;
@@ -125,7 +125,7 @@
   </footer>
 
   <script>
-    /* --- JS: 데이터 렌더 & 핸들러 (생략 없이 전체) --- */
+    /* --- JS --- */
     const RAW_LOGS = {{ logs|tojson|safe }};
     const USER_REPOS = {{ repos|tojson|safe }};
     const USER_ID = "{{ user_id }}";
@@ -232,14 +232,26 @@
         const res=await fetch('/api/commit_detail?'+q);
         const d=await res.json();
         if(!res.ok) throw new Error(d.error||'fetch failed');
+
+        /* ✅ KST(Asia/Seoul)로 변환해서 표시 */
+        let localTime = '';
+        if (d.date) {
+          localTime = new Date(d.date).toLocaleString("ko-KR", {
+            timeZone: "Asia/Seoul",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit"
+          });
+        }
+
         const files=(d.files||[]).map(f=>`
           <div style="margin-bottom:6px;">
             <div class="mono">${escapeHtml(f.filename)} <span class="muted">(${f.status} +${f.additions}/-${f.deletions})</span></div>
             ${f.patch?`<pre class="mono" style="white-space:pre-wrap; background:#f7f7f7; border:1px solid #eee; padding:6px;">${escapeHtml(f.patch)}</pre>`:''}
           </div>`).join('')||'<div class="empty">변경 파일 없음</div>';
+
         panel.innerHTML=`
           <div><strong>${repoDisplayName(repo)}</strong> <span class="mono">@ ${d.sha.slice(0,7)}</span></div>
-          <div class="muted">${escapeHtml(d.author||'')} • ${escapeHtml(d.date||'')}</div>
+          <div class="muted">${escapeHtml(d.author||'')} • ${localTime || ''}</div>
           <div class="hr"></div>
           <div><strong>Message</strong><div>${escapeHtml(d.message||'')}</div></div>
           <div class="hr"></div>
@@ -263,6 +275,7 @@
     }
     function startAuto(){if(autoTimer) clearInterval(autoTimer);autoTimer=setInterval(refreshActiveRepo,60000);}
 
+    /* 리사이저: 직관적 방향(오른쪽으로 끌면 오른쪽 패널 넓어짐) */
     (function initSplitters(){
       const grid=document.getElementById('grid');
       const handles=document.querySelectorAll('.handle');
