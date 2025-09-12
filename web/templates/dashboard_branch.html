@@ -1,3 +1,4 @@
+<!-- web/templates/dashboard_branch.html -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -5,67 +6,31 @@
   <title>Branch Activity (Basic)</title>
   <style>
     body { font-family: Tahoma, "Microsoft Sans Serif", Gulim, Dotum, sans-serif; font-size: 14px; margin: 0; }
-
     header, footer { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
     footer { border-top: 1px solid #ddd; border-bottom: none; position: sticky; bottom: 0; }
-
     main { height: calc(100vh - 92px); padding: 8px; box-sizing: border-box;
            display: grid; grid-template-columns: 260px 6px 1fr 6px 420px; gap: 8px; }
     section { border: 1px solid #ddd; border-radius: 4px; display: flex; flex-direction: column; min-height: 0; }
     section > h3 { margin: 0; padding: 8px; border-bottom: 1px solid #eee; background: #fafafa; font-size: 14px; }
     .content { padding: 8px; overflow: auto; }
-
     .btn { padding: 6px 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
     .btn:disabled { opacity: .6; cursor: not-allowed; }
     .input { padding: 6px 8px; border: 1px solid #ccc; }
-
     .muted { color: #666; font-size: 12px; }
     .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
     .empty { color: #666; }
     .error { color: #b00020; white-space: pre-wrap; }
     .hr { height:1px; background:#eee; margin:8px 0; }
-
     .handle { background: #e1e1e1; cursor: col-resize; border: 1px solid #d0d0d0; }
-
-    .day-header {
-      margin: 12px 0 8px 0;
-      padding: 10px 12px;
-      border-radius: 6px;
-      background: rgb(255,149,0);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-weight: bold;
-    }
-
-    .branch-header {
-      display:flex; align-items:center; gap:8px;
-      margin: 6px 0 4px 0;
-      padding: 6px 0;
-      border: 1px solid #ddd; border-radius: 4px;
-      background: transparent;
-      font-weight: 400;
-    }
+    .day-header { margin: 12px 0 8px 0; padding: 10px 12px; border-radius: 6px;
+      background: rgb(255,149,0); color: #fff; display: flex; align-items: center; justify-content: space-between; font-weight: bold; }
+    .branch-header { display:flex; align-items:center; gap:8px; margin: 6px 0 4px 0; padding: 6px 0;
+      border: 1px solid #ddd; border-radius: 4px; background: transparent; font-weight: 400; }
     .branch-name-thin { font-weight: 400; }
-
-    .commit-box {
-      border:1px solid #ddd; border-radius:4px;
-      margin: 6px 0 10px 16px;
-      padding: 8px;
-      max-height: 240px;
-      overflow:auto;
-      background: transparent;
-    }
-    .commit-item {
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
-      margin-bottom:6px; padding:6px 8px; border:1px solid #eee; border-radius:4px;
-      background: transparent; cursor:pointer;
-    }
+    .commit-box { border:1px solid #ddd; border-radius:4px; margin: 6px 0 10px 16px; padding: 8px; max-height: 240px; overflow:auto; background: transparent; }
+    .commit-item { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; padding:6px 8px; border:1px solid #eee; border-radius:4px; background: transparent; cursor:pointer; }
     .commit-item:hover { background:#fafafa; }
-
-    .row { display:flex; align-items:center; justify-content:space-between; gap:8px;
-           padding:6px 8px; border:1px solid #eee; border-radius:4px; margin-bottom:6px; background:#fff; cursor:pointer; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border:1px solid #eee; border-radius:4px; margin-bottom:6px; background:#fff; cursor:pointer; }
     .row:hover { background:#f9f9f9; }
     .pill { font-size: 12px; border: 1px solid #ccc; padding: 0 6px; border-radius: 999px; background: #f3f3f3; }
   </style>
@@ -231,7 +196,6 @@
             })
           : '';
 
-        /* 파일 패치(diff) 제거 → 파일명과 수정/삭제 줄 수만 */
         const files = (d.files || []).map(f => `
           <div style="margin-bottom:6px;">
             <div class="mono">
@@ -277,17 +241,23 @@
           const startX=e.clientX;
           const cols=getComputedStyle(grid).gridTemplateColumns.split(' ');
           const vals=cols.map(v=>v.endsWith('px')?parseFloat(v):v);
-          const side=h.dataset.splitter;
+          const side=h.dataset.splitter; // 'left' or 'right'
           const L=(side==='left')?0:2;
           const R=(side==='left')?2:4;
           function onMove(ev){
             const dx=ev.clientX-startX;
             let leftW=vals[L], rightW=vals[R];
             if(typeof leftW==='number' && typeof rightW==='number'){
-              if(side==='left'){leftW=Math.max(180,vals[L]+dx); rightW=Math.max(260,vals[R]-dx);}
-              else{leftW=Math.max(260,vals[L]-dx); rightW=Math.max(260,vals[R]+dx);}
-              const newCols=[...vals];newCols[L]=leftW;newCols[R]=rightW;
-              grid.style.gridTemplateColumns=newCols.map(v=>typeof v==='number'?`${v}px`:v).join(' ');
+              if(side==='left'){
+                leftW=Math.max(180, vals[L]+dx);
+                rightW=Math.max(260, vals[R]-dx);
+              }else{
+                // 오른쪽 핸들을 오른쪽으로 → 오른쪽 패널 커짐 (직관적)
+                leftW=Math.max(260, vals[L]+dx);
+                rightW=Math.max(260, vals[R]-dx);
+              }
+              const newCols=[...vals]; newCols[L]=leftW; newCols[R]=rightW;
+              grid.style.gridTemplateColumns=newCols.map(v=>`${v}px`).join(' ');
             }
           }
           function onUp(){window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);}
@@ -297,7 +267,7 @@
       });
     })();
 
-    document.getElementById('btnResync').onclick=()=>location.href="{{ url_for('sync_my_repos_route') }}";
+    document.getElementById('btnResync').onclick=()=>location.href="{{ url_for('sync_my_repos') }}";
     document.getElementById('btnManualRefresh').onclick=refreshActiveRepo;
     document.getElementById('btnClear').onclick=()=>{document.getElementById('dayFilter').value='';renderDays();};
     document.getElementById('repoFilter').oninput=renderRepos;
