@@ -36,9 +36,10 @@
     }
     @media (max-width:1080px){ main{grid-template-columns:1fr;gap:12px} }
     .col{
-      border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;box-shadow:var(--shadow-sm)
+      border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;box-shadow:var(--shadow-sm);position:relative
     }
     h2{margin:0 0 10px 0;font-size:15px;letter-spacing:.2px}
+    .stamp{position:absolute;right:12px;bottom:8px;font-size:11px;color:var(--muted)}
 
     /* Inputs & buttons */
     input[type=text]{
@@ -114,6 +115,7 @@
     <h2>Repositories</h2>
     <input id="repoFilter" type="text" placeholder="owner/repo 필터">
     <div id="repoList" style="margin-top:8px"></div>
+    <div id="repoStamp" class="stamp"></div>
   </section>
 
   <!-- Branches (최신 날짜 그룹) -->
@@ -121,12 +123,14 @@
     <h2>Branches</h2>
     <div class="kicker">최신 날짜 순으로 묶어 보여줍니다. 그룹은 마우스로 드래그하여 스크롤할 수 있어요.</div>
     <div id="dayBranch" style="margin-top:8px"></div>
+    <div id="branchStamp" class="stamp"></div>
   </section>
 
   <!-- Commit Detail -->
   <section class="col">
     <h2>Commit Detail</h2>
     <div id="detail" class="kicker">왼쪽에서 커밋을 선택하세요.</div>
+    <div id="detailStamp" class="stamp"></div>
   </section>
 </main>
 
@@ -140,31 +144,50 @@
   // -------------- DOM 헬퍼 --------------
   const qs = (s, el=document)=>el.querySelector(s);
   const qsa = (s, el=document)=>Array.from(el.querySelectorAll(s));
-  const elRepoList = qs('#repoList');
-  const elDayBranch = qs('#dayBranch');
-  const elDetail = qs('#detail');
+  const elRepoList   = qs('#repoList');
+  const elDayBranch  = qs('#dayBranch');
+  const elDetail     = qs('#detail');
   const elRepoFilter = qs('#repoFilter');
+  const elRepoStamp  = qs('#repoStamp');
+  const elBranchStamp= qs('#branchStamp');
+  const elDetailStamp= qs('#detailStamp');
 
   // -------------- 상태 --------------
-  let allRepos = [];        // API로 가져온 전체 repo
-  let selectedRepo = null;  // "owner/repo"
-  let branchesCache = {};   // { repo : [ {name, sha}, ... ] }
-  let commitsCache = {};    // { "repo|branch" : [ commits ] }
+  let allRepos = [];                 // API로 가져온 전체 repo
+  let selectedRepo = null;           // "owner/repo"
+  let branchesCache = {};            // { repo : [ {name, sha}, ... ] }
+  let commitsCache = {};             // { "repo|branch" : [ commits ] }
 
-  // -------------- 초기화 --------------
+  // UI 유지용 상태
+  const openedBranches = new Set();  // `${repo}|${branch}`
+  let selectedCommit = null;         // {repo, sha}
+  const groupScrollTops = new Map(); // dayKey -> scrollTop
+
+  // -------------- 초기화 & 주기적 새로고침 --------------
   document.addEventListener('DOMContentLoaded', async () => {
     await loadRepos();
     wireEvents();
+    stampAll(); // 최초 스탬프
+    // 1분마다 전체 새로고침
+    setInterval(periodicRefresh, 60*1000);
   });
 
   function wireEvents() {
     elRepoFilter.addEventListener('input', renderRepos);
     qs('#btnSync').addEventListener('click', async ()=>{
-      await loadRepos(true);
+      await periodicRefresh();
     });
   }
 
-  // -------------- 공통 --------------
+  // -------------- 공통 유틸 --------------
+  function stamp(el){
+    const now = new Date().toLocaleString('ko-KR', { timeZone:'Asia/Seoul', hour12:false });
+    el.textContent = `마지막 새로고침: ${now} (KST)`;
+  }
+  function stampAll(){
+    [elRepoStamp, elBranchStamp, elDetailStamp].forEach(el=>el && stamp(el));
+  }
+
   function enableDragScroll(el){
     let isDown=false, startY=0, startScroll=0;
     el.addEventListener('mousedown',e=>{
@@ -179,7 +202,7 @@
       const walk=(y - startY);
       el.scrollTop = startScroll - walk;
     });
-    // 터치도 지원
+    // 터치
     el.addEventListener('touchstart',e=>{
       isDown=true; startY=e.touches[0].pageY - el.offsetTop; startScroll=el.scrollTop;
     },{passive:true});
@@ -202,17 +225,31 @@
     return '방금';
   }
 
+  // 한국시간 YYYY-MM-DD 키
+  function kstDateKey(iso){
+    if(!iso) return null;
+    const t = new Date(iso).getTime();
+    const kst = new Date(t + 9*60*60*1000); // UTC+9
+    return kst.toISOString().slice(0,10);   // YYYY-MM-DD (KST 기준)
+  }
+
+  // -------------- API --------------
+  async function apiGet(url, params={}) {
+    const q = new URLSearchParams(params);
+    const res = await fetch(url + (q.toString() ? `?${q}` : ''));
+    if (!res.ok) {
+      let err = await res.text();
+      throw new Error(err || res.statusText);
+    }
+    return res.json();
+  }
+
   // -------------- Repositories --------------
-  async function loadRepos(force=false) {
+  async function loadRepos() {
     const data = await apiGet('/api/my_repos');
     allRepos = data.repos || [];
     renderRepos();
-    if (force) {
-      branchesCache = {};
-      commitsCache = {};
-      elDayBranch.innerHTML = '';
-      elDetail.textContent = '왼쪽에서 커밋을 선택하세요.';
-    }
+    stamp(elRepoStamp);
   }
 
   function renderRepos() {
@@ -240,19 +277,11 @@
       });
   }
 
-  // -------------- API --------------
-  async function apiGet(url, params={}) {
-    const q = new URLSearchParams(params);
-    const res = await fetch(url + (q.toString() ? `?${q}` : ''));
-    if (!res.ok) {
-      let err = await res.text();
-      throw new Error(err || res.statusText);
-    }
-    return res.json();
-  }
-
-  // -------------- Branches (최신 커밋 날짜 그룹) --------------
+  // -------------- Branches (KST 날짜 그룹) --------------
   async function selectRepo(full_name) {
+    // 현재 그룹 스크롤 기억
+    saveGroupScrolls();
+
     selectedRepo = full_name;
     elDayBranch.innerHTML = '브랜치 불러오는 중...';
 
@@ -262,7 +291,7 @@
     }
     const branches = branchesCache[full_name].slice(); // 복사본
 
-    // 각 브랜치의 최신 커밋 리스트 확보
+    // 각 브랜치의 최신 커밋 확보
     await Promise.all(branches.map(async (b) => {
       const key = `${full_name}|${b.name}`;
       if (!commitsCache[key]) {
@@ -270,38 +299,35 @@
         commitsCache[key] = data.commits || [];
       }
       const list = commitsCache[key];
-      b._latestDate = list.length ? (new Date(list[0].date).getTime() || 0) : 0;
       b._latestISO = list.length ? list[0].date : null;
+      b._latestKDay = b._latestISO ? kstDateKey(b._latestISO) : null;
+      b._latestDate = b._latestISO ? new Date(b._latestISO).getTime() : 0;
       b._commitCount = list.length;
       b._isFresh = list.length ? (Date.now() - (new Date(list[0].date).getTime())) <= 3*60*1000 : false;
     }));
 
-    // 날짜별 그룹핑 (YYYY-MM-DD)
+    // 날짜별 그룹핑(KST 키 사용) — 날짜 없는 브랜치는 제외
     const groups = {};
     for (const b of branches){
-      const d = b._latestISO ? new Date(b._latestISO) : null;
-      const k = d ? d.toLocaleDateString('sv-SE') /* YYYY-MM-DD */ : '0000-00-00';
-      (groups[k] ||= []).push(b);
+      if (!b._latestKDay) continue;
+      (groups[b._latestKDay] ||= []).push(b);
     }
     const days = Object.keys(groups).sort((a,b)=> b.localeCompare(a)); // desc
 
     // 렌더
     const out = document.createDocumentFragment();
     for (const day of days){
-      const title = day === '0000-00-00'
-        ? '날짜 없음'
-        : day; // YYYY-MM-DD
-
       const head = document.createElement('div');
       head.className = 'date-head';
-      head.innerHTML = `<div>${title}</div><div class="muted">브랜치 ${groups[day].length}개</div>`;
+      head.innerHTML = `<div>${day}</div><div class="muted">브랜치 ${groups[day].length}개</div>`;
       out.appendChild(head);
 
       const box = document.createElement('div');
       box.className = 'drag-scroll';
+      box.dataset.day = day; // 스크롤 복구용
       enableDragScroll(box);
 
-      // 각 그룹 내부는 최신 커밋 시간 내림차순
+      // 해당 날짜의 브랜치만(이미 필터됨), 최신순
       groups[day].sort((a,b)=> (b._latestDate||0) - (a._latestDate||0));
       groups[day].forEach(b=>{
         const row = document.createElement('div');
@@ -316,7 +342,7 @@
           ${b._isFresh ? '<span class="green-dot" title="3분 이내"></span>' : '<span style="width:10px;height:10px;display:inline-block"></span>'}
           <strong>${b.name}</strong>
           <span class="tag">C ${b._commitCount ?? '?'}</span>
-          <span class="muted" style="font-size:12px">${b._latestISO ? new Date(b._latestISO).toLocaleString('ko-KR',{ timeZone:'Asia/Seoul'}) : '—'}</span>
+          <span class="muted" style="font-size:12px">${new Date(b._latestISO).toLocaleString('ko-KR',{ timeZone:'Asia/Seoul'})}</span>
         `;
 
         const right = document.createElement('div');
@@ -333,17 +359,27 @@
         panel.style.display = 'none';
         panel.textContent = '커밋을 불러오려면 "열기"를 누르세요.';
 
+        const k = `${full_name}|${b.name}`;
         right.querySelector('.btn').onclick = async () => {
           const opened = panel.style.display !== 'none';
           if (opened) {
             panel.style.display = 'none';
             right.querySelector('.btn').textContent = '열기';
+            openedBranches.delete(k);
             return;
           }
           right.querySelector('.btn').textContent = '닫기';
           panel.style.display = 'block';
+          openedBranches.add(k);
           await loadCommitsForBranch(full_name, b.name, panel, head);
         };
+
+        // 이미 열려 있던 패널은 복구
+        if (openedBranches.has(k)) {
+          panel.style.display = 'block';
+          right.querySelector('.btn').textContent = '닫기';
+          loadCommitsForBranch(full_name, b.name, panel, head);
+        }
 
         head.appendChild(left);
         head.appendChild(right);
@@ -356,6 +392,8 @@
     }
 
     elDayBranch.replaceChildren(out);
+    restoreGroupScrolls();
+    stamp(elBranchStamp);
   }
 
   async function loadCommitsForBranch(repo, branch, panel, headEl) {
@@ -368,16 +406,18 @@
     }
     const commits = commitsCache[key];
 
-    // 헤더 C 배지 갱신 및 fresh dot 반영
+    // 헤더 C 배지 갱신 및 fresh dot 갱신
     const tag = headEl.querySelector('.tag');
     if (tag) tag.textContent = `C ${commits.length}`;
     const isFresh = commits.length ? (Date.now() - (new Date(commits[0].date).getTime())) <= 3*60*1000 : false;
     const rightPack = headEl.parentElement.querySelector('.row-head > div:last-child');
     if (rightPack){
-      // 오른쪽 fresh dot 갱신
       const firstChild = rightPack.firstElementChild;
-      if (firstChild) rightPack.removeChild(firstChild);
-      rightPack.insertAdjacentHTML('afterbegin', isFresh ? '<span class="green-dot" title="3분 이내"></span>' : '');
+      if (firstChild && (firstChild.classList && firstChild.classList.contains('green-dot'))) {
+        // 기존 점 삭제
+        rightPack.removeChild(firstChild);
+      }
+      if (isFresh) rightPack.insertAdjacentHTML('afterbegin', '<span class="green-dot" title="3분 이내"></span>');
     }
 
     if (!commits.length) {
@@ -401,9 +441,7 @@
       left.style.display = 'flex';
       left.style.alignItems = 'center';
       left.style.gap = '6px';
-      left.innerHTML = `
-        <span>${escapeHtml(c.message || '(no message)')}</span>
-      `;
+      left.innerHTML = `<span>${escapeHtml(c.message || '(no message)')}</span>`;
 
       const right = document.createElement('div');
       right.style.display = 'flex';
@@ -416,7 +454,7 @@
 
       item.appendChild(left);
       item.appendChild(right);
-      item.onclick = ()=>showCommitDetail(repo, c.sha);
+      item.onclick = ()=>{ selectedCommit = {repo, sha:c.sha}; showCommitDetail(repo, c.sha); };
       panel.appendChild(item);
     });
   }
@@ -467,8 +505,58 @@
         </div>
       </div>
     `;
+    stamp(elDetailStamp);
   }
 
+  // -------------- 주기적 새로고침 --------------
+  async function periodicRefresh(){
+    try{
+      // 전체 레포 리프레시
+      await loadRepos();
+
+      // 모든 레포의 브랜치/커밋 갱신 (캐시 갱신)
+      for (const r of allRepos){
+        // 브랜치
+        const bData = await apiGet('/api/branches', {repo: r.full_name});
+        branchesCache[r.full_name] = bData.branches || [];
+
+        // 커밋(각 브랜치)
+        for (const b of branchesCache[r.full_name]){
+          const key = `${r.full_name}|${b.name}`;
+          const cData = await apiGet('/api/commits', {repo: r.full_name, branch: b.name});
+          commitsCache[key] = cData.commits || [];
+        }
+      }
+
+      // 현재 선택된 레포/오픈된 브랜치/선택 커밋 복구
+      if (selectedRepo) {
+        await selectRepo(selectedRepo);
+      }
+      if (selectedCommit) {
+        await showCommitDetail(selectedCommit.repo, selectedCommit.sha);
+      }
+
+      stampAll();
+    }catch(e){
+      console.error(e);
+    }
+  }
+
+  // 스크롤 상태 저장/복구
+  function saveGroupScrolls(){
+    groupScrollTops.clear();
+    qsa('.drag-scroll', elDayBranch).forEach(box=>{
+      groupScrollTops.set(box.dataset.day, box.scrollTop);
+    });
+  }
+  function restoreGroupScrolls(){
+    qsa('.drag-scroll', elDayBranch).forEach(box=>{
+      const v = groupScrollTops.get(box.dataset.day);
+      if (typeof v === 'number') box.scrollTop = v;
+    });
+  }
+
+  // -------------- misc --------------
   function escapeHtml(s){
     return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
