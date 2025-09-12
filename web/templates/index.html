@@ -1,32 +1,21 @@
-<!-- web/templates/index.html -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8"/>
   <title>Project Guardian - Login</title>
   <style>
-    body { font-family: Tahoma, "Microsoft Sans Serif", Gulim, Dotum, sans-serif; font-size: 14px; margin:0; }
-    header, footer { padding:8px 12px; border-bottom:1px solid #ddd; background:#f7f7f7; }
-    footer { border-top:1px solid #ddd; border-bottom:none; position:sticky; bottom:0; }
-    main { min-height:calc(100vh - 92px); padding:16px; display:flex; align-items:center; justify-content:center; }
-    .card { width:420px; border:1px solid #ddd; border-radius:4px; padding:16px; background:#fff; }
-    .btn { padding:8px 12px; border:1px solid #ccc; background:#fff; cursor:pointer; }
-    .muted { color:#666; font-size:12px; }
+    body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:14px/1.4 Tahoma, Geneva, Verdana, sans-serif}
+    .card{border:1px solid #ddd;border-radius:8px;padding:24px 28px;min-width:320px}
+    .btn{padding:8px 12px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer}
+    h1{margin:0 0 8px 0}
+    p{color:#555}
   </style>
 </head>
 <body>
-<header>
-  <strong>Project Guardian</strong> <span class="muted">/ Login</span>
-</header>
-<main>
   <div class="card">
-    <h2>GitHub 계정으로 시작</h2>
-    <p>브랜치/커밋 활동 요약과 의존성 변경 탐지 대시보드입니다.</p>
-    <p><a href="{{ url_for('login') }}"><button class="btn">GitHub 로그인</button></a></p>
+    <h1>Project Guardian</h1>
+    <p>AI 기반 개발자 활동 분석·의존성 변화 감지</p>
+    <a href="{{ url_for('login') }}"><button class="btn">GitHub로 로그인</button></a>
   </div>
-</main>
-<footer>
-  <span class="muted">© Project Guardian</span>
-</footer>
 </body>
 </html>

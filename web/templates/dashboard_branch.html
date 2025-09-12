@@ -1,380 +1,291 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>Project Guardian - Branch Logs</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <title>Branch Activity – {{ user_id }}</title>
   <style>
-    /* ===== 기본(심플) 레이아웃 ===== */
-    :root{
-      --gap:12px;
-      --border:#ccc;
-      --muted:#666;
-      --badge:#eee;
-      --accent:#ff9500; /* Apple system orange */
-      --chip:#f5f5f5;
-      --ok:#22c55e;
-    }
-    html,body{height:100%;margin:0;font-family:Tahoma, "MS Sans Serif", "굴림", sans-serif;font-size:14px;color:#111;}
-    .app{display:grid;grid-template-columns: 1fr 6px 1.2fr 6px 1.2fr;grid-template-rows: auto 1fr; height:100%;}
-    header{grid-column:1 / -1; padding:10px var(--gap); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px;}
-    header h1{margin:0;font-size:16px;font-weight:bold;}
-    .pane{display:flex;flex-direction:column;overflow:hidden;}
-    .pane h2{margin:10px var(--gap); font-size:15px;}
-    .scroller{flex:1; overflow:auto; padding:0 var(--gap) var(--gap);}
+    body{margin:0;font:14px/1.4 Tahoma, Geneva, Verdana, sans-serif;color:#111;}
+    header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #ddd}
+    .hint{color:#666;font-size:12px;margin-left:8px}
+    .btn{padding:6px 10px;border:1px solid #ccc;background:#f7f7f7;cursor:pointer}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
 
-    /* Repos */
-    .toolbar{display:flex; gap:8px; align-items:center; padding:0 var(--gap) 10px;}
-    .toolbar input{height:30px; padding:0 8px; width:260px;}
-    .repo-list{display:flex; flex-wrap:wrap; gap:8px; padding:0 var(--gap) var(--gap);}
-    .repo-chip{padding:6px 10px; border:1px solid var(--border); background:var(--chip); cursor:pointer; border-radius:16px; user-select:none;}
-    .repo-chip.active{outline:2px solid #000;}
+    .wrap{display:grid;grid-template-columns: 320px 8px 1fr 8px 520px; height: calc(100vh - 50px);}
+    .pane{overflow:auto}
+    .handle{background:#e5e5e5;cursor:col-resize}
 
-    /* Day group */
-    .day-header{margin:12px 0 8px 0; padding:10px 12px; border-radius:6px; background: var(--accent); color:#fff; display:flex; align-items:center; justify-content:space-between;}
-    .day-header small{opacity:.9;}
-    .group{border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:12px;}
+    /* repo chips */
+    .repo-bar{padding:12px}
+    .chip{display:inline-block;border:1px solid #ccc;border-radius:14px;padding:4px 10px;margin:0 8px 8px 0;background:#fafafa;cursor:pointer}
+    .chip.active{background:#e7f1ff;border-color:#7fb3ff}
+    .filter{width:100%;padding:7px;border:1px solid #ccc;margin-bottom:10px}
 
-    /* Branch row */
-    .branch-row{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
-    .branch-name{font-weight:bold;}
-    .badge{font-size:12px; padding:2px 8px; border:1px solid var(--border); border-radius:12px; background:var(--badge); color:#333;}
-    .btn{height:28px; padding:0 10px; cursor:pointer;}
-    details{border:1px dashed var(--border); border-radius:6px; padding:8px; background:#fafafa;}
-    details[open]{background:#fff;}
+    /* day header */
+    .day{margin:12px 12px 8px 12px;background:rgb(255,149,0);color:#fff;border-radius:6px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+    .box{margin:0 12px 12px 12px;border:1px dashed #ccc;border-radius:6px;padding:10px}
 
-    /* Commit list */
-    .commit-list{max-height:280px; overflow:auto; display:flex; flex-direction:column; gap:8px;}
-    .commit-item{display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:#fff;}
-    .commit-left{display:flex; align-items:center; gap:10px; min-width:0;}
-    .commit-msg{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:56ch;}
-    .sha{font-family:Consolas, Menlo, monospace; border:1px solid var(--border); border-radius:12px; padding:2px 8px; background:#f7f7f7;}
-    .new-dot{width:10px;height:10px;border-radius:50%;background:var(--ok);border:1px solid #0f7a34;flex:0 0 auto;}
+    .branch-row{display:flex;align-items:center;gap:8px;margin:10px 12px}
+    .branch-name{font-weight:bold}
+    .pill{font-size:12px;border:1px solid #ccc;border-radius:999px;padding:2px 8px;background:#f5f5f5}
+    .toggle{margin-left:auto}
 
-    /* Commit detail pane */
-    .kv{display:grid; grid-template-columns: 120px 1fr; gap:6px; margin-bottom:10px;}
-    .muted{color:var(--muted);}
-    pre{background:#f7f7f7;border:1px solid var(--border); padding:8px; border-radius:6px; overflow:auto;}
+    .commit{display:flex;justify-content:space-between;align-items:center;border:1px solid #eee;border-radius:6px;padding:8px 10px;margin:6px 0;background:#fff}
+    .sha{font-family:monospace;border:1px solid #cfe2ff;background:#eaf3ff;border-radius:12px;padding:2px 8px}
+    .newdot{width:10px;height:10px;border-radius:50%;background:#25b45a;margin-right:6px;display:inline-block;vertical-align:middle}
+    .muted{color:#666;font-size:12px}
+    .empty{color:#666;padding:12px}
 
-    /* Resizer */
-    .resizer{background:#e5e5e5; cursor:col-resize;}
-    .resizer:hover{background:#dcdcdc;}
-
-    /* 작은 화면 대응 */
-    @media (max-width: 1024px){
-      .app{grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; }
-      .resizer{display:none;}
-    }
+    /* commit detail */
+    #detail{padding:12px}
+    pre{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:10px}
   </style>
 </head>
 <body>
-  <div class="app">
-    <header>
-      <h1>Branch Activity – {{ user_id }}</h1>
-      <span class="muted">KST로 표시 / 1분마다 자동 새로고침</span>
-      <span class="muted" id="lastRefresh"></span>
-      <div style="flex:1"></div>
-      <button class="btn" id="btnSync">동기화</button>
+  <header>
+    <div>
+      <strong>Branch Activity – {{ user_id }}</strong>
+      <span class="hint">KST로 표시 / 1분마다 자동 새로고침</span>
+    </div>
+    <div>
+      <button id="btnSync" class="btn">동기화</button>
       <a href="{{ url_for('logout') }}"><button class="btn">Logout</button></a>
-    </header>
+    </div>
+  </header>
 
-    <!-- Left: Repos -->
-    <section class="pane" id="paneRepos">
-      <h2>Repositories</h2>
-      <div class="toolbar">
-        <input id="repoFilter" type="text" placeholder="owner/repo 필터" />
-      </div>
-      <div class="repo-list" id="repoList"></div>
-    </section>
-
-    <div class="resizer" id="resizer1"></div>
-
-    <!-- Middle: Days & Branches -->
-    <section class="pane">
-      <h2>Days & Branches</h2>
-      <div class="scroller" id="daysPane">
-        <!-- filled by JS -->
+  <div class="wrap" id="grid">
+    <!-- Repositories -->
+    <section class="pane" id="reposPane">
+      <div class="repo-bar">
+        <input id="repoFilter" class="filter" placeholder="owner/repo 필터"/>
+        <div id="repoChips"></div>
       </div>
     </section>
+    <div class="handle" id="split1"></div>
 
-    <div class="resizer" id="resizer2"></div>
+    <!-- Days & Branches -->
+    <section class="pane" id="daysPane">
+      <div id="daysRoot"></div>
+    </section>
+    <div class="handle" id="split2"></div>
 
-    <!-- Right: Commit Detail -->
-    <section class="pane">
-      <h2>Commit Detail</h2>
-      <div class="scroller" id="detailPane">
-        <p class="muted">왼쪽에서 커밋을 선택하세요.</p>
-      </div>
+    <!-- Commit Detail -->
+    <section class="pane" id="detailPane">
+      <div id="detail" class="muted">왼쪽에서 커밋을 선택하세요.</div>
     </section>
   </div>
 
   <script>
-    /* ===== 템플릿 데이터 ===== */
+    // ----- Server data -----
     const RAW_LOGS = {{ logs|tojson|safe }};
     const USER_REPOS = {{ repos|tojson|safe }};
     const USER_ID = "{{ user_id }}";
 
-    /* ===== 상태 ===== */
-    let currentRepoFull = null;          // 'owner/repo'
-    let logsByRepo = {};                 // repo -> [{...}]
-    let openGroups = new Set();          // key: `${date}|${branch}`
-    let lastRenderTs = Date.now();
+    // ----- State keepers -----
+    let currentRepo = null;
+    const openBranches = new Set();        // 'YYYY-MM-DD::branch'
+    const selectedCommit = { repo:null, sha:null };
 
-    // 초기 변환
-    function normalizeLogs(raw){
-      const byRepo = {};
-      for(const doc of raw){
-        const k = doc.repo_full_name;
-        if(!byRepo[k]) byRepo[k] = [];
-        byRepo[k].push(doc);
-      }
-      // sort by date desc
-      for(const k of Object.keys(byRepo)){
-        byRepo[k].sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (a.branch||'').localeCompare(b.branch||''));
-      }
-      return byRepo;
-    }
-    logsByRepo = normalizeLogs(RAW_LOGS);
+    // ----- Helpers -----
+    const qs = sel => document.querySelector(sel);
+    const ce = (t, cls) => { const e=document.createElement(t); if(cls) e.className=cls; return e; };
+    const fmtKST = iso => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return d.toLocaleString("ko-KR", { timeZone:"Asia/Seoul", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit" });
+    };
+    const withinMin = (iso, m) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      return (Date.now() - t) <= m*60*1000;
+    };
 
-    /* ===== 유틸 ===== */
-    const qs = (s, el=document)=>el.querySelector(s);
-    const qsa = (s, el=document)=>[...el.querySelectorAll(s)];
-    const kst = (iso)=> {
-      try{
-        return new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit" });
-      }catch{ return iso || ""; }
-    }
-    const dayOnly = (iso)=>{
-      try { return new Date(iso).toLocaleDateString("ko-KR", { timeZone:"Asia/Seoul", year:"numeric", month:"2-digit", day:"2-digit" }); }
-      catch { return iso?.slice(0,10) || ""; }
-    }
-    function repoBase(full){ const p = full.split('/'); return p[p.length-1] || full; }
-
-    /* ===== Repos 렌더 ===== */
-    function renderRepos(){
-      const list = qs('#repoList'); list.innerHTML = '';
-      const filt = qs('#repoFilter').value.trim().toLowerCase();
-      const fulls = [...new Set(USER_REPOS.map(r=>r.repositoryName))].sort();
-      for(const full of fulls){
-        if(filt && !full.toLowerCase().includes(filt)) continue;
-        const chip = document.createElement('div');
-        chip.className = 'repo-chip';
-        if(full === currentRepoFull) chip.classList.add('active');
-        chip.textContent = repoBase(full);
+    // ----- Build repo chips -----
+    const chipWrap = qs('#repoChips');
+    function renderRepoChips(repos) {
+      chipWrap.innerHTML = '';
+      (repos || []).forEach(full => {
+        const short = full.split('/').pop();
+        const chip = ce('span','chip');
+        chip.textContent = short;
         chip.title = full;
-        chip.addEventListener('click', ()=>{
-          currentRepoFull = full;
-          renderRepos();
-          renderDays();
-        });
-        list.appendChild(chip);
-      }
-      // default select
-      if(!currentRepoFull && fulls.length){
-        currentRepoFull = fulls[0];
-        renderRepos();
-      }
+        chip.addEventListener('click', ()=>{ document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); chip.classList.add('active'); currentRepo = full; loadLogs(full); });
+        chipWrap.appendChild(chip);
+      });
     }
-    qs('#repoFilter').addEventListener('input', renderRepos);
+    renderRepoChips(USER_REPOS);
 
-    /* ===== Days & Branches 렌더 ===== */
-    function renderDays(){
-      const host = qs('#daysPane'); host.innerHTML = '';
-      const logs = (logsByRepo[currentRepoFull] || []);
-      if(!logs.length){ host.innerHTML = '<p class="muted">로그가 없습니다.</p>'; return; }
-
-      // group by day -> branch
-      const byDay = {};
-      for(const l of logs){
-        const d = (l.date||l.created_at||'').slice(0,10);
-        if(!byDay[d]) byDay[d] = {};
-        const br = l.branch || l.ref || 'unknown';
-        if(!byDay[d][br]) byDay[d][br] = [];
-        byDay[d][br].push(l);
-      }
-      const days = Object.keys(byDay).sort().reverse();
-
-      for(const day of days){
-        const totalBranches = Object.keys(byDay[day]).length;
-        const hdr = document.createElement('div');
-        hdr.className = 'day-header';
-        hdr.innerHTML = `<strong>${day}</strong><small>${totalBranches} item(s)</small>`;
-        host.appendChild(hdr);
-
-        const box = document.createElement('div');
-        box.className = 'group';
-        host.appendChild(box);
-
-        for(const br of Object.keys(byDay[day]).sort()){
-          const items = byDay[day][br];
-
-          const row = document.createElement('div');
-          row.className = 'branch-row';
-          row.innerHTML = `
-            <div class="branch-name">${br}</div>
-            <span class="badge">C ${sum(items.map(x=>x.commit_count||x.counts?.commits||0))}</span>
-            <span class="badge">D ${sum(items.map(x=>x.dep_changed||x.counts?.dep_files||0))}</span>
-            <div style="flex:1"></div>
-            <button class="btn btn-toggle">접기</button>
-          `;
-          box.appendChild(row);
-
-          const det = document.createElement('details');
-          const key = `${day}|${br}`;
-          if(openGroups.has(key)) det.setAttribute('open','');
-          det.innerHTML = `
-            <summary class="muted">커밋 목록</summary>
-            <div class="commit-list"></div>
-          `;
-          box.appendChild(det);
-
-          const list = qs('.commit-list', det);
-          const commitsSorted = [...items].sort((a,b)=> (b.commit_time||b.date||'').localeCompare(a.commit_time||a.date||''));
-          for(const c of commitsSorted){
-            // 각각 문서가 하루 집계가 아니라 커밋 단위로 온다면 그대로 표시
-            const msg = (c.message || c.examples?.[0]?.message || '커밋').split('\n')[0];
-            const sha = (c.sha || c.examples?.[0]?.sha || '').slice(0,7);
-            const ts = (c.commit_time || c.date || c.created_at || '');
-            const fresh = isFresh(ts, 3); // 3분 이내이면 true
-
-            const item = document.createElement('div');
-            item.className = 'commit-item';
-            item.innerHTML = `
-              <div class="commit-left">
-                ${fresh?'<span class="new-dot" title="3분 이내 업데이트"></span>':''}
-                <div class="commit-msg" title="${msg}">${escapeHtml(msg)}</div>
-              </div>
-              <div class="commit-right">
-                <button class="sha" title="${kst(ts)}">${sha || '…'}</button>
-              </div>
-            `;
-            // detail fetch
-            qs('.sha', item).addEventListener('click', ()=> showCommitDetail(c));
-            list.appendChild(item);
-          }
-
-          // 토글 버튼/상태 저장
-          const btn = qs('.btn-toggle', row);
-          const syncOpenState = ()=>{
-            if(det.open) openGroups.add(key); else openGroups.delete(key);
-            btn.textContent = det.open ? '접기' : '펼치기';
-          };
-          btn.addEventListener('click', ()=>{ det.open = !det.open; syncOpenState(); });
-          det.addEventListener('toggle', syncOpenState);
-          syncOpenState();
-        }
-      }
-      qs('#lastRefresh').textContent = `마지막 새로고침: ${kst(new Date().toISOString())}`;
-      lastRenderTs = Date.now();
-    }
-
-    function sum(arr){ return arr.reduce((a,b)=>a+(+b||0),0); }
-    function isFresh(iso, mins){
-      if(!iso) return false;
-      const dt = new Date(iso).getTime();
-      return (Date.now() - dt) <= mins*60*1000;
-    }
-    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
-
-    /* ===== 커밋 상세 ===== */
-    async function showCommitDetail(doc){
-      const pane = qs('#detailPane');
-      pane.innerHTML = '<p class="muted">불러오는 중…</p>';
-      try{
-        const q = new URLSearchParams({
-          repo: doc.repo_full_name || currentRepoFull,
-          branch: doc.branch || '',
-          sha: (doc.sha || doc.examples?.[0]?.sha || ''),
-          date: (doc.date || doc.commit_time || '')
-        });
-        const r = await fetch('/api/commit_detail?'+q.toString());
-        const d = await r.json();
-        if(!r.ok) throw new Error(d.error||'fetch failed');
-
-        const when = d.date ? kst(d.date) : '';
-        const files = (d.files||[]).map(f=>`- ${f.filename} (${f.status}${f.additions?`, +${f.additions}`:''}${f.deletions?`, -${f.deletions}`:''})`).join('\n');
-
-        pane.innerHTML = `
-          <div class="kv">
-            <div class="muted">Repo</div><div>${escapeHtml(d.repo||doc.repo_full_name||currentRepoFull||'')}</div>
-            <div class="muted">Branch</div><div>${escapeHtml(d.branch||doc.branch||'')}</div>
-            <div class="muted">Author</div><div>${escapeHtml(d.author||'')}</div>
-            <div class="muted">When (KST)</div><div>${when}</div>
-            <div class="muted">SHA</div><div><code>${escapeHtml(d.sha||'')}</code></div>
-          </div>
-          <div>
-            <div class="muted">Message</div>
-            <pre>${escapeHtml(d.message||'')}</pre>
-          </div>
-          <div>
-            <div class="muted">Files</div>
-            <pre>${escapeHtml(files||'')}</pre>
-          </div>
-        `;
-      }catch(e){
-        pane.innerHTML = `<p style="color:#c00">불러오기 실패: ${escapeHtml(e.message)}</p>`;
-      }
-    }
-
-    /* ===== 자동 새로고침 (1분) – 펼친 상태 유지 & 새로운 커밋 표시 ===== */
-    async function refreshLogs({keepOpen=true}={}){
-      try{
-        const r = await fetch('/api/branch_logs?userId='+encodeURIComponent(USER_ID));
-        const data = await r.json();
-        if(!r.ok) throw new Error(data.error||'refresh failed');
-
-        if(keepOpen){
-          // openGroups는 그대로 보존
-        } else {
-          openGroups.clear();
-        }
-        logsByRepo = normalizeLogs(data);
-        renderRepos();   // 현재 repo 하이라이트 유지
-        renderDays();    // 새 데이터 반영
-      }catch(e){
-        console.warn('refresh failed', e);
-      }
-    }
-    setInterval(()=> refreshLogs({keepOpen:true}), 60*1000);
-
-    /* ===== 초기 렌더 ===== */
-    renderRepos();
-    renderDays();
-
-    /* ===== 동기화 버튼 ===== */
-    qs('#btnSync').addEventListener('click', ()=>{
-      // 백엔드 엔드포인트 이름은 sync_my_repos 로 사용
-      window.location.href = "{{ url_for('sync_my_repos') }}";
+    // Filter
+    qs('#repoFilter').addEventListener('input', e=>{
+      const q = e.target.value.toLowerCase();
+      [...chipWrap.children].forEach(ch=>{
+        ch.style.display = ch.title.toLowerCase().includes(q) ? '' : 'none';
+      });
     });
 
-    /* ===== 수평 리사이저 (드래그 방향 자연스럽게) ===== */
-    (function(){
-      const app = qs('.app');
-      const r1 = qs('#resizer1'), r2 = qs('#resizer2');
-      // 현재 col widths(px) 읽기
-      function getCols(){
-        return getComputedStyle(app).gridTemplateColumns.split(' ').map(v => v.endsWith('px')? parseFloat(v): v);
-      }
-      function setCols(cols){ app.style.gridTemplateColumns = cols.map(v => (typeof v==='number'? `${v}px` : v)).join(' '); }
+    // ----- Days & Branches renderer -----
+    const daysRoot = qs('#daysRoot');
 
-      function startDrag(resizer, leftIdx, rightIdx){
-        const startX = event.clientX;
-        const cols0 = getCols().map(v => (typeof v==='number'? v : parseFloat(v)));
-        const move = (e)=>{
-          const dx = e.clientX - startX;
-          // 자연스러운 방향: 오른쪽으로 드래그하면 왼쪽 pane 넓어지고 오른쪽은 줄어듦
-          const cols = [...cols0];
-          cols[leftIdx]  = Math.max(120, cols0[leftIdx]  + dx);
-          cols[rightIdx] = Math.max(200, cols0[rightIdx] - dx);
-          setCols(cols);
-        };
-        const up = ()=>{ window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    function groupByDay(logs){
+      const map = new Map(); // day -> [docs]
+      logs.forEach(d=>{
+        const day = d.date;
+        if(!map.has(day)) map.set(day, []);
+        map.get(day).push(d);
+      });
+      // sort day desc
+      return [...map.entries()].sort((a,b)=> b[0].localeCompare(a[0]));
+    }
+
+    function renderDays(logs){
+      daysRoot.innerHTML = '';
+      if(!logs || !logs.length){
+        daysRoot.innerHTML = '<div class="empty">선택한 저장소의 기록이 없습니다.</div>';
+        return;
+      }
+      const grouped = groupByDay(logs);
+      grouped.forEach(([day, arr])=>{
+        const header = ce('div','day');
+        header.innerHTML = `<div>${day}</div><div class="muted">${arr.length} item(s)</div>`;
+        daysRoot.appendChild(header);
+
+        arr.forEach(doc=>{
+          const row = ce('div','branch-row');
+          const pillC = ce('span','pill'); pillC.textContent = `C ${doc.counts?.commits ?? doc.commit_count ?? 0}`;
+          const pillD = ce('span','pill'); pillD.textContent = `D ${doc.counts?.dep_files ?? doc.dep_changed ?? 0}`;
+          const name = ce('span','branch-name'); name.textContent = doc.branch;
+
+          const btn = ce('button','btn toggle'); btn.textContent = '접기';
+          const key = `${day}::${doc.branch}`;
+          if(!openBranches.has(key)) openBranches.add(key);
+
+          const box = ce('div','box');
+          if(!doc.examples || !doc.examples.length){
+            box.innerHTML = '<div class="muted">커밋 없음</div>';
+          }else{
+            box.innerHTML = '';
+            doc.examples
+              .sort((a,b)=> (b.commit_time||'').localeCompare(a.commit_time||''))
+              .forEach(c=>{
+                const item = ce('div','commit');
+                const left = ce('div');
+                const right = ce('div');
+                const newIcon = withinMin(c.commit_time,3) ? '<span class="newdot"></span>' : '';
+                left.innerHTML = `${newIcon}${(c.message||'').replace(/[<>&]/g,s=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}`;
+                right.innerHTML = `<span class="sha">${(c.sha||'').slice(0,7)}</span>`;
+                item.appendChild(left); item.appendChild(right);
+                item.addEventListener('click',()=> showCommitDetail(doc.repo_full_name, c.sha));
+                box.appendChild(item);
+              });
+          }
+
+          btn.addEventListener('click', ()=>{
+            if(box.style.display==='none'){ box.style.display=''; btn.textContent='접기'; openBranches.add(key); }
+            else { box.style.display='none'; btn.textContent='펼치기'; openBranches.delete(key); }
+          });
+          if(!openBranches.has(key)){ box.style.display='none'; btn.textContent='펼치기'; }
+
+          row.appendChild(name);
+          row.appendChild(pillC);
+          row.appendChild(pillD);
+          row.appendChild(btn);
+          daysRoot.appendChild(row);
+          daysRoot.appendChild(box);
+        });
+      });
+    }
+
+    // ----- Load logs for repo -----
+    async function loadLogs(repoFull){
+      try{
+        const r = await fetch(`/api/branch_logs?userId=${encodeURIComponent(USER_ID)}&repo=${encodeURIComponent(repoFull)}`);
+        const data = await r.json();
+        renderDays(data);
+      }catch(e){
+        console.error(e);
+        daysRoot.innerHTML = '<div class="empty">불러오기 실패</div>';
+      }
+    }
+
+    // ----- Commit detail -----
+    const detailEl = qs('#detail');
+    async function showCommitDetail(repo, sha){
+      selectedCommit.repo = repo; selectedCommit.sha = sha;
+      detailEl.innerHTML = '불러오는 중...';
+      try{
+        const r = await fetch(`/api/commit_detail?repo=${encodeURIComponent(repo)}&sha=${encodeURIComponent(sha)}`);
+        const d = await r.json();
+        if(d.error){ detailEl.textContent = d.error; return; }
+        const info = d.commit || {};
+        const msg = (info.message||'').trim();
+        const author = info.author?.name || d.author?.login || 'unknown';
+        const when = info.author?.date || info.committer?.date;
+        const files = (d.files||[]).map(f=>`- ${f.filename} (${f.status}) +${f.additions} -${f.deletions}`).join('\n');
+        detailEl.innerHTML = `
+          <div><strong>${repo}</strong> @ <code>${sha.slice(0,7)}</code></div>
+          <div class="muted">by ${author} • ${fmtKST(when)}</div>
+          <h4>Message</h4>
+          <pre>${msg.replace(/[<>&]/g,s=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}</pre>
+          <h4>Files</h4>
+          <pre>${files || '(no files)'}</pre>
+        `;
+      }catch(e){
+        detailEl.textContent = '상세 조회 실패';
+      }
+    }
+
+    // ----- Initial render from RAW_LOGS -----
+    // 초기엔 repo 칩만 그려져 있고, 사용자가 클릭 시 해당 repo 로딩
+    // 혹은 최근에 가장 많이 등장한 repo 자동 선택
+    if (USER_REPOS && USER_REPOS.length){
+      currentRepo = USER_REPOS[0];
+      // 첫 칩 활성화
+      const firstChip = document.querySelector('.chip');
+      if(firstChip){ firstChip.classList.add('active'); }
+      loadLogs(currentRepo);
+    }
+
+    // ----- Auto refresh (keep open & selection) -----
+    setInterval(async ()=>{
+      if(!currentRepo) return;
+      const prevOpen = new Set(openBranches);
+      const prevSel = {...selectedCommit};
+      await loadLogs(currentRepo);
+      openBranches.clear(); prevOpen.forEach(k=>openBranches.add(k));
+      if(prevSel.repo && prevSel.sha){
+        // detail은 다시 열어줌
+        showCommitDetail(prevSel.repo, prevSel.sha);
+      }
+    }, 60*1000);
+
+    // ----- Splitters (정방향) -----
+    function bindSplitter(handleId, leftPane, rightPane){
+      const handle = document.getElementById(handleId);
+      let startX, startLeftW, startRightW;
+      handle.addEventListener('mousedown', (e)=>{
+        startX = e.clientX;
+        const l = document.getElementById(leftPane);
+        const r = document.getElementById(rightPane);
+        startLeftW = l.getBoundingClientRect().width;
+        startRightW = r.getBoundingClientRect().width;
+
+        function move(ev){
+          const dx = ev.clientX - startX;
+          l.style.width = (startLeftW + dx) + 'px';
+          r.style.width = (startRightW - dx) + 'px';
+        }
+        function up(){
+          window.removeEventListener('mousemove', move);
+          window.removeEventListener('mouseup', up);
+        }
         window.addEventListener('mousemove', move);
         window.addEventListener('mouseup', up);
-      }
-      r1.addEventListener('mousedown', (e)=>{ e.preventDefault(); startDrag(r1, 0, 2); });
-      r2.addEventListener('mousedown', (e)=>{ e.preventDefault(); startDrag(r2, 2, 4); });
-    })();
+      });
+    }
+    bindSplitter('split1','reposPane','daysPane');
+    bindSplitter('split2','daysPane','detailPane');
+
+    // ----- Buttons -----
+    qs('#btnSync').addEventListener('click', ()=>{ window.location.href = "{{ url_for('sync_my_repos') }}"; });
   </script>
 </body>
 </html>
