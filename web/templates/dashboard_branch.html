@@ -4,13 +4,11 @@
   <meta charset="UTF-8">
   <title>Branch Activity (Basic)</title>
   <style>
-    /* XP 느낌 폰트 */
     body { font-family: Tahoma, "Microsoft Sans Serif", Gulim, Dotum, sans-serif; font-size: 14px; margin: 0; }
 
     header, footer { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
     footer { border-top: 1px solid #ddd; border-bottom: none; position: sticky; bottom: 0; }
 
-    /* 3분할 + 리사이저 */
     main { height: calc(100vh - 92px); padding: 8px; box-sizing: border-box;
            display: grid; grid-template-columns: 260px 6px 1fr 6px 420px; gap: 8px; }
     section { border: 1px solid #ddd; border-radius: 4px; display: flex; flex-direction: column; min-height: 0; }
@@ -27,15 +25,13 @@
     .error { color: #b00020; white-space: pre-wrap; }
     .hr { height:1px; background:#eee; margin:8px 0; }
 
-    /* 리사이저 핸들 */
     .handle { background: #e1e1e1; cursor: col-resize; border: 1px solid #d0d0d0; }
 
-    /* 날짜 헤더 */
     .day-header {
       margin: 12px 0 8px 0;
       padding: 10px 12px;
       border-radius: 6px;
-      background: rgb(255,149,0); /* Apple system orange */
+      background: rgb(255,149,0);
       color: #fff;
       display: flex;
       align-items: center;
@@ -43,7 +39,6 @@
       font-weight: bold;
     }
 
-    /* 브랜치 / 커밋 박스 */
     .branch-header {
       display:flex; align-items:center; gap:8px;
       margin: 6px 0 4px 0;
@@ -69,7 +64,6 @@
     }
     .commit-item:hover { background:#fafafa; }
 
-    /* 레포 목록 */
     .row { display:flex; align-items:center; justify-content:space-between; gap:8px;
            padding:6px 8px; border:1px solid #eee; border-radius:4px; margin-bottom:6px; background:#fff; cursor:pointer; }
     .row:hover { background:#f9f9f9; }
@@ -83,7 +77,6 @@
   </header>
 
   <main id="grid">
-    <!-- Repositories -->
     <section>
       <h3>Repositories</h3>
       <div class="content">
@@ -97,7 +90,6 @@
 
     <div class="handle" data-splitter="left"></div>
 
-    <!-- Days & Branches -->
     <section>
       <h3>Days & Branches</h3>
       <div class="content">
@@ -111,7 +103,6 @@
 
     <div class="handle" data-splitter="right"></div>
 
-    <!-- Commit Detail -->
     <section>
       <h3>Commit Detail</h3>
       <div class="content" id="detailPanel"><div class="empty">커밋을 선택하세요.</div></div>
@@ -125,7 +116,6 @@
   </footer>
 
   <script>
-    /* --- JS --- */
     const RAW_LOGS = {{ logs|tojson|safe }};
     const USER_REPOS = {{ repos|tojson|safe }};
     const USER_ID = "{{ user_id }}";
@@ -233,25 +223,26 @@
         const d=await res.json();
         if(!res.ok) throw new Error(d.error||'fetch failed');
 
-        /* ✅ KST(Asia/Seoul)로 변환해서 표시 */
-        let localTime = '';
-        if (d.date) {
-          localTime = new Date(d.date).toLocaleString("ko-KR", {
-            timeZone: "Asia/Seoul",
-            year: "numeric", month: "2-digit", day: "2-digit",
-            hour: "2-digit", minute: "2-digit", second: "2-digit"
-          });
-        }
+        const localTime = d.date
+          ? new Date(d.date).toLocaleString("ko-KR", {
+              timeZone: "Asia/Seoul",
+              year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit"
+            })
+          : '';
 
-        const files=(d.files||[]).map(f=>`
+        /* 파일 패치(diff) 제거 → 파일명과 수정/삭제 줄 수만 */
+        const files = (d.files || []).map(f => `
           <div style="margin-bottom:6px;">
-            <div class="mono">${escapeHtml(f.filename)} <span class="muted">(${f.status} +${f.additions}/-${f.deletions})</span></div>
-            ${f.patch?`<pre class="mono" style="white-space:pre-wrap; background:#f7f7f7; border:1px solid #eee; padding:6px;">${escapeHtml(f.patch)}</pre>`:''}
-          </div>`).join('')||'<div class="empty">변경 파일 없음</div>';
+            <div class="mono">
+              ${escapeHtml(f.filename)}
+              <span class="muted">(${f.status} +${f.additions}/-${f.deletions})</span>
+            </div>
+          </div>`).join('') || '<div class="empty">변경 파일 없음</div>';
 
         panel.innerHTML=`
           <div><strong>${repoDisplayName(repo)}</strong> <span class="mono">@ ${d.sha.slice(0,7)}</span></div>
-          <div class="muted">${escapeHtml(d.author||'')} • ${localTime || ''}</div>
+          <div class="muted">${escapeHtml(d.author||'')} • ${localTime}</div>
           <div class="hr"></div>
           <div><strong>Message</strong><div>${escapeHtml(d.message||'')}</div></div>
           <div class="hr"></div>
@@ -260,7 +251,9 @@
           <div><strong>Files</strong>${files}</div>
           <div class="hr"></div>
           <div><a href="${d.html_url}" target="_blank">GitHub에서 보기</a></div>`;
-      }catch(e){panel.innerHTML=`<div class="error">${escapeHtml(e.message)}</div>`;}
+      }catch(e){
+        panel.innerHTML=`<div class="error">${escapeHtml(e.message)}</div>`;
+      }
     };
 
     async function refreshActiveRepo(){
@@ -275,7 +268,6 @@
     }
     function startAuto(){if(autoTimer) clearInterval(autoTimer);autoTimer=setInterval(refreshActiveRepo,60000);}
 
-    /* 리사이저: 직관적 방향(오른쪽으로 끌면 오른쪽 패널 넓어짐) */
     (function initSplitters(){
       const grid=document.getElementById('grid');
       const handles=document.querySelectorAll('.handle');
@@ -285,7 +277,9 @@
           const startX=e.clientX;
           const cols=getComputedStyle(grid).gridTemplateColumns.split(' ');
           const vals=cols.map(v=>v.endsWith('px')?parseFloat(v):v);
-          const side=h.dataset.splitter;const L=(side==='left')?0:2;const R=(side==='left')?2:4;
+          const side=h.dataset.splitter;
+          const L=(side==='left')?0:2;
+          const R=(side==='left')?2:4;
           function onMove(ev){
             const dx=ev.clientX-startX;
             let leftW=vals[L], rightW=vals[R];
@@ -305,7 +299,7 @@
 
     document.getElementById('btnResync').onclick=()=>location.href="{{ url_for('sync_my_repos_route') }}";
     document.getElementById('btnManualRefresh').onclick=refreshActiveRepo;
-    document.getElementById('btnClear').onclick=()=>{document.getElementById('dayFilter').value="";renderDays();};
+    document.getElementById('btnClear').onclick=()=>{document.getElementById('dayFilter').value='';renderDays();};
     document.getElementById('repoFilter').oninput=renderRepos;
     document.getElementById('dayFilter').oninput=renderDays;
 
