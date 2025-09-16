@@ -137,3 +137,5 @@ __azurite_db*__.json
 # Large files
 Project/models/test_anomaly_scores.csv
 Project/models/train_anomaly_scores.csv
+
+Project/data/*.json
