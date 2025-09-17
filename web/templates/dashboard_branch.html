@@ -4,46 +4,69 @@
   <meta charset="utf-8" />
   <title>대시보드</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⌘</text></svg>">
   <style>
     :root{
-      --bg:#241026; --panel:#2d1530; --panel2:#371a3a;
-      --fg:#f0e9f3; --muted:#bcaec5; --border:#7b4b85; --accent:#ffd166;
-      --vh:100vh;
+      --bg:#161616;           /* 어두운 배경 유지 */
+      --panel:#1f1f1f;
+      --panel2:#262626;
+      --border:#3a3a3a;
+      --vh:100vh;             /* JS가 실제 viewport 높이로 갱신 */
     }
     *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
-      font-family:ui-monospace, "Fira Code", Consolas, Menlo, monospace; font-size:14px; line-height:1.45; height:100%;}
-    a{color:var(--accent);text-decoration:none}
+    html,body{
+      margin:0;padding:0;height:100%;
+      background:var(--bg); color:#fff;          /* << 전체 텍스트 흰색 */
+      font:14px/1.45 ui-monospace, "Fira Code", Consolas, Menlo, monospace;
+    }
+    a{color:#fff;text-decoration:underline}
     .wrap{max-width:1280px;margin:0 auto;padding:16px}
+
+    /* 상단 툴바 */
     .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
     .toolbar-left{display:flex;gap:8px;align-items:center;flex:1 1 480px}
     .toolbar-right{display:flex;gap:8px;align-items:center}
-    .input{width:100%;padding:10px 12px;border:1px solid var(--border);background:transparent;color:var(--fg);border-radius:8px;outline:none}
-    .btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--panel2);color:var(--fg);cursor:pointer;font-weight:600}
-    .btn:hover{filter:brightness(1.05)}
-    .row{display:grid;grid-template-columns:340px 1fr 420px;gap:14px;height:calc(var(--vh) - 74px);min-height:420px}
+    .input{width:100%;padding:10px 12px;border:1px solid var(--border);background:transparent;color:#fff;border-radius:8px;outline:none}
+
+    /* 버튼은 기본형(브라우저 기본 스타일) */
+    button { /* 기본형이지만 적당한 패딩만 */
+      padding:8px 14px;
+    }
+
+    /* 3열 레이아웃 */
+    .row{
+      display:grid;grid-template-columns:340px 1fr 420px;gap:14px;
+      height:calc(var(--vh) - 74px);min-height:420px;
+    }
     .card{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;background:var(--panel);min-height:0}
     .card h2{margin:0;padding:10px 12px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:14px}
     .body{padding:10px 12px;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:8px}
-    .stamp{color:var(--muted);font-size:12px}
-    .repo-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:transparent;cursor:pointer}
-    .repo-item:hover{background:#3a1940}
+    .stamp{opacity:.8;font-size:12px}
+
+    /* 리포지토리: 동일 높이 카드 */
+    .repo-item{
+      display:flex;justify-content:space-between;align-items:center;gap:8px;
+      padding:0 10px;border:1px solid var(--border);border-radius:8px;background:transparent;cursor:pointer;
+      height:44px;                                   /* << 동일 높이 */
+    }
+    .repo-item:hover{background:#2b2b2b}
     .repo-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
-    .repo-meta{color:var(--muted);font-size:12px}
+    .repo-meta{opacity:.85;font-size:12px}
+
+    /* 브랜치 / 커밋 */
     .branch{border:1px solid var(--border);border-radius:10px;overflow:hidden}
-    .branch-head{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;background:#321737;padding:8px 10px;border-bottom:1px solid var(--border)}
-    .tag{color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px}
-    .panel{padding:8px 10px;max-height:38vh;overflow:auto}
+    .branch-head{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;background:var(--panel2);padding:8px 10px;border-bottom:1px solid var(--border)}
+    .sha-tag{opacity:.85;border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px}
+    .panel{padding:8px 10px;overflow:auto; /* 높이는 JS로 per-panel 계산됨 */ }
     .commit{display:grid;grid-template-columns:1fr auto;gap:8px;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer}
-    .commit:hover{background:#3a1940}
-    .sha{color:var(--muted)}
-    /* ----- 상세: 세로(레이블 위, 값 아래) ----- */
+    .commit:hover{background:#2b2b2b}
+    .commit .sha{opacity:.85}
+
+    /* 상세: 세로 배치(레이블 위, 값 아래) */
     .detail{display:flex;flex-direction:column;gap:10px}
     .field{border:1px solid var(--border);border-radius:8px;overflow:hidden}
-    .field h3{margin:0;padding:8px 10px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:13px;color:var(--muted)}
+    .field h3{margin:0;padding:8px 10px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:13px;opacity:.9}
     .field .val{padding:10px}
-    .plus{color:#18c36e}.minus{color:#ff5a5f}
+    .plus{color:#37d77a}.minus{color:#ff6b6b}
   </style>
 </head>
 <body>
@@ -53,9 +76,9 @@
         <input id="repoFilter" class="input" placeholder="리포지토리 검색 (owner/name)..." />
       </div>
       <div class="toolbar-right">
-        <button id="btnSync" class="btn">새로고침</button>
-        <a class="btn" href="{{ url_for('logout') }}">로그아웃</a>
-        <span style="color:var(--muted)">로그인 사용자: <b id="userId">{{ user_id }}</b></span>
+        <button id="btnSync">새로고침</button>
+        <a href="{{ url_for('logout') }}"><button type="button">로그아웃</button></a>
+        <span style="opacity:.85">로그인 사용자: <b id="userId">{{ user_id }}</b></span>
       </div>
     </div>
 
@@ -70,7 +93,7 @@
 
       <section class="card">
         <h2>브랜치 & 커밋</h2>
-        <div class="body">
+        <div class="body" id="midBody">
           <div id="branchStamp" class="stamp"></div>
           <div id="branches">리포를 선택하세요.</div>
         </div>
@@ -89,36 +112,50 @@
   </div>
 
   <script>
-  (()=>{ // 안전한 단일 초기화
+  (()=>{ /* 안전한 단일 초기화 */
     const $ = (s,el=document)=>el.querySelector(s);
     const $$= (s,el=document)=>Array.from(el.querySelectorAll(s));
 
-    // ----- 높이 동기화 -----
+    /* --- 뷰포트 높이 반영 --- */
     const setVH = ()=>document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
     window.addEventListener('resize', setVH); setVH();
 
-    function syncPanels(){
-      const mid = $$('.body')[1]; if(!mid) return;
-      const H = mid.clientHeight; const panels = $$('.panel');
-      panels.forEach(p=>p.style.maxHeight = (panels.length>1? Math.max(120, H*0.38): Math.max(160, H*0.82))+'px');
+    /* --- 패널 높이: 각 패널의 '현재 화면상 위치' 기준으로
+         가운데 카드(body) 하단까지 딱 맞게 계산 --- */
+    function sizePanelToBottom(panel){
+      const midBody = $('#midBody'); if(!midBody) return;
+      const bodyRect = midBody.getBoundingClientRect();
+      const pRect    = panel.getBoundingClientRect();
+      const bottomY  = bodyRect.bottom;
+      const padding  = 10;                                    // 카드 안쪽 여백 보정
+      const h = Math.max(80, Math.floor(bottomY - pRect.top - padding));
+      panel.style.maxHeight = h + 'px';
     }
-    window.addEventListener('resize', syncPanels);
-    window.__syncCommitPanelHeights = syncPanels;
+    function syncAllPanels(){
+      $$('.panel').forEach(sizePanelToBottom);
+    }
+    window.addEventListener('resize', syncAllPanels);
+    window.__syncCommitPanelHeights = syncAllPanels;
 
-    // ----- 상태 -----
-    const S = { repos:[], repo:null, branches:{}, commits:{}, opened:new Set(), selCommit:null };
+    /* --- 상태 --- */
+    const S = { repos:[], repo:null, branches:{}, opened:new Set(), selCommit:null };
 
-    // ----- DOM -----
+    /* --- DOM --- */
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
-    const branchBox = $('#branches'), branchStamp=$('#branchStamp');
+    const branchesBox = $('#branches'), branchStamp=$('#branchStamp');
     const detailBox = $('#detail'), detailStamp=$('#detailStamp');
-    const filter = $('#repoFilter'), btnSync = $('#btnSync');
-
+    const filter = $('#repoFilter'); $('#btnSync').addEventListener('click', refreshAll);
     filter.addEventListener('input', renderRepos);
-    btnSync.addEventListener('click', refreshAll);
+
     document.addEventListener('DOMContentLoaded', init);
 
-    async function init(){ await loadRepos(); stampAll(); setInterval(refreshAll, 60000); }
+    async function init(){
+      await loadRepos(); stampAll();
+      // 가운데 칼럼 컨텐츠 변경 시도에도 자동 재계산
+      const obs = new MutationObserver(syncAllPanels);
+      obs.observe($('#midBody'), {childList:true, subtree:true});
+      setInterval(refreshAll, 60000); // 1분 주기
+    }
 
     function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}); el.textContent=`마지막 새로 고침: ${now} (KST)`; }
     function stampAll(){ [repoStamp,branchStamp,detailStamp].forEach(x=>x&&stamp(x)); }
@@ -129,7 +166,7 @@
       return r.json();
     }
 
-    // ----- Repos -----
+    /* ===== Repos ===== */
     async function loadRepos(){ const d=await api('/api/my_repos'); S.repos=d.repos||[]; renderRepos(); stamp(repoStamp); }
     function renderRepos(){
       const q=(filter.value||'').toLowerCase(); const frag=document.createDocumentFragment();
@@ -141,36 +178,62 @@
       repoList.replaceChildren(frag);
     }
 
+    /* ===== Branches / Commits ===== */
     async function selectRepo(repo){
-      S.repo=repo; branchBox.textContent='브랜치 불러오는 중...';
-      const d=await api('/api/branches',{repo}); S.branches[repo]=(d.branches||[]).sort((a,b)=>a.name.localeCompare(b.name));
-      renderBranches(); stamp(branchStamp); requestAnimationFrame(syncPanels);
+      S.repo=repo; branchesBox.textContent='브랜치 불러오는 중...';
+      const d=await api('/api/branches',{repo});
+      S.branches[repo] = sortBranchesMainFirst(d.branches || []);
+      renderBranches(); stamp(branchStamp);
+      requestAnimationFrame(syncAllPanels);
     }
 
-    // ----- Branches / Commits -----
+    function sortBranchesMainFirst(list){
+      // main 맨 위, 나머지 알파벳(대소문자 무시)
+      const copy=[...(list||[])];
+      copy.sort((a,b)=>{
+        const an=(a.name||''), bn=(b.name||'');
+        if(an==='main') return -1;
+        if(bn==='main') return  1;
+        return an.localeCompare(bn, undefined, {sensitivity:'base'});
+      });
+      return copy;
+    }
+
     function renderBranches(){
-      const repo=S.repo; const list=S.branches[repo]||[]; if(!list.length){branchBox.textContent='브랜치가 없습니다.';return;}
+      const repo=S.repo; const list=S.branches[repo]||[];
+      if(!list.length){ branchesBox.textContent='브랜치가 없습니다.'; return; }
+
       const frag=document.createDocumentFragment();
       list.forEach(b=>{
         const key=`${repo}|${b.name}`; const open=S.opened.has(key);
+
         const wrap=document.createElement('div'); wrap.className='branch';
         wrap.innerHTML=`
           <div class="branch-head">
             <div><b>${esc(b.name)}</b></div>
-            <span class="tag">${(b.sha||'').slice(0,7)}</span>
-            <button class="btn btn-sm">${open?'닫기':'열기'}</button>
+            <span class="sha-tag">${(b.sha||'').slice(0,7)}</span>
+            <button type="button">${open?'닫기':'열기'}</button>
           </div>
           <div class="panel" ${open?'':'style="display:none"'}></div>`;
-        const btn = $('button', wrap), panel=$('.panel', wrap);
-        btn.onclick=async ()=>{
-          if(panel.style.display==='none'){ S.opened.add(key); btn.textContent='닫기'; panel.style.display=''; await loadCommits(repo,b.name,panel);}
-          else{ S.opened.delete(key); btn.textContent='열기'; panel.style.display='none'; }
-          requestAnimationFrame(syncPanels);
-        };
-        if(open) loadCommits(repo,b.name,panel).catch(()=>{});
+
+        const btn = wrap.querySelector('button');
+        const panel = wrap.querySelector('.panel');
+
+        btn.addEventListener('click', async ()=>{
+          if (panel.style.display==='none'){
+            S.opened.add(key); btn.textContent='닫기'; panel.style.display='';
+            await loadCommits(repo,b.name,panel);
+          } else {
+            S.opened.delete(key); btn.textContent='열기'; panel.style.display='none';
+          }
+          requestAnimationFrame(()=>sizePanelToBottom(panel));
+        });
+
+        if (open) loadCommits(repo,b.name,panel).then(()=>sizePanelToBottom(panel)).catch(()=>{});
         frag.appendChild(wrap);
       });
-      branchBox.replaceChildren(frag);
+
+      branchesBox.replaceChildren(frag);
     }
 
     async function loadCommits(repo, branch, panel){
@@ -180,14 +243,17 @@
       items.forEach(c=>{
         const row=document.createElement('div'); row.className='commit';
         row.innerHTML=`<div><div>${esc(c.message||'(no message)')}</div><div class="repo-meta">${esc(c.author||'')} · ${c.date?ago(new Date(c.date)):''}</div></div><div class="sha">${(c.sha||'').slice(0,7)}</div>`;
-        row.onclick=()=>showCommit(repo,c.sha); frag.appendChild(row);
+        row.onclick=()=>showCommit(repo,c.sha);
+        frag.appendChild(row);
       });
       panel.replaceChildren(frag);
+      requestAnimationFrame(()=>sizePanelToBottom(panel));
     }
 
-    // ----- Detail: 세로 배치 -----
+    /* ===== Detail (세로) ===== */
     async function showCommit(repo, sha){
-      S.selCommit={repo,sha}; detailBox.innerHTML='<div class="field"><h3>로딩</h3><div class="val">상세 불러오는 중...</div></div>';
+      S.selCommit={repo,sha};
+      detailBox.innerHTML='<div class="field"><h3>로딩</h3><div class="val">상세 불러오는 중...</div></div>';
       const d=await api('/api/commit_detail',{repo,sha});
       const files=(d.files||[]).slice(0,50).map(f=>{
         const diff=(f.additions||0)-(f.deletions||0);
@@ -206,22 +272,25 @@
       stamp(detailStamp);
     }
 
-    // ----- 주기 갱신 -----
+    /* ===== 주기 갱신 ===== */
     async function refreshAll(){
       await loadRepos();
-      if (S.repo){ // 열려있는 브랜치 유지 갱신
-        const d=await api('/api/branches',{repo:S.repo}); S.branches[S.repo]=(d.branches||[]).sort((a,b)=>a.name.localeCompare(b.name));
+      if (S.repo){
+        const d=await api('/api/branches',{repo:S.repo});
+        S.branches[S.repo]=sortBranchesMainFirst(d.branches||[]);
         renderBranches();
+        // 열린 브랜치 갱신
         for (const key of [...S.opened]) {
-          const [repo,branch]=key.split('|'); const card=[...$$('.branch')].find(x=>$('.branch-head b',x)?.textContent===branch);
-          if(card){ const panel=$('.panel',card); await loadCommits(repo,branch,panel); }
+          const [repo,branch]=key.split('|');
+          const card=[...$$('.branch')].find(x=>x.querySelector('.branch-head b')?.textContent===branch);
+          if(card){ const panel=card.querySelector('.panel'); await loadCommits(repo,branch,panel); }
         }
       }
       if (S.selCommit){ await showCommit(S.selCommit.repo, S.selCommit.sha); }
-      stampAll(); requestAnimationFrame(syncPanels);
+      stampAll(); requestAnimationFrame(syncAllPanels);
     }
 
-    // ----- helpers -----
+    /* ===== helpers ===== */
     function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
     function ago(d){const s=Math.floor((Date.now()-d.getTime())/1000); if(s<5)return'방금'; const u=[['일',86400],['시간',3600],['분',60]]; for(const[k,t]of u){const v=Math.floor(s/t); if(v>=1)return`${v}${k} 전`;} return`${s}초 전`; }
   })();
