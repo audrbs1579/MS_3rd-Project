@@ -4,132 +4,52 @@
   <meta charset="utf-8">
   <title>대시보드 – Branch Activity (CLI)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Optional mono font (falls back to system monospace if unavailable) -->
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    /* ===== CLI Theme ===== */
     :root{
-      --bg:#2a0a2a;              /* deep burgundy */
-      --panel:#2f0d2f;           /* slightly brighter panel */
-      --panel-2:#351235;         /* headers / strip */
-      --fg:#f2e9f3;              /* main text */
-      --muted:#c8b8cc;           /* secondary text */
-      --accent:#ffd166;          /* links / highlight */
-      --good:#18c36e;
-      --bad:#ff5a5f;
-      --border:#8a4f8a;
+      --bg:#2a0a2a; --panel:#2f0d2f; --panel-2:#351235;
+      --fg:#f2e9f3; --muted:#c8b8cc; --accent:#ffd166;
+      --good:#18c36e; --bad:#ff5a5f; --border:#8a4f8a;
       --shadow:0 2px 16px rgba(0,0,0,.35);
     }
-
     *{box-sizing:border-box}
-    html,body{
-      margin:0;padding:0;background:var(--bg);color:var(--fg);
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
       font-family:"Fira Code","Cascadia Mono","Consolas",monospace;
-      font-size:14px; line-height:1.4;
-      height:100%;
+      font-size:14px;line-height:1.4;height:100%;
     }
-
     .wrap{max-width:1280px;margin:0 auto;padding:16px}
     .toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:10px}
     .toolbar-left{display:flex;gap:8px;align-items:center;max-width:420px;width:100%}
-    input[type="text"]{
-      width:100%; padding:10px 12px; border-radius:8px;
-      background:transparent; color:var(--fg); border:1px solid var(--border);
-      outline:none;
-    }
-    .btn{padding:10px 14px;border:1px solid var(--border);background:var(--panel-2);color:var(--fg);
-      border-radius:8px; cursor:pointer; font-weight:600}
+    input[type="text"]{width:100%;padding:10px 12px;border-radius:8px;background:transparent;color:var(--fg);border:1px solid var(--border);outline:none}
+    .btn{padding:10px 14px;border:1px solid var(--border);background:var(--panel-2);color:var(--fg);border-radius:8px;cursor:pointer;font-weight:600}
     .btn:hover{filter:brightness(1.1)}
-
-    /* ===== 3-column layout with synchronized heights ===== */
-    .row{
-      display:grid;
-      grid-template-columns: 360px 1fr 420px;
-      gap:16px;
-      align-items:stretch;
-      /* Full viewport height minus toolbar & outer paddings */
-      height: calc(100vh - 16px - 10px - 16px);
-      /* top/btm paddings: wrap(16) + toolbar-margin(10) */
-    }
-
-    .card{
-      display:flex; flex-direction:column;
-      background:var(--panel); border:1px solid var(--border); border-radius:10px;
-      box-shadow:var(--shadow); min-height:0; /* allow children to shrink */
-    }
-    .card h2{
-      margin:0; padding:10px 12px; background:var(--panel-2); border-bottom:1px solid var(--border);
-      font-size:14px; font-weight:600;
-    }
-    .card-inner{padding:10px 12px; overflow:auto; min-height:0; flex:1}
-    .stamp{color:var(--muted); font-size:12px; margin-bottom:8px}
-
-    /* ===== Left: Repo list ===== */
-    .repo-item{
-      display:flex; justify-content:space-between; align-items:center; gap:8px;
-      width:100%; text-align:left; padding:8px 10px; margin-bottom:8px;
-      border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--fg);
-      cursor:pointer;
-    }
+    .row{display:grid;grid-template-columns:360px 1fr 420px;gap:16px;align-items:stretch;height:calc(100vh - 42px)}
+    .card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-height:0}
+    .card h2{margin:0;padding:10px 12px;background:var(--panel-2);border-bottom:1px solid var(--border);font-size:14px;font-weight:600}
+    .card-inner{padding:10px 12px;overflow:auto;min-height:0;flex:1}
+    .stamp{color:var(--muted);font-size:12px;margin-bottom:8px}
+    .repo-item{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--fg);cursor:pointer}
     .repo-item:hover{background:#3b123b}
     .repo-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px}
     .repo-meta{color:var(--muted);font-size:12px}
-
-    /* ===== Middle: Branch cards & commits ===== */
-    .branch-card{border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:12px}
-    .branch-head{
-      display:grid; grid-template-columns: 1fr auto auto; gap:8px; align-items:center;
-      padding:8px 10px; background:#300e30; border-bottom:1px solid var(--border);
-    }
-    .branch-title{display:flex; align-items:center; gap:8px}
+    .branch-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px}
+    .branch-head{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 10px;background:#300e30;border-bottom:1px solid var(--border)}
+    .branch-title{display:flex;align-items:center;gap:8px}
     .branch-title .name{font-weight:600}
-    .tag{border:1px solid var(--border); border-radius:999px; padding:1px 8px; font-size:12px; color:var(--muted)}
-
-    /* Scrollable commit list INSIDE each branch, height sync to center column */
-    .commit-panel{
-      padding:8px 10px;
-      max-height: 38vh;           /* default when multiple branches open */
-      overflow:auto;
-    }
-    /* when the branch is the only open one, we can allow more height dynamically via JS if needed */
-
-    .commit-item{
-      display:grid; grid-template-columns: 1fr auto; gap:8px;
-      border:1px solid var(--border); border-radius:8px; padding:8px; margin-bottom:8px;
-      cursor:pointer;
-    }
+    .tag{border:1px solid var(--border);border-radius:999px;padding:1px 8px;font-size:12px;color:var(--muted)}
+    .commit-panel{padding:8px 10px;max-height:38vh;overflow:auto}
+    .commit-item{display:grid;grid-template-columns:1fr auto;gap:8px;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer}
     .commit-item:hover{background:#3b123b}
-    .sha{font-family:inherit; color:var(--muted)}
-
-    /* ===== Right: Commit detail with parent/child grid ===== */
-    .detail-grid{
-      display:grid;
-      grid-template-columns: 160px 1fr;
-      gap:8px;
-    }
-    .kv{
-      display:contents;  /* dt, dd take grid cells */
-    }
-    .kv dt{
-      padding:6px 8px; border:1px solid var(--border); border-radius:8px;
-      background:#300e30; color:var(--muted); /* parent cell */
-    }
-    .kv dd{
-      margin:0;
-      padding:6px 8px; border:1px solid var(--border); border-radius:8px;
-      background:#2c0d2c; /* child cell */
-    }
+    .sha{font-family:inherit;color:var(--muted)}
+    .detail-grid{display:grid;grid-template-columns:160px 1fr;gap:8px}
+    .kv{display:contents}
+    .kv dt{padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:#300e30;color:var(--muted)}
+    .kv dd{margin:0;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:#2c0d2c}
     .diff-line{white-space:nowrap}
     .plus{color:var(--good)} .minus{color:var(--bad)}
-    .only-link a{color:var(--accent); text-decoration:none}
-
-    /* make right panel scroll within card */
-    #detail { overflow:auto; min-height:0 }
-
-    /* unify font sizes in right pane */
-    #detail, #detail *{ font-size:14px; line-height:1.4 }
-
-    /* Links */
+    .only-link a{color:var(--accent);text-decoration:none}
+    #detail{overflow:auto;min-height:0}
+    #detail, #detail *{font-size:14px;line-height:1.4}
     a{color:var(--accent)}
   </style>
 </head>
@@ -144,7 +64,6 @@
     </div>
 
     <div class="row">
-      <!-- Left -->
       <section class="card">
         <h2>나의 리포지토리</h2>
         <div class="card-inner">
@@ -152,8 +71,6 @@
           <div id="repoList"></div>
         </div>
       </section>
-
-      <!-- Middle -->
       <section class="card">
         <h2>브랜치 & 커밋</h2>
         <div class="card-inner">
@@ -161,15 +78,12 @@
           <div id="dayBranch">리포를 선택하세요.</div>
         </div>
       </section>
-
-      <!-- Right -->
       <section class="card">
         <h2>커밋 상세</h2>
         <div class="card-inner">
           <div id="detailStamp" class="stamp"></div>
           <div id="detail">
             <div class="detail-grid">
-              <!-- JS will replace this content -->
               <dl class="kv"><dt>안내</dt><dd>왼쪽에서 커밋을 선택하세요.</dd></dl>
             </div>
           </div>
@@ -179,19 +93,15 @@
   </div>
 
   <script>
-    // small helper qsa missing in some earlier versions
     const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
     const qs  = (s, el = document) => el.querySelector(s);
 
-    // OPTIONAL: auto-limit commit panel height to match the middle column space
-    // so each opened branch's commit list scrolls within its box.
+    // Height sync helper so each branch has internal scrolling space
     function syncCommitPanelHeights(){
       const middleCardInner = document.querySelectorAll('.card-inner')[1];
       if(!middleCardInner) return;
       const totalH = middleCardInner.clientHeight;
-      // When multiple branches open, each panel keeps max-height; this keeps it responsive.
       qsa('.commit-panel').forEach(p => {
-        // If a single branch is open (heuristic: only one .commit-panel), give it more room
         if(qsa('.commit-panel').length === 1){
           p.style.maxHeight = Math.max(160, Math.floor(totalH * 0.82)) + 'px';
         }else{
@@ -200,14 +110,359 @@
       });
     }
     window.addEventListener('resize', syncCommitPanelHeights);
-    // expose for your existing script to call after it renders branches
     window.__syncCommitPanelHeights = syncCommitPanelHeights;
+
+    // Auto re-sync when branches change or layout changes
+    (function ensureAutoSizing(){
+      const row = document.querySelector('.row');
+      const branchHost = document.getElementById('dayBranch');
+      if (row) {
+        const ro = new ResizeObserver(() => syncCommitPanelHeights());
+        ro.observe(row);
+      }
+      if (branchHost) {
+        const mo = new MutationObserver(() => syncCommitPanelHeights());
+        mo.observe(branchHost, {childList:true, subtree:true});
+      }
+      requestAnimationFrame(syncCommitPanelHeights);
+    })();
   </script>
 
-  <!-- NOTE:
-       Keep your original dashboard script inclusion below.
-       It should populate #repoList, #dayBranch (branch cards -> .commit-panel inside), and #detail.
-       After (re)rendering branches, call window.__syncCommitPanelHeights?.()
-  -->
+  <!-- === User's original dashboard script (rendering logic) injected below === -->
+  <script>
+  const USER_ID = "{{ user_id }}";
+
+  // --- DOM Elements ---
+  const qs = (s, el = document) => el.querySelector(s);
+  const elRepoList = qs('#repoList');
+  const elDayBranch = qs('#dayBranch');
+  const elDetail = qs('#detail');
+  const elRepoFilter = qs('#repoFilter');
+  const elRepoStamp = qs('#repoStamp');
+  const elBranchStamp = qs('#branchStamp');
+  const elDetailStamp = qs('#detailStamp');
+
+  // [OPTIMIZED] Group state variables into a single object for better management.
+  const state = {
+    allRepos: [],
+    selectedRepo: null, // "owner/repo"
+    branchesCache: {}, // { repo: [{name, sha}, ...] }
+    commitsCache: {}, // { "repo|branch": [commits] }
+    repoFreshMap: {}, // { repo_full_name: boolean }
+    openedBranches: new Set(), // UI state: `${repo}|${branch}`
+    selectedCommit: null, // UI state: {repo, sha}
+  };
+
+  // --- Initialization & Periodic Refresh ---
+  document.addEventListener('DOMContentLoaded', async () => {
+    setVH();
+    await loadRepos();
+    wireEvents();
+    stampAll();
+    // [OPTIMIZED] Refresh interval is longer and smarter.
+    setInterval(periodicRefresh, 5 * 60 * 1000); // Refresh every 5 minutes
+  });
+
+  function wireEvents() {
+    elRepoFilter.addEventListener('input', renderRepos);
+    qs('#btnSync').addEventListener('click', periodicRefresh);
+  }
+
+  // --- Utils ---
+  function stamp(el) {
+    const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+    el.textContent = `마지막 새로고침: ${now} (KST)`;
+  }
+  function stampAll() { [elRepoStamp, elBranchStamp, elDetailStamp].forEach(el => el && stamp(el)); }
+
+  function timeAgo(d) {
+    const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (seconds < 5) return '방금';
+    const units = [['일', 86400], ['시간', 3600], ['분', 60]];
+    for (const [name, s] of units) {
+      const v = Math.floor(seconds / s);
+      if (v >= 1) return `${v}${name} 전`;
+    }
+    return `${seconds}초 전`;
+  }
+
+  function sortBranches(list) {
+    const hasMain = list.some(b => (b.name || '') === 'main');
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+    if (!hasMain) return [...list].sort(byName);
+    return [...list].sort((a, b) => {
+      if ((a.name || '') === 'main') return -1;
+      if ((b.name || '') === 'main') return 1;
+      return byName(a, b);
+    });
+  }
+  
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  }
+  
+  function setVH() { document.documentElement.style.setProperty('--vh', `${window.innerHeight}px`); }
+  window.addEventListener('resize', setVH);
+
+  // --- API ---
+  async function apiGet(url, params = {}) {
+    const q = new URLSearchParams(params);
+    const fullUrl = url + (q.toString() ? `?${q}` : '');
+    try {
+      const res = await fetch(fullUrl);
+      if (!res.ok) {
+        if (res.status === 401) window.location.href = "{{ url_for('index') }}";
+        throw new Error(`API Error: ${res.status} ${res.statusText}`);
+      }
+      return res.json();
+    } catch (e) {
+      console.error(`Failed to fetch from ${fullUrl}:`, e);
+      throw e; // Re-throw to let callers handle it
+    }
+  }
+
+  // --- Repos ---
+  async function loadRepos() {
+    const data = await apiGet('/api/my_repos');
+    state.allRepos = data.repos || [];
+    renderRepos();
+    stamp(elRepoStamp);
+  }
+
+  function renderRepos() {
+    const f = (elRepoFilter.value || '').toLowerCase();
+    const frag = document.createDocumentFragment();
+    state.allRepos
+      .filter(r => (r.full_name || '').toLowerCase().includes(f))
+      .forEach(r => {
+        const item = document.createElement('button');
+        item.className = 'repo-item';
+        item.title = r.full_name;
+        item.onclick = () => selectRepo(r.full_name);
+
+        const isFresh = !!state.repoFreshMap[r.full_name];
+        item.innerHTML = `
+          <div class="repo-left">
+            ${isFresh ? '<span class="green-dot" title="5분 이내 푸시"></span>' : '<span class="dot-placeholder"></span>'}
+            <span class="repo-name">${escapeHtml(r.name || r.full_name)}</span>
+          </div>
+          <div class="repo-meta">
+            ${r.pushed_at ? `pushed ${timeAgo(new Date(r.pushed_at))}` : ''}
+          </div>
+        `;
+        frag.appendChild(item);
+      });
+    elRepoList.replaceChildren(frag);
+  }
+
+  // --- Branches ---
+  async function selectRepo(full_name) {
+    state.selectedRepo = full_name;
+    elDayBranch.innerHTML = '브랜치 불러오는 중...';
+    elDetail.innerHTML = '왼쪽에서 커밋을 선택하세요.'; // Reset detail view
+
+    const data = await apiGet('/api/branches', { repo: full_name });
+    const branches = sortBranches(data.branches || []);
+    state.branchesCache[full_name] = branches;
+
+    // [OPTIMIZED] Do NOT pre-fetch commits. Just render the branch list.
+    const frag = document.createDocumentFragment();
+    branches.forEach(b => {
+      const key = `${full_name}|${b.name}`;
+      const card = document.createElement('div');
+      card.className = 'branch-card';
+      card.innerHTML = `
+        <div class="branch-head">
+          <div class="branch-title branch-left">
+            <span class="dot-placeholder"></span>
+            <span class="name">${escapeHtml(b.name)}</span>
+          </div>
+          <div class="branch-info">
+            <span class="tag">C ?</span>
+            <span class="branch-meta">—</span>
+          </div>
+          <div class="open-btn">
+            <button class="btn">열기</button>
+          </div>
+        </div>
+        <div class="commit-panel" style="display: none;"></div>
+      `;
+      
+      const btn = card.querySelector('.btn');
+      btn.onclick = () => toggleBranchCommits(full_name, b.name, card);
+
+      // Restore UI state if this branch was previously opened
+      if (state.openedBranches.has(key)) {
+        toggleBranchCommits(full_name, b.name, card);
+      }
+      frag.appendChild(card);
+    });
+
+    elDayBranch.replaceChildren(frag);
+    stamp(elBranchStamp);
+  }
+  
+  async function toggleBranchCommits(repo, branch, cardElement) {
+    const key = `${repo}|${branch}`;
+    const panel = cardElement.querySelector('.commit-panel');
+    const btn = cardElement.querySelector('.btn');
+    const isOpened = panel.style.display !== 'none';
+
+    if (isOpened) {
+      panel.style.display = 'none';
+      btn.textContent = '열기';
+      state.openedBranches.delete(key);
+    } else {
+      panel.style.display = 'block';
+      panel.innerHTML = '커밋 조회 중...';
+      btn.textContent = '닫기';
+      state.openedBranches.add(key);
+      await loadCommitsForBranch(repo, branch, cardElement);
+    }
+  }
+
+  async function loadCommitsForBranch(repo, branch, cardEl) {
+    const key = `${repo}|${branch}`;
+    const data = await apiGet('/api/commits', { repo, branch });
+    state.commitsCache[key] = data.commits || [];
+    const commits = state.commitsCache[key];
+
+    // Update branch header with commit info
+    const headEl = cardEl.querySelector('.branch-head');
+    const latestCommit = commits[0];
+    const isFresh = latestCommit ? (Date.now() - new Date(latestCommit.date).getTime()) <= 5 * 60 * 1000 : false;
+    
+    headEl.querySelector('.tag').textContent = `C ${commits.length}`;
+    headEl.querySelector('.branch-meta').textContent = latestCommit ? new Date(latestCommit.date).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '—';
+    headEl.querySelector('.dot-placeholder').outerHTML = isFresh 
+      ? '<span class="green-dot" title="5분 이내 커밋"></span>' 
+      : '<span class="dot-placeholder"></span>';
+    
+    // Render commit list
+    const panel = cardEl.querySelector('.commit-panel');
+    if (!commits.length) {
+      panel.innerHTML = '커밋 없음';
+      return;
+    }
+    
+    const frag = document.createDocumentFragment();
+    commits.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'commit-item';
+      item.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span>${escapeHtml(c.message || '(no message)')}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span class="sha">${(c.sha || '').slice(0, 7)}</span>
+        </div>
+      `;
+      item.onclick = () => {
+        state.selectedCommit = { repo, sha: c.sha };
+        showCommitDetail(repo, c.sha);
+      };
+      frag.appendChild(item);
+    });
+    panel.replaceChildren(frag);
+
+    updateRepoFreshStatus(repo);
+  }
+  
+  function updateRepoFreshStatus(repoFullName) {
+    const branches = state.branchesCache[repoFullName] || [];
+    let isRepoFresh = false;
+    for (const b of branches) {
+      const key = `${repoFullName}|${b.name}`;
+      const topCommit = (state.commitsCache[key] || [])[0];
+      if (topCommit && (Date.now() - new Date(topCommit.date).getTime()) <= 5 * 60 * 1000) {
+        isRepoFresh = true;
+        break;
+      }
+    }
+    if (state.repoFreshMap[repoFullName] !== isRepoFresh) {
+      state.repoFreshMap[repoFullName] = isRepoFresh;
+      renderRepos(); // Re-render repo list to update the dot
+    }
+  }
+
+  // --- Commit Detail ---
+  async function showCommitDetail(repo, sha) {
+    elDetail.textContent = '상세 조회 중...';
+    const d = await apiGet('/api/commit_detail', { repo, sha });
+    const kst = d.date ? new Date(d.date).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : '—';
+    const stats = d.stats || {};
+    elDetail.innerHTML = `
+      <div class="detail-wrap">
+        <div class="kv">
+          <dl>
+            <dt>제목</dt><dd><strong>${escapeHtml(d.message || '')}</strong></dd>
+            <dt>작성자</dt><dd>${escapeHtml(d.author || '')}</dd>
+            <dt>날짜(KST)</dt><dd>${kst}</dd>
+            <dt>SHA</dt><dd><code>${d.sha}</code></dd>
+          </dl>
+        </div>
+        <div class="kv">
+          <dl>
+            <dt>변경</dt><dd>총 ${stats.total ?? 0} (<span class="plus">+${stats.additions ?? 0}</span> / <span class="minus">-${stats.deletions ?? 0}</span>)</dd>
+          </dl>
+          <div class="only-link" style="margin-top:6px"><a href="${d.html_url}" target="_blank" rel="noopener">GitHub에서 보기</a></div>
+        </div>
+        <div class="files">
+          <div style="font-weight:700;margin-bottom:6px">Files (${(d.files || []).length})</div>
+          <ul>
+            ${(d.files || []).map(f => `<li>${escapeHtml(f.filename)} — ${f.status} (<span class="plus">+${f.additions}</span>/<span class="minus">-${f.deletions}</span>)</li>`).join("")}
+          </ul>
+        </div>
+      </div>`;
+    stamp(elDetailStamp);
+  }
+
+  // --- Periodic Refresh ---
+  async function periodicRefresh() {
+    console.log("Performing periodic refresh...");
+    try {
+      // 1. Refresh repo list (mainly for pushed_at time)
+      await loadRepos();
+
+      // [OPTIMIZED] Only refresh what is currently visible.
+      if (state.selectedRepo) {
+        // 2. Refresh branches for the selected repo
+        const repo = state.selectedRepo;
+        const data = await apiGet('/api/branches', { repo });
+        state.branchesCache[repo] = sortBranches(data.branches || []);
+
+        // 3. Refresh commits ONLY for opened branches
+        const openedKeys = [...state.openedBranches].filter(k => k.startsWith(repo + '|'));
+        await Promise.all(openedKeys.map(key => {
+          const [repo, branch] = key.split('|');
+          const card = findBranchCard(repo, branch);
+          if (card) return loadCommitsForBranch(repo, branch, card);
+        }));
+      }
+
+      if (state.selectedCommit) {
+        await showCommitDetail(state.selectedCommit.repo, state.selectedCommit.sha);
+      }
+      stampAll();
+    } catch (e) {
+      console.error("Periodic refresh failed:", e);
+    }
+  }
+
+  function findBranchCard(repo, branch) {
+      // Helper to find the DOM element for a branch to refresh it.
+      const branchCards = qsa('.branch-card');
+      for (const card of branchCards) {
+          const nameEl = card.querySelector('.branch-head .name');
+          if (nameEl && nameEl.textContent === branch) {
+              return card;
+          }
+      }
+      return null;
+  }
+</script>
+</body>
+</html>
+
 </body>
 </html>
