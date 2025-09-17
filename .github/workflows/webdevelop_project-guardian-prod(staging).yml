@@ -31,7 +31,7 @@ jobs:
       
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
+      
       # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
       - name: Upload artifact for deployment jobs
@@ -54,13 +54,23 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
+          
+      - name: List files in workspace
+        run: ls -R
       
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_8E2D515011AD414EB1CF2BBE21913C69 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E9848D6492DB45A5A10317E7D72350F3 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_5B04FF76C9C54256BB48677B1B786613 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_1CA8989FA505432F9859300021368965 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_77220881BCDE4B2BB6DD6E1FD8EC7709 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_467896A390D849809B1ABEC595F09A04 }}
+
+      # --- 수정된 부분 시작 ---
+      - name: Stop Staging Slot
+        uses: azure/webapps-stop@v1
+        with:
+          app-name: 'project-guardian-prod'
+          slot-name: 'staging'
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
@@ -68,4 +78,10 @@ jobs:
         with:
           app-name: 'project-guardian-prod'
           slot-name: 'staging'
-          
+
+      - name: Start Staging Slot
+        uses: azure/webapps-start@v1
+        with:
+          app-name: 'project-guardian-prod'
+          slot-name: 'staging'
+      # --- 수정된 부분 끝 ---
