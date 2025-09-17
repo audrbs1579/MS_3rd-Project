@@ -116,13 +116,27 @@
       border-top: 1px solid var(--border);
       overflow-y: auto; /* 파일 목록만 스크롤되도록 설정 */
     }
-    .detail .field {border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:10px;}
-    .detail .field h3{
-      margin:0; padding:6px 12px; background:var(--panel-hover);
-      font-size:12px; font-weight:600; color:var(--text-muted);
+    
+    /* --- 요청사항 반영: 상단 정보 간격 축소 --- */
+    .detail-top .field {
+      border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:6px; /* 간격 줄임 */
+    }
+    .detail-top .field h3{
+      margin:0; padding:4px 10px; background:var(--panel-hover); /* 패딩 줄임 */
+      font-size:11px; font-weight:600; color:var(--text-muted); /* 폰트 줄임 */
       text-transform: uppercase; letter-spacing: 0.5px;
     }
-    .detail .field .val{padding:10px 12px; font-size:14px;}
+    .detail-top .field .val{
+      padding:6px 10px; font-size:14px; /* 패딩 줄임 */
+    }
+    /* 파일 목록의 필드 스타일은 원래대로 유지 */
+    .detail-files .field {border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:8px;}
+    .detail-files .field h3{
+      margin:0; padding:6px 12px; background:var(--panel-hover);
+      font-size:12px; font-weight:600; color:var(--text-muted);
+    }
+    .detail-files .field .val{padding:10px 12px; font-size:14px;}
+
     .plus{color:#16a34a}.minus{color:#dc2626}
     .detail .val a{font-weight:500;}
 
@@ -176,12 +190,11 @@
     const setVH = ()=>document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
     window.addEventListener('resize', setVH); setVH();
     
-    /* --- JS 수정 1: 커밋 목록 패널 최소 높이 증가 --- */
     function sizePanelToBottom(panel){
       const midBody = $('#midBody'); if(!midBody) return;
       const bodyRect = midBody.getBoundingClientRect();
       const pRect    = panel.getBoundingClientRect();
-      const h = Math.max(150, Math.floor(bodyRect.bottom - pRect.top - 12)); // 최소 높이 150px로 늘림
+      const h = Math.max(150, Math.floor(bodyRect.bottom - pRect.top - 12));
       panel.style.maxHeight = h + 'px';
     }
     function syncAllPanels(){ $$('.panel').forEach(sizePanelToBottom); }
@@ -291,7 +304,6 @@
       requestAnimationFrame(()=>sizePanelToBottom(panel));
     }
 
-    /* --- JS 수정 2: 커밋 상세 정보를 상단/하단으로 나누어 렌더링 --- */
     async function showCommit(repo, sha){
       S.selCommit={repo,sha};
       detailBox.innerHTML='<div style="padding:12px;">상세 불러오는 중...</div>';
