@@ -92,10 +92,12 @@
     </div>
   </div>
 
-  <script>
-    const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
-    const qs  = (s, el = document) => el.querySelector(s);
+<script>
+if (!('qsa' in window)) window.qsa = (s, el=document) => Array.from(el.querySelectorAll(s));
+if (!('qs'  in window)) window.qs  = (s, el=document) => el.querySelector(s);
+</script>
 
+  <script>
     // Height sync helper so each branch has internal scrolling space
     function syncCommitPanelHeights(){
       const middleCardInner = document.querySelectorAll('.card-inner')[1];
