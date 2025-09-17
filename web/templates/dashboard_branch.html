@@ -1,4 +1,86 @@
-<script>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>대시보드 – Branch Activity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{
+      --bg:#0b0b0c; --card:#131416; --text:#eaeaea; --muted:#a6a6a6;
+      --border:#25262a; --ring:#60a5fa; --shadow:0 2px 12px rgba(0,0,0,.35);
+      --green:#22c55e; --red:#ef4444; --blue:#60a5fa;
+    }
+    *{box-sizing:border-box}
+    html,body{font-family:Tahoma, Arial, sans-serif;margin:0;padding:0;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+    .row{display:grid;grid-template-columns:320px 1fr 1fr;gap:16px;align-items:start}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:16px;min-height:200px}
+    .card h2{margin:0 0 10px 0;font-size:16px}
+    .stamp{color:var(--muted);font-size:12px;margin-bottom:8px}
+    .toolbar{display:flex;gap:8px;margin-bottom:10px}
+    input[type="text"]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text)}
+    .btn{padding:10px 12px;border:1px solid var(--text);border-radius:10px;background:transparent;color:var(--text);cursor:pointer;font-weight:600}
+    .btn:hover{background:#1a1b1e}
+    .repo-item{width:100%;text-align:left;padding:10px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text);cursor:pointer;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .repo-left{display:flex;align-items:center;gap:8px}
+    .repo-meta{color:var(--muted);font-size:12px}
+    .green-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green)}
+    .dot-placeholder{display:inline-block;width:8px;height:8px;border-radius:50%;background:transparent;border:1px solid var(--border)}
+    .branch-card{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
+    .branch-head{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:8px;padding:10px 12px;background:#0f1114;border-bottom:1px solid var(--border)}
+    .branch-left{display:flex;align-items:center;gap:8px}
+    .branch-title .name{font-weight:700}
+    .tag{border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px;color:var(--muted)}
+    .branch-meta{color:var(--muted);font-size:12px}
+    .commit-panel{padding:10px 12px}
+    .commit-item{display:flex;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer}
+    .commit-item:hover{background:#111318}
+    .sha{font-family:monospace}
+    .detail-wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .kv dl{margin:0}
+    .kv dt{color:var(--muted);font-size:12px}
+    .kv dd{margin:0 0 8px 0}
+    .plus{color:#10b981}.minus{color:#ef4444}
+    .only-link a{color:var(--blue);text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar" style="justify-content:space-between;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;width:360px">
+        <input id="repoFilter" type="text" placeholder="리포지토리 검색 (owner/name)...">
+        <button id="btnSync" class="btn">새로고침</button>
+      </div>
+      <div style="color:var(--muted)">로그인 사용자: <span id="userId">{{ user_id }}</span></div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h2>나의 리포지토리</h2>
+        <div id="repoStamp" class="stamp"></div>
+        <div id="repoList"></div>
+      </div>
+
+      <div class="card">
+        <h2>브랜치 & 커밋</h2>
+        <div id="branchStamp" class="stamp"></div>
+        <div id="dayBranch">리포를 선택하세요.</div>
+      </div>
+
+      <div class="card">
+        <h2>커밋 상세</h2>
+        <div id="detailStamp" class="stamp"></div>
+        <div id="detail">왼쪽에서 커밋을 선택하세요.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The user's original dashboard script is appended below -->
+  <script>
+    // small helper qsa missing in original
+    const qsa = (s, el = document) => Array.from(el.querySelectorAll(s));
+  </script>
+  <script>
   const USER_ID = "{{ user_id }}";
 
   // --- DOM Elements ---
@@ -330,5 +412,8 @@
       return null;
   }
 </script>
+</body>
+</html>
+  <!-- (We will insert the original script contents at runtime by including dashboard_branch.js if separated. For now, keep inline replacement.) -->
 </body>
 </html>
