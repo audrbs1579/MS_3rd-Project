@@ -19,17 +19,15 @@ GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_OAUTH_SCOPE = "repo"
 TIMEOUT = 15
 
-# [OPTIMIZED] Centralize GitHub API URLs for better maintainability
+# GitHub API URL
 GITHUB_URL_BASE = "https://api.github.com"
 GITHUB_URL_USER = f"{GITHUB_URL_BASE}/user"
 GITHUB_URL_REPOS = f"{GITHUB_URL_BASE}/user/repos"
 GITHUB_URL_REPO_COMMITS = f"{GITHUB_URL_BASE}/repos/{{repo}}/commits"
 GITHUB_URL_REPO_BRANCHES = f"{GITHUB_URL_BASE}/repos/{{repo}}/branches"
 
-
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("web.app")
-
 
 # ---------- 유틸 ----------
 def _gh_headers():
@@ -42,7 +40,6 @@ def _gh_headers():
         h["Authorization"] = f"Bearer {tok}"
     return h
 
-
 def _gh_get(url, params=None):
     """GitHub GET with 기본 타임아웃/에러 처리."""
     try:
@@ -53,16 +50,14 @@ def _gh_get(url, params=None):
         return r.json(), r.headers
     except requests.exceptions.RequestException as e:
         log.error(f"GitHub API request failed for URL {url}: {e}")
-        # Re-raise to be handled by global error handlers or specific logic
         raise
-
 
 def _page_all(url, params=None, max_pages=10):
     """Link 헤더 따라 최대 max_pages 페이지 수집."""
     out = []
     next_url = url
     next_params = params or {}
-    for i in range(max_pages):
+    for _ in range(max_pages):
         try:
             data, headers = _gh_get(next_url, next_params)
             if isinstance(data, list):
@@ -83,10 +78,9 @@ def _page_all(url, params=None, max_pages=10):
                 break
             next_url, next_params = nxt, None
         except requests.exceptions.RequestException:
-            log.warning(f"Failed to fetch page {i+1} for {url}. Returning partial data.")
+            log.warning(f"Failed to fetch next page for {url}. Returning partial data.")
             break
     return out
-
 
 # ---------- 라우팅 ----------
 @app.route("/")
@@ -138,11 +132,7 @@ def logout():
 def dashboard():
     if "access_token" not in session:
         return redirect(url_for("index"))
-
-    return render_template(
-        "dashboard_branch.html",
-        user_id=session.get("user_login") or "me"
-    )
+    return render_template("dashboard_branch.html", user_id=session.get("user_login") or "me")
 
 # ---------- API ----------
 @app.get("/api/my_repos")
@@ -151,7 +141,14 @@ def api_my_repos():
         return jsonify({"error": "unauthorized"}), 401
     params = {"per_page": 100, "sort": "pushed"}
     repos = _page_all(GITHUB_URL_REPOS, params=params, max_pages=5)
-    trimmed = [{"full_name": r.get("full_name"), "name": r.get("name"), "private": r.get("private"), "pushed_at": r.get("pushed_at")} for r in repos]
+    trimmed = [
+        {
+            "full_name": r.get("full_name"),
+            "name": r.get("name"),
+            "private": r.get("private"),
+            "pushed_at": r.get("pushed_at"),
+        } for r in repos
+    ]
     return jsonify({"repos": trimmed})
 
 @app.get("/api/branches")
@@ -181,8 +178,13 @@ def api_commits():
 
     def pick(c):
         commit, author = (c.get("commit") or {}), (c.get("commit", {}).get("author") or {})
-        return {"sha": c.get("sha"), "message": (commit.get("message") or "").split("\n")[0], "author": (author.get("name") or ""), "date": author.get("date"), "html_url": c.get("html_url")}
-
+        return {
+            "sha": c.get("sha"),
+            "message": (commit.get("message") or "").split("\n")[0],
+            "author": (author.get("name") or ""),
+            "date": author.get("date"),
+            "html_url": c.get("html_url"),
+        }
     return jsonify({"commits": [pick(c) for c in commits]})
 
 @app.get("/api/commit_detail")
@@ -194,11 +196,29 @@ def api_commit_detail():
 
     url = f"{GITHUB_URL_REPO_COMMITS.format(repo=repo)}/{sha}"
     data, _ = _gh_get(url)
-    files, stats, commit, author = data.get("files") or [], data.get("stats") or {}, data.get("commit") or {}, (data.get("commit", {}).get("author") or {})
+    files, stats, commit = data.get("files") or [], data.get("stats") or {}, data.get("commit") or {}
+    author = (data.get("commit", {}).get("author") or {})
     return jsonify({
-        "sha": data.get("sha"), "message": (commit.get("message") or ""), "author": author.get("name"), "date": author.get("date"),
-        "stats": {"total": stats.get("total"), "additions": stats.get("additions"), "deletions": stats.get("deletions")},
-        "files": [{"filename": f.get("filename"), "status": f.get("status"), "additions": f.get("additions"), "deletions": f.get("deletions"), "changes": f.get("changes"), "raw_url": f.get("raw_url"), "blob_url": f.get("blob_url")} for f in files],
+        "sha": data.get("sha"),
+        "message": (commit.get("message") or ""),
+        "author": author.get("name"),
+        "date": author.get("date"),
+        "stats": {
+            "total": stats.get("total"),
+            "additions": stats.get("additions"),
+            "deletions": stats.get("deletions"),
+        },
+        "files": [
+            {
+                "filename": f.get("filename"),
+                "status": f.get("status"),
+                "additions": f.get("additions"),
+                "deletions": f.get("deletions"),
+                "changes": f.get("changes"),
+                "raw_url": f.get("raw_url"),
+                "blob_url": f.get("blob_url"),
+            } for f in files
+        ],
         "html_url": data.get("html_url"),
     })
 
@@ -208,16 +228,12 @@ def _unauth(_):
     session.clear()
     return redirect(url_for("index"))
 
-# [OPTIMIZED] Add a global exception handler for better stability
 @app.errorhandler(Exception)
 def handle_exception(e):
-    # For HTTP-related exceptions from Flask/Werkzeug, let them propagate
     if hasattr(e, 'code') and isinstance(e.code, int) and 400 <= e.code < 600:
         return e
-    # For all other exceptions, log them and return a generic 500 error
-    log.exception("An unhandled exception occurred") # exc_info=True is implicit
+    log.exception("An unhandled exception occurred")
     return jsonify(error="Internal server error"), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
