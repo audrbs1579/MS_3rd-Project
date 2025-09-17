@@ -31,7 +31,7 @@ jobs:
       
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
+      
       # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
       - name: Upload artifact for deployment jobs
@@ -65,9 +65,23 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_77220881BCDE4B2BB6DD6E1FD8EC7709 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_467896A390D849809B1ABEC595F09A04 }}
 
+      # --- 수정된 부분 시작 ---
+      - name: Stop Staging Slot
+        uses: azure/appservice-actions/stop@v1
+        with:
+          app-name: 'project-guardian-prod'
+          slot-name: 'staging'
+
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'project-guardian-prod'
           slot-name: 'staging'
+
+      - name: Start Staging Slot
+        uses: azure/appservice-actions/start@v1
+        with:
+          app-name: 'project-guardian-prod'
+          slot-name: 'staging'
+      # --- 수정된 부분 끝 ---
