@@ -6,17 +6,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg:#161616;           /* 어두운 배경 유지 */
-      --panel:#1f1f1f;
-      --panel2:#262626;
-      --border:#3a3a3a;
-      --vh:100vh;             /* JS가 실제 viewport 높이로 갱신 */
+      --bg:#000;              /* 배경 완전 블랙 */
+      --panel:#111;           /* 카드 배경 */
+      --panel2:#161616;
+      --border:#2b2b2b;
+      --vh:100vh;
     }
     *{box-sizing:border-box}
     html,body{
       margin:0;padding:0;height:100%;
-      background:var(--bg); color:#fff;          /* << 전체 텍스트 흰색 */
-      font:14px/1.45 ui-monospace, "Fira Code", Consolas, Menlo, monospace;
+      background:var(--bg); color:#fff;                    /* ← 모든 기본 글자 흰색 */
+      font:14px/1.45 ui-monospace,"Fira Code",Consolas,Menlo,monospace;
     }
     a{color:#fff;text-decoration:underline}
     .wrap{max-width:1280px;margin:0 auto;padding:16px}
@@ -27,10 +27,8 @@
     .toolbar-right{display:flex;gap:8px;align-items:center}
     .input{width:100%;padding:10px 12px;border:1px solid var(--border);background:transparent;color:#fff;border-radius:8px;outline:none}
 
-    /* 버튼은 기본형(브라우저 기본 스타일) */
-    button { /* 기본형이지만 적당한 패딩만 */
-      padding:8px 14px;
-    }
+    /* 버튼은 기본형(시스템 버튼) 유지 */
+    button{padding:8px 14px}
 
     /* 3열 레이아웃 */
     .row{
@@ -40,32 +38,38 @@
     .card{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;background:var(--panel);min-height:0}
     .card h2{margin:0;padding:10px 12px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:14px}
     .body{padding:10px 12px;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:8px}
-    .stamp{opacity:.8;font-size:12px}
+    .stamp{font-size:12px;color:#fff}                      /* ← 흰색 고정 */
 
-    /* 리포지토리: 동일 높이 카드 */
+    /* 리포지토리: 동일 높이 + 한 줄 레이아웃 */
     .repo-item{
-      display:flex;justify-content:space-between;align-items:center;gap:8px;
-      padding:0 10px;border:1px solid var(--border);border-radius:8px;background:transparent;cursor:pointer;
-      height:44px;                                   /* << 동일 높이 */
+      display:flex;align-items:center;gap:10px;justify-content:space-between;
+      height:44px;                                         /* ← 고정 높이 */
+      padding:0 10px;border:1px solid var(--border);border-radius:8px;
+      background:transparent;cursor:pointer;overflow:hidden;
+      white-space:nowrap;                                   /* ← 전체 한 줄 */
     }
-    .repo-item:hover{background:#2b2b2b}
-    .repo-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
-    .repo-meta{opacity:.85;font-size:12px}
+    .repo-item:hover{background:#1b1b1b}
+    .repo-name{
+      flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;
+    }
+    .repo-meta{
+      flex:0 0 auto;min-width:120px;text-align:right;white-space:nowrap;color:#fff; /* ← 항상 한 줄, 고정폭 */
+    }
 
     /* 브랜치 / 커밋 */
     .branch{border:1px solid var(--border);border-radius:10px;overflow:hidden}
     .branch-head{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;background:var(--panel2);padding:8px 10px;border-bottom:1px solid var(--border)}
-    .sha-tag{opacity:.85;border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px}
-    .panel{padding:8px 10px;overflow:auto; /* 높이는 JS로 per-panel 계산됨 */ }
+    .sha-tag{border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px;color:#fff}
+    .panel{padding:8px 10px;overflow:auto}                 /* 높이 JS로 per-panel 계산 */
     .commit{display:grid;grid-template-columns:1fr auto;gap:8px;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;cursor:pointer}
-    .commit:hover{background:#2b2b2b}
-    .commit .sha{opacity:.85}
+    .commit:hover{background:#1b1b1b}
+    .commit .sha{color:#fff}
 
-    /* 상세: 세로 배치(레이블 위, 값 아래) */
+    /* 상세(세로 배치) */
     .detail{display:flex;flex-direction:column;gap:10px}
     .field{border:1px solid var(--border);border-radius:8px;overflow:hidden}
-    .field h3{margin:0;padding:8px 10px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:13px;opacity:.9}
-    .field .val{padding:10px}
+    .field h3{margin:0;padding:8px 10px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:13px;color:#fff}
+    .field .val{padding:10px;color:#fff}
     .plus{color:#37d77a}.minus{color:#ff6b6b}
   </style>
 </head>
@@ -78,7 +82,7 @@
       <div class="toolbar-right">
         <button id="btnSync">새로고침</button>
         <a href="{{ url_for('logout') }}"><button type="button">로그아웃</button></a>
-        <span style="opacity:.85">로그인 사용자: <b id="userId">{{ user_id }}</b></span>
+        <span>로그인 사용자: <b id="userId">{{ user_id }}</b></span>
       </div>
     </div>
 
@@ -116,31 +120,26 @@
     const $ = (s,el=document)=>el.querySelector(s);
     const $$= (s,el=document)=>Array.from(el.querySelectorAll(s));
 
-    /* --- 뷰포트 높이 반영 --- */
+    /* 뷰포트 높이 반영 */
     const setVH = ()=>document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
     window.addEventListener('resize', setVH); setVH();
 
-    /* --- 패널 높이: 각 패널의 '현재 화면상 위치' 기준으로
-         가운데 카드(body) 하단까지 딱 맞게 계산 --- */
+    /* 가운데 카드 하단까지 패널 높이 계산(각 패널별) */
     function sizePanelToBottom(panel){
       const midBody = $('#midBody'); if(!midBody) return;
       const bodyRect = midBody.getBoundingClientRect();
       const pRect    = panel.getBoundingClientRect();
-      const bottomY  = bodyRect.bottom;
-      const padding  = 10;                                    // 카드 안쪽 여백 보정
-      const h = Math.max(80, Math.floor(bottomY - pRect.top - padding));
+      const h = Math.max(80, Math.floor(bodyRect.bottom - pRect.top - 10));
       panel.style.maxHeight = h + 'px';
     }
-    function syncAllPanels(){
-      $$('.panel').forEach(sizePanelToBottom);
-    }
+    function syncAllPanels(){ $$('.panel').forEach(sizePanelToBottom); }
     window.addEventListener('resize', syncAllPanels);
     window.__syncCommitPanelHeights = syncAllPanels;
 
-    /* --- 상태 --- */
+    /* 상태 */
     const S = { repos:[], repo:null, branches:{}, opened:new Set(), selCommit:null };
 
-    /* --- DOM --- */
+    /* DOM */
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
     const branchesBox = $('#branches'), branchStamp=$('#branchStamp');
     const detailBox = $('#detail'), detailStamp=$('#detailStamp');
@@ -151,10 +150,9 @@
 
     async function init(){
       await loadRepos(); stampAll();
-      // 가운데 칼럼 컨텐츠 변경 시도에도 자동 재계산
       const obs = new MutationObserver(syncAllPanels);
       obs.observe($('#midBody'), {childList:true, subtree:true});
-      setInterval(refreshAll, 60000); // 1분 주기
+      setInterval(refreshAll, 60000);
     }
 
     function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}); el.textContent=`마지막 새로 고침: ${now} (KST)`; }
@@ -170,11 +168,13 @@
     async function loadRepos(){ const d=await api('/api/my_repos'); S.repos=d.repos||[]; renderRepos(); stamp(repoStamp); }
     function renderRepos(){
       const q=(filter.value||'').toLowerCase(); const frag=document.createDocumentFragment();
-      (S.repos||[]).filter(r=>(r.full_name||'').toLowerCase().includes(q)).forEach(r=>{
-        const b=document.createElement('button'); b.className='repo-item';
-        b.innerHTML=`<span class="repo-name">${esc(r.full_name||r.name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
-        b.onclick=()=>selectRepo(r.full_name); frag.appendChild(b);
-      });
+      (S.repos||[])
+        .filter(r=>(r.full_name||'').toLowerCase().includes(q))
+        .forEach(r=>{
+          const b=document.createElement('button'); b.className='repo-item';
+          b.innerHTML=`<span class="repo-name">${esc(r.full_name||r.name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
+          b.onclick=()=>selectRepo(r.full_name); frag.appendChild(b);
+        });
       repoList.replaceChildren(frag);
     }
 
@@ -188,7 +188,6 @@
     }
 
     function sortBranchesMainFirst(list){
-      // main 맨 위, 나머지 알파벳(대소문자 무시)
       const copy=[...(list||[])];
       copy.sort((a,b)=>{
         const an=(a.name||''), bn=(b.name||'');
@@ -279,7 +278,6 @@
         const d=await api('/api/branches',{repo:S.repo});
         S.branches[S.repo]=sortBranchesMainFirst(d.branches||[]);
         renderBranches();
-        // 열린 브랜치 갱신
         for (const key of [...S.opened]) {
           const [repo,branch]=key.split('|');
           const card=[...$$('.branch')].find(x=>x.querySelector('.branch-head b')?.textContent===branch);
