@@ -110,7 +110,7 @@
   <script>
   (()=>{
     const $ = (s,el=document)=>el.querySelector(s);
-    const S = { repo:null, selCommit:null, repos:[], branches:{} };
+    const S = { repo:null, selCommit:null, repos:[], branches:{}, opened:new Set() };
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
     const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
     const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
@@ -148,15 +148,10 @@
     function renderRepos() {
         const q=($('#repoFilter').value||'').toLowerCase();
         repoList.innerHTML = (S.repos||[]).filter(r=>(r.full_name||'').toLowerCase().includes(q))
-        .map(r=>`<button class="repo-item" data-repo-full-name="${r.full_name}"><span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span></button>`).join('');
+        .map(r=>`<button class="repo-item" onclick="selectRepo('${r.full_name}')"><span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span></button>`).join('');
     }
     
-    repoList.addEventListener('click', e => {
-      const repoItem = e.target.closest('.repo-item');
-      if (repoItem) selectRepo(repoItem.dataset.repoFullName);
-    });
-
-    async function selectRepo(repo){
+    window.selectRepo = async (repo) => {
         S.repo=repo; branchesBox.textContent='...'; detailBox.innerHTML = ''; S.selCommit=null;
         updateSecuritySummary('unknown');
         S.branches[repo] = (await api('/branches',{repo})).branches || [];
@@ -181,15 +176,10 @@
     async function loadCommits(key, panel) {
         const [repo, branch] = key.split('|'); panel.textContent='...';
         const d=await api('/commits',{repo,branch});
-        panel.innerHTML = (d.commits||[]).map(c=>`<div class="commit" data-repo="${repo}" data-sha="${c.sha}"><div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div></div>`).join('');
+        panel.innerHTML = (d.commits||[]).map(c=>`<div class="commit" onclick="showCommit('${repo}', '${c.sha}')"><div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div></div>`).join('');
     }
 
-    branchesBox.addEventListener('click', e => {
-        const commitEl = e.target.closest('.commit');
-        if(commitEl) showCommit(commitEl.dataset.repo, commitEl.dataset.sha);
-    });
-
-    async function showCommit(repo, sha) {
+    window.showCommit = async (repo, sha) => {
         S.selCommit={repo,sha}; detailBox.textContent='...';
         updateSecuritySummary('loading');
         const [details, security] = await Promise.all([
@@ -224,7 +214,17 @@
         btnDetails.disabled = false;
     }
 
-    function refreshAll() { /* ... */ }
+    async function refreshAll() {
+        await loadRepos();
+        if (S.repo) {
+            await selectRepo(S.repo);
+        }
+        if (S.selCommit) {
+            await showCommit(S.selCommit.repo, S.selCommit.sha);
+        }
+        stamp(repoStamp);
+    }
+
     function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false}); el.textContent=`마지막 새로 고침: ${now}`; }
     function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
     function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < 180000; }
