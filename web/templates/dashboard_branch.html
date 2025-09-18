@@ -127,9 +127,9 @@
 
     async function api(path, params={}) {
         const qs = new URLSearchParams(params); 
-        const url = `/api${path}?${qs.toString()}`; // Corrected URL formation
+        const url = `/api${path}?${qs.toString()}`;
         const r = await fetch(url);
-        if(r.status===401) { location.href='/'; return; }
+        if(r.status===401) { location.href='/'; throw new Error('Unauthorized'); }
         if (!r.ok) { 
             const errData = await r.json().catch(()=>({error: r.statusText}));
             throw new Error(errData.error || `HTTP error ${r.status}`);
@@ -215,11 +215,11 @@
 
     function updateSecuritySummary(data) {
         btnDetails.disabled = true;
-        if (!data || data === 'loading') {
+        if (!data || data === 'loading' || data.defender.status === 'unknown') {
             securityCard.className = 'card status-unknown';
             statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = '보안 현황 분석 중...';
-            summaryText.textContent = '잠시만 기다려 주세요.';
+            summaryTitle.textContent = data === 'loading' ? '보안 현황 분석 중...' : '통합 보안 현황';
+            summaryText.textContent = data === 'loading' ? '잠시만 기다려 주세요.' : '분석할 커밋을 선택하세요.';
             return;
         }
 
@@ -242,7 +242,6 @@
         await loadRepos();
         if (S.repo) {
             await selectRepo(S.repo);
-            // Re-render and re-load opened branches' commits
             const openedKeys = [...S.opened];
             S.opened.clear();
             renderBranches(S.repo);
