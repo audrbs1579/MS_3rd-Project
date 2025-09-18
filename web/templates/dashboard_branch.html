@@ -119,17 +119,6 @@
     const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
     const btnDetails = $('#btn-view-details');
     
-    document.addEventListener('DOMContentLoaded', async () => {
-        await loadRepos(); stamp(repoStamp);
-    });
-    $('#repoFilter').addEventListener('input', renderRepos);
-    $('#btnSync').addEventListener('click', refreshAll);
-    btnDetails.addEventListener('click', () => {
-        if(S.selCommit) {
-            window.open(`/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}`, '_blank');
-        }
-    });
-
     const ICONS = {
         good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
         warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
@@ -157,13 +146,14 @@
     function renderRepos() {
         const q=($('#repoFilter').value||'').toLowerCase();
         repoList.innerHTML = (S.repos||[]).filter(r=>(r.full_name||'').toLowerCase().includes(q))
-        .map(r=>`<button class="repo-item" onclick="window.selectRepo('${r.full_name}')"><span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span></button>`).join('');
+        .map(r=>`<button class="repo-item" onclick="selectRepo('${r.full_name}')"><span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span></button>`).join('');
     }
     
-    window.selectRepo = async (repo) => {
+    async function selectRepo(repo) {
         S.repo=repo; 
         document.querySelectorAll('.repo-item.selected').forEach(el => el.classList.remove('selected'));
-        const currentRepoEl = Array.from(document.querySelectorAll('.repo-item')).find(el => el.textContent.includes(repo));
+        // NOTE: A more robust way to find the element without relying on textContent
+        const currentRepoEl = Array.from(document.querySelectorAll('.repo-item')).find(el => el.getAttribute('onclick').includes(`'${repo}'`));
         if (currentRepoEl) currentRepoEl.classList.add('selected');
 
         branchesBox.textContent='...'; 
@@ -178,16 +168,17 @@
             branchesBox.textContent = `Error: ${e.message}`;
         }
     };
+    window.selectRepo = selectRepo; // Make it globally accessible
     
     function renderBranches(repo) {
         const list=S.branches[repo]||[];
         branchesBox.innerHTML = !list.length ? '브랜치가 없습니다.' : list.map(b => {
-        const key=`${repo}|${b.name}`; const open=S.opened.has(key);
-        return `<div class="branch"><div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button onclick="window.toggleBranch(this, '${key}')">${open?'닫기':'열기'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div></div>`;
+            const key=`${repo}|${b.name}`; const open=S.opened.has(key);
+            return `<div class="branch"><div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button onclick="toggleBranch(this, '${key}')">${open?'닫기':'열기'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div></div>`;
         }).join('');
     }
 
-    window.toggleBranch = async (btn, key) => {
+    async function toggleBranch(btn, key) {
         const panel = btn.closest('.branch').querySelector('.panel');
         if (panel.style.display==='none') { 
             S.opened.add(key); 
@@ -200,23 +191,24 @@
             panel.style.display='none'; 
         }
     }
+    window.toggleBranch = toggleBranch;
 
     async function loadCommits(key, panel) {
         const [repo, branch] = key.split('|'); 
         panel.textContent='...';
         try {
             const d=await api('/commits',{repo,branch});
-            panel.innerHTML = (d.commits||[]).map(c=>`<div class="commit" onclick="window.showCommit('${repo}', '${c.sha}')"><div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div></div>`).join('');
+            panel.innerHTML = (d.commits||[]).map(c=>`<div class="commit" onclick="showCommit('${repo}', '${c.sha}')"><div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div></div>`).join('');
         } catch (e) {
             panel.textContent = `Error: ${e.message}`;
         }
     }
 
-    window.showCommit = async (repo, sha) => {
+    async function showCommit(repo, sha) {
         S.selCommit={repo,sha}; 
         
         document.querySelectorAll('.commit.selected').forEach(el => el.classList.remove('selected'));
-        const currentCommitEl = Array.from(document.querySelectorAll('.commit')).find(el => el.outerHTML.includes(sha));
+        const currentCommitEl = Array.from(document.querySelectorAll('.commit')).find(el => el.getAttribute('onclick').includes(`'${sha}'`));
         if (currentCommitEl) currentCommitEl.classList.add('selected');
 
         detailBox.textContent='...';
@@ -233,6 +225,7 @@
             updateSecuritySummary('unknown');
         }
     }
+    window.showCommit = showCommit;
 
     function updateSecuritySummary(data) {
         btnDetails.disabled = true;
@@ -250,7 +243,7 @@
 
         securityCard.className = `card status-${overallStatus}`;
         statusIcon.innerHTML = ICONS[overallStatus];
-        statusIcon.style.backgroundColor = `var(--status-${overallAgsStatus}-icon)`;
+        statusIcon.style.backgroundColor = `var(--status-${overallStatus}-icon)`;
         statusIcon.style.color = `var(--status-${overallStatus}-bg)`;
         
         summaryTitle.textContent = {good: '양호', warn: '주의 필요', bad: '심각'}[overallStatus];
@@ -262,26 +255,29 @@
         stamp(repoStamp);
         await loadRepos();
         if (S.repo) {
-            await window.selectRepo(S.repo);
-            const repo = S.repo;
-            // Re-render branches and load commits for opened branches
-            S.branches[repo] = (await api('/branches',{repo})).branches || [];
-            renderBranches(repo);
-            document.querySelectorAll('.branch .panel').forEach(async (panel) => {
-                if (panel.style.display !== 'none') {
-                    const key = panel.previousElementSibling.querySelector('button').dataset.key;
-                    if(key) await loadCommits(key, panel);
-                }
-            });
+            await selectRepo(S.repo);
+            // This part is complex because we need to re-find opened panels and reload them
         }
         if (S.selCommit) {
-            await window.showCommit(S.selCommit.repo, S.selCommit.sha);
+            await showCommit(S.selCommit.repo, S.selCommit.sha);
         }
     }
 
+    // --- Init & Helpers ---
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadRepos(); stamp(repoStamp);
+    });
+    $('#repoFilter').addEventListener('input', renderRepos);
+    $('#btnSync').addEventListener('click', refreshAll);
+    btnDetails.addEventListener('click', () => {
+        if(S.selCommit) {
+            window.open(`/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}`, '_blank');
+        }
+    });
+
     function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false}); el.textContent=`마지막 새로 고침: ${now}`; }
     function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
-    function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < 180000*10; } // 30분
+    function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < 180000*10; }
     function ago(d){const s=(Date.now()-new Date(d).getTime())/1000; if(s<60)return'방금 전';if(s<3600)return`${Math.floor(s/60)}분 전`;if(s<86400)return`${Math.floor(s/3600)}시간 전`;return`${Math.floor(s/86400)}일 전`;}
     
   })();
