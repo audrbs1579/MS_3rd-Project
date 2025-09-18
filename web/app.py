@@ -199,6 +199,9 @@ def api_security_status():
 @app.errorhandler(PermissionError)
 def _unauth(_):
     session.clear()
+    # ✅ API 호출이면 JSON 401, 페이지 요청이면 리다이렉트
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "unauthorized"}), 401
     return redirect(url_for("index"))
 
 @app.errorhandler(Exception)
