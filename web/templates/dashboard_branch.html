@@ -228,9 +228,38 @@
     async function showCommit(repo, sha){
       S.selCommit={repo,sha};
       detailBox.innerHTML='<div style="padding:12px;">상세 불러오는 중...</div>';
-      const d=await api('/api/commit_detail',{repo,sha});
-      const topInfoHTML = `<div class="field"><h3>제목</h3><div class="val">${esc((d.message||'').split('\n')[0])}</div></div><div class="field"><h3>작성자</h3><div class="val">${esc(d.author||'')}</div></div><div class="field"><h3>날짜(KST)</h3><div class="val">${d.date?new Date(d.date).toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}):''}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${esc(d.sha||'')}</div></div><div class="field"><h3>변경</h3><div class="val">총 ${d.stats?.total??0} (<span class="plus">+${d.stats?.additions??0}</span> / <span class="minus">-${d.stats?.deletions??0}</span>)</div></div><div class="field"><h3>GitHub에서 보기</h3><div class="val"><a href="${d.html_url}" target="_blank" rel="noopener">열기</a></div></div>`;
-      const filesHTML = (d.files||[]).slice(0,100).map(f=>{ const diff=(f.additions||0)-(f.deletions||0); const s = diff>=0?`<span class="plus">+${diff}</span>`:`<span class="minus">${diff}</span>`; return `<div class="field"><h3>${esc(f.filename)}</h3><div class="val monospace">${esc(f.status||'')} · +${f.additions||0} / -${f.deletions||0} (${s})</div></div>`; }).join('');
+
+      // 두 API(커밋 상세, 보안 상태)를 동시에 호출해서 더 빠르게 결과를 가져옵니다.
+      const [commitDetails, securityStatus] = await Promise.all([
+        api('/api/commit_detail', {repo, sha}),
+        api('/api/security_status', {repo, ref: sha}) // 1단계에서 만든 API 호출
+      ]);
+
+      // 보안 상태를 표시할 HTML 블록을 만듭니다.
+      const securityHTML = `
+        <div class="field">
+          <h3>보안 검토 결과</h3>
+          <div class="val">${esc(securityStatus.status || 'N/A')}</div>
+        </div>
+        <div class="field">
+          <h3>보안 요약</h3>
+          <div class="val">${esc(securityStatus.summary || '결과 없음')}</div>
+        </div>
+      `;
+
+      // 기존 상세 정보 HTML의 맨 위에 보안 상태 HTML을 추가합니다.
+      const topInfoHTML = `
+        ${securityHTML}
+        <div class="field"><h3>제목</h3><div class="val">${esc((commitDetails.message||'').split('\n')[0])}</div></div>
+        <div class="field"><h3>작성자</h3><div class="val">${esc(commitDetails.author||'')}</div></div>
+        <div class="field"><h3>날짜(KST)</h3><div class="val">${commitDetails.date?new Date(commitDetails.date).toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}):''}</div></div>
+        <div class="field"><h3>SHA</h3><div class="val monospace">${esc(commitDetails.sha||'')}</div></div>
+        <div class="field"><h3>변경</h3><div class="val">총 ${commitDetails.stats?.total??0} (<span class="plus">+${commitDetails.stats?.additions??0}</span> / <span class="minus">-${commitDetails.stats?.deletions??0}</span>)</div></div>
+        <div class="field"><h3>GitHub에서 보기</h3><div class="val"><a href="${commitDetails.html_url}" target="_blank" rel="noopener">열기</a></div></div>
+      `;
+      
+      const filesHTML = (commitDetails.files||[]).slice(0,100).map(f=>{ const diff=(f.additions||0)-(f.deletions||0); const s = diff>=0?`<span class="plus">+${diff}</span>`:`<span class="minus">${diff}</span>`; return `<div class="field"><h3>${esc(f.filename)}</h3><div class="val monospace">${esc(f.status||'')} · +${f.additions||0} / -${f.deletions||0} (${s})</div></div>`; }).join('');
+      
       detailBox.innerHTML = `<div class="detail-top">${topInfoHTML}</div><div class="detail-files"><div class="field"><h3>Files (상위)</h3></div>${filesHTML || '<div style="padding:12px; color:var(--text-muted);">변경 파일 없음</div>'}</div>`;
       stamp(detailStamp);
     }

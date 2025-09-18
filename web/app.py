@@ -11,7 +11,7 @@ from flask import (
 )
 
 # ---------- 기본 설정 ----------
-app =Flask(__name__)
+app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
@@ -273,6 +273,54 @@ def api_sbom():
     except Exception:
         log.exception(f"Failed to process SBOM for {repo}")
         return jsonify(error="An unexpected error occurred while processing SBOM."), 500
+
+@app.get("/api/security_status")
+def api_security_status():
+    repo = request.args.get("repo")
+    ref = request.args.get("ref") # ref는 브랜치 이름 또는 커밋 SHA가 될 수 있습니다.
+    if not repo or not ref:
+        return jsonify({"error": "repo and ref required"}), 400
+    if "access_token" not in session:
+        return jsonify({"error": "unauthorized"}), 401
+
+    # GitHub Code Scanning API를 사용하여 특정 커밋의 분석 결과를 가져옵니다.
+    url = f"{GITHUB_URL_BASE}/repos/{repo}/code-scanning/alerts"
+    params = {"ref": ref, "per_page": 100}
+    
+    try:
+        alerts, _ = _gh_get(url, params=params)
+        
+        # === 나중에 BRICKS 모델로 교체할 부분 ===
+        is_vulnerable = any(alert.get('rule', {}).get('severity') in ['critical', 'high'] for alert in alerts)
+        
+        if is_vulnerable:
+            status = "취약 (Vulnerable)"
+            summary = f"심각도 'high' 이상의 보안 이슈 {len(alerts)}건 발견"
+        elif alerts:
+            status = "경고 (Warning)"
+            summary = f"심각도 'medium' 이하의 보안 이슈 {len(alerts)}건 발견"
+        else:
+            status = "양호 (Good)"
+            summary = "발견된 보안 이슈 없음"
+        # === 여기까지가 BRICKS 모델 연동 영역 ===
+
+        return jsonify({
+            "status": status,
+            "summary": summary,
+            "alert_count": len(alerts),
+            "alerts": [] # 필요시 상세 정보 추가
+        })
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return jsonify({
+                "status": "알 수 없음",
+                "summary": "보안 스캔이 활성화되지 않았거나 결과가 없습니다.",
+            })
+        raise
+    except Exception:
+        log.exception(f"Failed to get security status for {repo}@{ref}")
+        return jsonify(error="보안 상태를 가져오는 중 오류 발생"), 500
+
 
 # ---------- 오류 처리 ----------
 @app.errorhandler(PermissionError)
