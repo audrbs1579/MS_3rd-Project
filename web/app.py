@@ -1,14 +1,14 @@
 import os
 import json
 import logging
-import random # 임의의 심각도 생성을 위해 추가
+import random
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import requests
 from flask import (
     Flask, render_template, request, redirect, session,
-    url_for, jsonify
+    url_for, jsonify, Response
 )
 
 # ---------- 기본 설정 ----------
@@ -17,7 +17,6 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
-# security_events 스코프를 추가하여 코드 스캐닝 결과에 접근할 권한을 요청합니다.
 GITHUB_OAUTH_SCOPE = "repo,security_events"
 TIMEOUT = 15
 
@@ -42,47 +41,23 @@ def _gh_headers():
         h["Authorization"] = f"Bearer {tok}"
     return h
 
-def _gh_get(url, params=None):
-    """GitHub GET with 기본 타임아웃/에러 처리."""
+def _gh_get(url, params=None, accept_header=None):
     try:
-        r = requests.get(url, headers=_gh_headers(), params=params or {}, timeout=TIMEOUT)
+        headers = _gh_headers()
+        if accept_header:
+            headers["Accept"] = accept_header
+        r = requests.get(url, headers=headers, params=params or {}, timeout=TIMEOUT)
         if r.status_code == 401:
             raise PermissionError("GitHub unauthorized")
         r.raise_for_status()
-        return r.json(), r.headers
+        
+        if 'application/json' in r.headers.get('Content-Type', ''):
+            return r.json(), r.headers
+        return r.text, r.headers
+
     except requests.exceptions.RequestException as e:
         log.error(f"GitHub API request failed for URL {url}: {e}")
         raise
-
-def _page_all(url, params=None, max_pages=10):
-    """Link 헤더 따라 최대 max_pages 페이지 수집."""
-    out = []
-    next_url = url
-    next_params = params or {}
-    for _ in range(max_pages):
-        try:
-            data, headers = _gh_get(next_url, next_params)
-            if isinstance(data, list):
-                out.extend(data)
-            else:
-                out.append(data)
-
-            link = headers.get("Link", "")
-            nxt = None
-            if link:
-                parts = link.split(",")
-                for p in parts:
-                    if 'rel="next"' in p:
-                        s = p.split(";")[0].strip()
-                        if s.startswith("<") and s.endswith(">"):
-                            nxt = s[1:-1]
-            if not nxt:
-                break
-            next_url, next_params = nxt, None
-        except requests.exceptions.RequestException:
-            log.warning(f"Failed to fetch next page for {url}. Returning partial data.")
-            break
-    return out
 
 # ---------- 라우팅 ----------
 @app.route("/")
@@ -103,26 +78,12 @@ def login():
 @app.route("/callback")
 def callback():
     code = request.args.get("code")
-    if not code:
-        return "Missing code", 400
-
-    tok_res = requests.post(
-        "https://github.com/login/oauth/access_token",
-        data={
-            "client_id": GITHUB_CLIENT_ID,
-            "client_secret": GITHUB_CLIENT_SECRET,
-            "code": code,
-        },
-        headers={"Accept": "application/json"},
-        timeout=TIMEOUT,
-    )
+    if not code: return "Missing code", 400
+    tok_res = requests.post("https://github.com/login/oauth/access_token", data={"client_id": GITHUB_CLIENT_ID, "client_secret": GITHUB_CLIENT_SECRET, "code": code}, headers={"Accept": "application/json"}, timeout=TIMEOUT)
     tok_res.raise_for_status()
-    payload = tok_res.json()
-    session["access_token"] = payload.get("access_token")
-
+    session["access_token"] = tok_res.json().get("access_token")
     me, _ = _gh_get(GITHUB_URL_USER)
     session["user_login"] = me.get("login", "")
-
     return redirect(url_for("dashboard"))
 
 @app.route("/logout")
@@ -136,34 +97,39 @@ def dashboard():
         return redirect(url_for("index"))
     return render_template("dashboard_branch.html", user_id=session.get("user_login") or "me")
 
+@app.route("/details")
+def details():
+    if "access_token" not in session:
+        return redirect(url_for("index"))
+    
+    repo = request.args.get("repo")
+    sha = request.args.get("sha")
+    
+    if not repo or not sha:
+        return "리포지토리와 커밋 SHA가 필요합니다.", 400
+
+    return render_template("detail_view.html", 
+        user_id=session.get("user_login") or "me",
+        repo_name=repo,
+        commit_sha=sha
+    )
+
 # ---------- API ----------
 @app.get("/api/my_repos")
 def api_my_repos():
-    if "access_token" not in session:
-        return jsonify({"error": "unauthorized"}), 401
-    params = {"per_page": 100, "sort": "pushed"}
-    repos = _page_all(GITHUB_URL_REPOS, params=params, max_pages=5)
-    trimmed = [
-        {
-            "full_name": r.get("full_name"),
-            "name": r.get("name"),
-            "private": r.get("private"),
-            "pushed_at": r.get("pushed_at"),
-        } for r in repos
-    ]
-    return jsonify({"repos": trimmed})
+    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
+    repos, _ = _gh_get(GITHUB_URL_REPOS, params={"per_page": 100, "sort": "pushed"})
+    return jsonify({"repos": [{"full_name": r.get("full_name"), "name": r.get("name"), "pushed_at": r.get("pushed_at")} for r in (repos or [])]})
 
 @app.get("/api/branches")
 def api_branches():
     repo = request.args.get("repo")
     if not repo: return jsonify({"error": "repo required"}), 400
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
-
     url = GITHUB_URL_REPO_BRANCHES.format(repo=repo)
-    branches_data = _page_all(url, params={"per_page": 100}, max_pages=3)
-    
+    branches_data, _ = _gh_get(url, params={"per_page": 100})
     out = []
-    for b in branches_data:
+    for b in (branches_data or []):
         sha = (b.get("commit") or {}).get("sha")
         commit_url = f"{GITHUB_URL_BASE}/repos/{repo}/commits/{sha}"
         try:
@@ -172,7 +138,6 @@ def api_branches():
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": commit_date})
         except requests.exceptions.RequestException:
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
-
     return jsonify({"branches": out})
 
 @app.get("/api/commits")
@@ -181,110 +146,54 @@ def api_commits():
     branch = request.args.get("branch")
     if not repo or not branch: return jsonify({"error": "repo and branch required"}), 400
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
-
-    params = {"sha": branch, "per_page": 100}
-    if request.args.get("since"): params["since"] = request.args.get("since")
-    if request.args.get("until"): params["until"] = request.args.get("until")
-
     url = GITHUB_URL_REPO_COMMITS.format(repo=repo)
-    commits = _page_all(url, params=params, max_pages=5)
-
-    def pick(c):
-        commit, author = (c.get("commit") or {}), (c.get("commit", {}).get("author") or {})
-        return {
-            "sha": c.get("sha"),
-            "message": (commit.get("message") or "").split("\n")[0],
-            "author": (author.get("name") or ""),
-            "date": author.get("date"),
-            "html_url": c.get("html_url"),
-        }
-    return jsonify({"commits": [pick(c) for c in commits]})
+    commits, _ = _gh_get(url, params={"sha": branch, "per_page": 100})
+    pick = lambda c: {"sha": c.get("sha"), "message": (c.get("commit", {}).get("message") or "").split("\n")[0], "author": (c.get("commit", {}).get("author") or {}).get("name"), "date": (c.get("commit", {}).get("author") or {}).get("date")}
+    return jsonify({"commits": [pick(c) for c in (commits or [])]})
 
 @app.get("/api/commit_detail")
 def api_commit_detail():
-    repo = request.args.get("repo")
-    sha = request.args.get("sha")
+    repo, sha = request.args.get("repo"), request.args.get("sha")
     if not repo or not sha: return jsonify({"error": "repo and sha required"}), 400
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
-
     url = f"{GITHUB_URL_REPO_COMMITS.format(repo=repo)}/{sha}"
     data, _ = _gh_get(url)
-    files, stats, commit = data.get("files") or [], data.get("stats") or {}, data.get("commit") or {}
-    author = (data.get("commit", {}).get("author") or {})
-    return jsonify({
-        "sha": data.get("sha"),
-        "message": (commit.get("message") or ""),
-        "author": author.get("name"),
-        "date": author.get("date"),
-        "stats": {
-            "total": stats.get("total"),
-            "additions": stats.get("additions"),
-            "deletions": stats.get("deletions"),
-        },
-        "files": [
-            {
-                "filename": f.get("filename"),
-                "status": f.get("status"),
-                "additions": f.get("additions"),
-                "deletions": f.get("deletions"),
-                "changes": f.get("changes"),
-                "raw_url": f.get("raw_url"),
-                "blob_url": f.get("blob_url"),
-            } for f in files
-        ],
-        "html_url": data.get("html_url"),
-    })
+    stats, commit = data.get("stats") or {}, data.get("commit") or {}
+    return jsonify({"message": commit.get("message"), "author": (commit.get("author") or {}).get("name"), "date": (commit.get("author") or {}).get("date"), "stats": {"total": stats.get("total"), "additions": stats.get("additions"), "deletions": stats.get("deletions")}, "files": [{"filename": f.get("filename")} for f in (data.get("files") or [])], "html_url": data.get("html_url")})
+
+@app.get("/api/commit_diff")
+def api_commit_diff():
+    repo, sha = request.args.get("repo"), request.args.get("sha")
+    if not repo or not sha: return jsonify({"error": "repo and sha required"}), 400
+    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
+    url = f"{GITHUB_URL_REPO_COMMITS.format(repo=repo)}/{sha}"
+    diff_text, _ = _gh_get(url, accept_header="application/vnd.github.diff")
+    return Response(diff_text, mimetype='text/plain')
 
 @app.get("/api/security_status")
 def api_security_status():
-    repo = request.args.get("repo")
-    ref = request.args.get("ref")
+    repo, ref = request.args.get("repo"), request.args.get("ref")
     if not repo or not ref: return jsonify({"error": "repo and ref required"}), 400
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
-
     url = f"{GITHUB_URL_BASE}/repos/{repo}/code-scanning/alerts"
-    params = {"ref": ref, "per_page": 100}
-    
     try:
-        alerts, _ = _gh_get(url, params=params)
-        
-        # Defender 결과 시뮬레이션
+        alerts, _ = _gh_get(url, params={"ref": ref, "per_page": 100})
+        alerts = alerts or []
         high_alerts = [a for a in alerts if a.get('rule', {}).get('severity') in ['critical', 'high']]
-        
-        defender_status = "good"
-        defender_summary = f"CodeQL: {len(alerts)}개의 경고 발견"
-        if len(high_alerts) > 0:
-            defender_status = "bad"
-        elif len(alerts) > 0:
-            defender_status = "warn"
-
-        # Sentinel 및 BRICKS 모델 결과는 임의로 생성
+        defender_status = "bad" if high_alerts else "warn" if alerts else "good"
+        defender_summary = f"CodeQL: {len(alerts)}개 경고"
         sentinel_status = random.choice(["good", "warn", "bad"])
-        sentinel_summary = f"SIEM: {random.randint(0,5)}개의 의심스러운 활동"
-        if sentinel_status == "good": sentinel_summary = "SIEM: 특이사항 없음"
-        
-        # BRICKS 모델은 고정값 0.5와 임의의 심각도 반환
-        bricks_model_value = 0.5
+        sentinel_summary = f"SIEM: {random.randint(0,5)}개 활동" if sentinel_status != "good" else "SIEM: 특이사항 없음"
         bricks_status = random.choice(["good", "warn", "bad"])
-
-        return jsonify({
-            "defender": {"status": defender_status, "summary": defender_summary},
-            "sentinel": {"status": sentinel_status, "summary": sentinel_summary},
-            "bricks": {"status": bricks_status, "summary": f"모델 예측 점수: {bricks_model_value}"}
-        })
-
+        bricks_summary = f"모델 예측 점수: 0.5"
+        return jsonify({"defender": {"status": defender_status, "summary": defender_summary}, "sentinel": {"status": sentinel_status, "summary": sentinel_summary}, "bricks": {"status": bricks_status, "summary": bricks_summary}})
     except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            return jsonify({
-                "defender": {"status": "unknown", "summary": "보안 스캔 결과 없음"},
-                "sentinel": {"status": "unknown", "summary": "데이터 없음"},
-                "bricks": {"status": "unknown", "summary": "분석 불가"}
-            })
+        if e.response.status_code in [404, 403]:
+            return jsonify({"defender": {"status": "unknown", "summary": "결과 없음"}, "sentinel": {"status": "unknown", "summary": "데이터 없음"}, "bricks": {"status": "unknown", "summary": "분석 불가"}})
         raise
     except Exception:
         log.exception(f"Failed to get security status for {repo}@{ref}")
         return jsonify(error="보안 상태를 가져오는 중 오류 발생"), 500
-
 
 # ---------- 오류 처리 ----------
 @app.errorhandler(PermissionError)
@@ -294,10 +203,10 @@ def _unauth(_):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    if hasattr(e, 'code') and isinstance(e.code, int) and 400 <= e.code < 600:
-        return e
+    if hasattr(e, 'code') and isinstance(e.code, int) and 400 <= e.code < 600: return e
     log.exception("An unhandled exception occurred")
     return jsonify(error="Internal server error"), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
+

@@ -7,325 +7,231 @@
   <style>
     :root{
       --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-      --text-main: #111827; --text-muted: #6b7280; --text-accent: #3b82f6; --panel-hover: #f9fafb; --vh: 100vh;
-      --status-good: #dcfce7; --status-good-text: #166534;
-      --status-warn: #fef9c3; --status-warn-text: #854d0e;
-      --status-bad: #fee2e2; --status-bad-text: #991b1b;
-      --status-unknown: #f3f4f6; --status-unknown-text: #4b5563;
+      --text-main: #111827; --text-muted: #6b7280; --text-accent: #3b82f6; --panel-hover: #f9fafb;
+      --status-good-bg: #f0fdf4; --status-good-text: #166534; --status-good-icon: #22c55e;
+      --status-warn-bg: #fefce8; --status-warn-text: #854d0e; --status-warn-icon: #f59e0b;
+      --status-bad-bg: #fef2f2; --status-bad-text: #991b1b; --status-bad-icon: #ef4444;
+      --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
       --status-recent: #22c55e;
     }
     *{box-sizing:border-box}
-    html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; font-size: 15px; line-height: 1.5; }
-    a{color:var(--text-accent); text-decoration:none} a:hover{text-decoration:underline}
+    html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 15px; }
     .wrap{max-width:1400px; margin:0 auto; padding:24px; display:flex; flex-direction:column; height:100%;}
-    .monospace{font-family: ui-monospace,"Fira Code",Consolas,Menlo,monospace;}
-    .toolbar{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:16px; flex-shrink: 0;}
-    .toolbar-left{display:flex; gap:8px; align-items:center; flex:1 1 480px}
-    .toolbar-right{display:flex; gap:8px; align-items:center}
-    .input{ width:100%; padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text-main); border-radius:8px; outline:none; font-size:15px; box-shadow: var(--shadow); }
-    .input:focus{border-color: var(--text-accent); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);}
+    .monospace{font-family: ui-monospace, Consolas, Menlo, monospace;}
+    .toolbar{display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px;}
+    .input{ width:100%; padding:10px 14px; border:1px solid var(--border); background:var(--panel); border-radius:8px; font-size:15px; box-shadow: var(--shadow); }
     button{ padding:8px 16px; border:1px solid var(--border); border-radius:8px; background:var(--panel); font-size: 14px; font-weight:500; cursor:pointer; box-shadow: var(--shadow); transition: background-color 0.2s; }
     button:hover{background-color: #f3f4f6;}
-    button:disabled{cursor:not-allowed; opacity:0.6;}
-    
-    .main-grid { display: flex; flex-direction: column; gap: 16px; flex-grow: 1; min-height: 0; }
-    .grid-row { display: grid; gap: 16px; }
-    .grid-row-top { grid-template-columns: 1fr; flex-shrink: 0; }
-    .grid-row-mid { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); flex: 1; min-height: 0;}
-    .grid-row-bottom { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); flex-shrink: 0; }
-
+    .main-grid { display: grid; grid-template-rows: auto 1fr auto; gap: 16px; flex-grow: 1; min-height: 0; }
+    .grid-row-mid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; min-height: 0; }
     .card{ display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; background:var(--panel); min-height:0; box-shadow: var(--shadow); }
     .card h2{ margin:0; padding:10px 16px; border-bottom:1px solid var(--border); font-size:14px; font-weight:600; }
-    .body{padding:12px; overflow:auto; min-height:0;}
+    .body{padding:12px; overflow:auto;}
     .stamp{padding:0 8px 8px 8px; font-size:12px; color:var(--text-muted)}
-    
-    /* 레포 목록 스타일 */
-    .repo-item{ display:flex; align-items:center; gap:12px; justify-content:space-between; padding:10px 12px; border:none; border-radius:8px; background:transparent; cursor:pointer; overflow:hidden; width:100%; text-align:left; transition: background-color 0.2s; }
+    .repo-item{ display:flex; align-items:center; gap:12px; padding:10px 12px; border:none; border-radius:8px; cursor:pointer; width:100%; text-align:left; transition: background-color 0.2s; }
     .repo-item:hover{background-color: var(--panel-hover);}
-    .repo-name{font-weight:500; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px;}
-    .repo-meta{font-size:12px; color:var(--text-muted); flex:0 0 140px; text-align:right; white-space:nowrap;}
-    .status-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; background-color: var(--status-recent); box-shadow: 0 0 5px var(--status-recent); }
-
-    /* 중단 영역 (브랜치, 커밋상세) 스타일 */
-    #midBody { display: flex; flex-direction: column; height: 100%; }
-    #branches-container { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px; }
-    #detail-container { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px; }
-
+    .repo-name{font-weight:500; font-size:14px;}
+    .repo-meta{font-size:12px; color:var(--text-muted); margin-left: auto;}
+    .status-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background-color: var(--status-recent); }
+    #branches-container, #detail-container { padding: 12px; }
     .branch{border:1px solid var(--border); border-radius:8px; overflow:hidden;}
     .branch-head{ display:flex; gap:8px; align-items:center; background:var(--panel-hover); padding:8px 12px; font-size:14px; }
-    .branch-head b{flex-grow:1;}
     .sha-tag{ border:1px solid var(--border); border-radius:999px; padding:1px 6px; font-size:11px; color:var(--text-muted); background: var(--panel); }
-    .panel{padding:6px; overflow:auto}
-    .commit{ display:grid; grid-template-columns:1fr auto; gap:8px; border:none; border-radius:6px; padding:8px 10px; margin-bottom:4px; cursor:pointer; transition: background-color 0.2s; }
+    .panel{padding:6px;}
+    .commit{ display:grid; grid-template-columns:1fr auto; gap:8px; border-radius:6px; padding:8px 10px; margin-bottom:4px; cursor:pointer; transition: background-color 0.2s; }
     .commit:hover{background:var(--panel-hover)}
     .commit .msg { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
     .commit .meta { font-size: 11px; color: var(--text-muted); }
-    .commit .sha{color:var(--text-muted); font-size:12px;}
-
     .detail .field { border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:6px; }
-    .detail .field h3{ margin:0; padding:3px 8px; background:var(--panel-hover); font-size:10px; font-weight:600; color:var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail .field h3{ margin:0; padding:3px 8px; background:var(--panel-hover); font-size:10px; font-weight:600; color:var(--text-muted); text-transform: uppercase; }
     .detail .field .val{ padding:5px 8px; font-size:13px; }
     .plus{color:#16a34a}.minus{color:#dc2626}
-    .detail .val a{font-weight:500;}
-
-    /* 하단 보안 카드 스타일 */
-    .security-card .body { padding: 16px; text-align: center; }
-    .security-card h3 { margin: 0 0 4px 0; font-size: 16px; font-weight: 600; }
-    .security-card p { margin: 0; font-size: 14px; }
     
-    .status-good { background-color: var(--status-good); }
-    .status-good h3, .status-good p { color: var(--status-good-text); }
-    .status-warn { background-color: var(--status-warn); }
-    .status-warn h3, .status-warn p { color: var(--status-warn-text); }
-    .status-bad { background-color: var(--status-bad); }
-    .status-bad h3, .status-bad p { color: var(--status-bad-text); }
-    .status-unknown { background-color: var(--status-unknown); }
-    .status-unknown h3, .status-unknown p { color: var(--status-unknown-text); }
+    #security-summary-card { transition: background-color 0.3s; }
+    .security-summary-body { display: flex; align-items: center; justify-content: space-between; padding: 16px; }
+    .security-status { display: flex; align-items: center; gap: 12px; }
+    .status-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .status-icon svg { width: 20px; height: 20px; }
+    .status-text h3 { margin: 0; font-size: 16px; }
+    .status-text p { margin: 0; font-size: 14px; color: var(--text-muted); }
+    #btn-view-details { padding: 8px 20px; font-weight: 600; }
+    #btn-view-details:disabled { background-color: #e5e7eb; cursor: not-allowed; opacity: 0.7; }
+
+    .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
+    .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
+    .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
+    .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="toolbar">
-      <div class="toolbar-left"><input id="repoFilter" class="input" placeholder="리포지토리 검색 (owner/name)..." /></div>
-      <div class="toolbar-right">
+      <input id="repoFilter" class="input" placeholder="리포지토리 검색..." />
+      <div>
         <button id="btnSync">새로고침</button>
-        <span>로그인 사용자: <b id="userId">{{ user_id }}</b></span>
-        <a href="{{ url_for('logout') }}"><button type="button">로그아웃</button></a>
+        <span>사용자: <b>{{ user_id }}</b></span>
+        <a href="/logout"><button type="button">로그아웃</button></a>
       </div>
     </div>
     
     <div class="main-grid">
-      <div class="grid-row grid-row-top">
-        <section class="card">
-          <h2>나의 리포지토리</h2>
-          <div class="body" id="repoList" style="max-height: 200px;"></div>
-          <div id="repoStamp" class="stamp"></div>
-        </section>
-      </div>
+      <section class="card">
+        <h2>나의 리포지토리</h2>
+        <div class="body" id="repoList" style="max-height: 200px;"></div>
+        <div id="repoStamp" class="stamp"></div>
+      </section>
 
-      <div class="grid-row grid-row-mid">
+      <div class="grid-row-mid">
         <section class="card">
           <h2>브랜치 & 커밋</h2>
-          <div id="midBody" class="body">
-            <div id="branches-container">리포를 선택하세요.</div>
-          </div>
+          <div id="branches-container" class="body">리포를 선택하세요.</div>
         </section>
         <section class="card">
           <h2>커밋 상세</h2>
-          <div id="detail" class="body detail">
-            <div id="detail-container"></div>
-          </div>
+          <div id="detail-container" class="body detail"></div>
         </section>
       </div>
       
-      <div class="grid-row grid-row-bottom">
-        <section id="defenderCard" class="card security-card status-unknown">
-          <div class="body">
-            <h3>Defender</h3>
-            <p>커밋을 선택하세요.</p>
+      <section id="security-summary-card" class="card status-unknown">
+        <div class="security-summary-body">
+          <div class="security-status">
+            <div id="status-icon-container" class="status-icon"></div>
+            <div class="status-text">
+              <h3 id="security-summary-title">통합 보안 현황</h3>
+              <p id="security-summary-text">분석할 커밋을 선택하세요.</p>
+            </div>
           </div>
-        </section>
-        <section id="sentinelCard" class="card security-card status-unknown">
-          <div class="body">
-            <h3>Sentinel</h3>
-            <p>커밋을 선택하세요.</p>
-          </div>
-        </section>
-        <section id="bricksCard" class="card security-card status-unknown">
-          <div class="body">
-            <h3>BRICKS Model</h3>
-            <p>커밋을 선택하세요.</p>
-          </div>
-        </section>
-      </div>
+          <button id="btn-view-details" disabled>상세 분석 보기</button>
+        </div>
+      </section>
     </div>
   </div>
 
   <script>
   (()=>{
     const $ = (s,el=document)=>el.querySelector(s);
-    const S = { repos:[], repo:null, branches:{}, opened:new Set(), selCommit:null };
-    
-    // UI Elements
+    const S = { repo:null, selCommit:null, repos:[], branches:{} };
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
-    const branchesBox = $('#branches-container');
-    const detailBox = $('#detail-container');
-    const defenderCard = $('#defenderCard'), sentinelCard = $('#sentinelCard'), bricksCard = $('#bricksCard');
-    const filter = $('#repoFilter'); 
-    const btnSync = $('#btnSync');
+    const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
+    const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
+    const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
+    const btnDetails = $('#btn-view-details');
     
-    btnSync.addEventListener('click', refreshAll);
-    filter.addEventListener('input', renderRepos);
-    
-    document.addEventListener('DOMContentLoaded', init);
-    
-    async function init(){
-      await loadRepos(); stamp(repoStamp);
-      setInterval(refreshAll, 60000);
-    }
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadRepos(); stamp(repoStamp);
+    });
+    $('#repoFilter').addEventListener('input', renderRepos);
+    $('#btnSync').addEventListener('click', refreshAll);
+    btnDetails.addEventListener('click', () => {
+        if(S.selCommit) {
+            window.open(`/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}`, '_blank');
+        }
+    });
 
-    function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}); el.textContent=`마지막 새로 고침: ${now} (KST)`; }
-    
-    async function api(path, params={}){
-      const qs = new URLSearchParams(params); const url = path + (qs.toString()?`?${qs}`:'');
-      const r = await fetch(url); 
-      if(r.status===401) { location.href="{{ url_for('login') }}"; return; }
-      if (!r.ok) {
-        const errData = await r.json().catch(()=>({error: r.statusText}));
-        throw new Error(errData.error || `HTTP error ${r.status}`);
-      }
-      return r.json();
-    }
-    const RECENT_THRESHOLD_MINUTES = 3;
-    function isRecent(dateStr) {
-      if (!dateStr) return false;
-      const diffMinutes = (Date.now() - new Date(dateStr).getTime()) / 60000;
-      return diffMinutes >= 0 && diffMinutes < RECENT_THRESHOLD_MINUTES;
-    }
+    const ICONS = {
+        good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+        warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
+        bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
+        unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
+    };
 
-    async function loadRepos(){ const d=await api('/api/my_repos'); S.repos=d.repos||[]; renderRepos(); }
-
-    function renderRepos(){
-      const q=(filter.value||'').toLowerCase(); const frag=document.createDocumentFragment();
-      (S.repos||[]).filter(r=>(r.full_name||'').toLowerCase().includes(q)).forEach(r=>{
-          const b=document.createElement('button'); b.className='repo-item';
-          const recentIndicator = isRecent(r.pushed_at) ? '<span class="status-indicator"></span>' : '';
-          b.innerHTML=`<span class="repo-name">${recentIndicator}${esc(r.name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
-          b.onclick=()=>selectRepo(r.full_name);
-          frag.appendChild(b);
-        });
-      repoList.replaceChildren(frag);
+    async function api(path, params={}) {
+        const qs = new URLSearchParams(params); const url = `/api${path}?${qs}`;
+        const r = await fetch(url);
+        if(r.status===401) { location.href='/'; return; }
+        if (!r.ok) { const err = await r.json().catch(()=>({error:r.statusText})); throw new Error(err.error); }
+        return r.json();
     }
     
+    async function loadRepos(){ S.repos = (await api('/my_repos')).repos || []; renderRepos(); }
+    
+    function renderRepos() {
+        const q=($('#repoFilter').value||'').toLowerCase();
+        repoList.innerHTML = (S.repos||[]).filter(r=>(r.full_name||'').toLowerCase().includes(q))
+        .map(r=>`<button class="repo-item" data-repo-full-name="${r.full_name}"><span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span></button>`).join('');
+    }
+    
+    repoList.addEventListener('click', e => {
+      const repoItem = e.target.closest('.repo-item');
+      if (repoItem) selectRepo(repoItem.dataset.repoFullName);
+    });
+
     async function selectRepo(repo){
-      S.repo=repo; branchesBox.textContent='브랜치 불러오는 중...'; detailBox.innerHTML = '';
-      resetSecurityCards();
-      const d=await api('/api/branches',{repo});
-      S.branches[repo] = sortBranchesMainFirst(d.branches || []);
-      renderBranches();
-    }
-
-    function sortBranchesMainFirst(list){
-      return [...(list||[])].sort((a,b)=>{
-        if(a.name==='main') return -1; if(b.name==='main') return 1;
-        return (a.name||'').localeCompare(b.name||'', undefined, {sensitivity:'base'});
-      });
-    }
-    
-    function renderBranches(){
-      const repo=S.repo; const list=S.branches[repo]||[];
-      if(!list.length){ branchesBox.textContent='브랜치가 없습니다.'; return; }
-      const frag=document.createDocumentFragment();
-      list.forEach(b=>{
-        const key=`${repo}|${b.name}`; const open=S.opened.has(key);
-        const wrap=document.createElement('div'); wrap.className='branch';
-        const recentIndicator = isRecent(b.last_commit_date) ? '<span class="status-indicator"></span>' : '';
-        wrap.innerHTML=`
-          <div class="branch-head">
-            <b class="monospace">${recentIndicator}${esc(b.name)}</b>
-            <span class="sha-tag monospace">${(b.sha||'').slice(0,7)}</span>
-            <button type="button">${open?'닫기':'열기'}</button>
-          </div>
-          <div class="panel" ${open?'':'style="display:none"'}></div>`;
-        const btn = wrap.querySelector('button'), panel = wrap.querySelector('.panel');
-        btn.addEventListener('click', async ()=>{
-          if (panel.style.display==='none'){
-            S.opened.add(key); btn.textContent='닫기'; panel.style.display='';
-            await loadCommits(repo,b.name,panel);
-          } else { S.opened.delete(key); btn.textContent='열기'; panel.style.display='none'; }
-        });
-        if (open) loadCommits(repo,b.name,panel);
-        frag.appendChild(wrap);
-      });
-      branchesBox.replaceChildren(frag);
-    }
-
-    async function loadCommits(repo, branch, panel){
-      panel.textContent='커밋 불러오는 중...';
-      const d=await api('/api/commits',{repo,branch}); const items=d.commits||[];
-      const frag=document.createDocumentFragment();
-      items.forEach(c=>{
-        const row=document.createElement('div'); row.className='commit';
-        const recentIndicator = isRecent(c.date) ? '<span class="status-indicator"></span>' : '';
-        row.innerHTML=`<div><div class="msg">${recentIndicator}${esc(c.message||'(no message)')}</div><div class="meta">${esc(c.author||'')} · ${c.date?ago(new Date(c.date)):''}</div></div><div class="sha monospace">${(c.sha||'').slice(0,7)}</div>`;
-        row.onclick=()=>showCommit(repo,c.sha);
-        frag.appendChild(row);
-      });
-      panel.replaceChildren(frag);
-    }
-
-    async function showCommit(repo, sha){
-      S.selCommit={repo,sha};
-      detailBox.innerHTML='상세 불러오는 중...';
-      updateSecurityCards({status:'loading'});
-
-      const [commitDetails, securityStatus] = await Promise.all([
-        api('/api/commit_detail', {repo, sha}),
-        api('/api/security_status', {repo, ref: sha})
-      ]).catch(err => {
-        console.error("Error loading commit details:", err);
-        detailBox.innerHTML = '데이터를 불러오는 데 실패했습니다.';
-        updateSecurityCards({status:'error'});
-        return [null, null];
-      });
-
-      if (!commitDetails) return;
-
-      const topInfoHTML = `
-        <div class="field"><h3>제목</h3><div class="val">${esc((commitDetails.message||'').split('\n')[0])}</div></div>
-        <div class="field"><h3>작성자</h3><div class="val">${esc(commitDetails.author||'')}</div></div>
-        <div class="field"><h3>날짜(KST)</h3><div class="val">${commitDetails.date?new Date(commitDetails.date).toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}):''}</div></div>
-        <div class="field"><h3>SHA</h3><div class="val monospace">${esc(commitDetails.sha||'')}</div></div>
-        <div class="field"><h3>변경</h3><div class="val">총 ${commitDetails.stats?.total??0} (<span class="plus">+${commitDetails.stats?.additions??0}</span> / <span class="minus">-${commitDetails.stats?.deletions??0}</span>)</div></div>
-        <div class="field"><h3>GitHub에서 보기</h3><div class="val"><a href="${commitDetails.html_url}" target="_blank" rel="noopener">열기</a></div></div>
-      `;
-      const filesHTML = (commitDetails.files||[]).map(f=>`<div class="val">${esc(f.filename)}</div>`).join('');
-      detailBox.innerHTML = `${topInfoHTML}<div class="field"><h3>변경 파일</h3>${filesHTML||'<div class="val">-</div>'}</div>`;
-      
-      updateSecurityCards(securityStatus);
-    }
-
-    function updateSecurityCards(data) {
-        if (!data || data.status === 'error') {
-            resetSecurityCards('데이터 로드 실패');
-            return;
-        }
-        if (data.status === 'loading') {
-            resetSecurityCards('결과 분석 중...');
-            return;
-        }
-        
-        const cards = { defender: defenderCard, sentinel: sentinelCard, bricks: bricksCard };
-        for (const key in cards) {
-            const card = cards[key];
-            const result = data[key] || { status: 'unknown', summary: '데이터 없음' };
-            card.className = `card security-card status-${result.status}`;
-            card.querySelector('p').textContent = result.summary;
-        }
-    }
-    
-    function resetSecurityCards(message = '커밋을 선택하세요.') {
-        [defenderCard, sentinelCard, bricksCard].forEach(card => {
-            card.className = 'card security-card status-unknown';
-            card.querySelector('p').textContent = message;
-        });
-    }
-
-    async function refreshAll(){
-      await loadRepos();
-      if (S.repo){
-        const d=await api('/api/branches',{repo:S.repo});
-        S.branches[S.repo]=sortBranchesMainFirst(d.branches||[]);
+        S.repo=repo; branchesBox.textContent='...'; detailBox.innerHTML = ''; S.selCommit=null;
+        updateSecuritySummary('unknown');
+        S.branches[repo] = (await api('/branches',{repo})).branches || [];
         renderBranches();
-      }
-      if (S.selCommit){ 
-          await showCommit(S.selCommit.repo, S.selCommit.sha); 
-      }
-      stamp(repoStamp);
+    };
+    
+    function renderBranches() {
+        const repo=S.repo; const list=S.branches[repo]||[];
+        branchesBox.innerHTML = !list.length ? '브랜치가 없습니다.' : list.map(b => {
+        const key=`${repo}|${b.name}`; const open=S.opened.has(key);
+        return `<div class="branch"><div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button data-key="${key}">${open?'닫기':'열기'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div></div>`;
+        }).join('');
     }
+
+    branchesBox.addEventListener('click', async (e) => {
+        if (e.target.tagName !== 'BUTTON') return;
+        const btn = e.target; const key = btn.dataset.key; const panel = btn.closest('.branch').querySelector('.panel');
+        if (panel.style.display==='none') { S.opened.add(key); btn.textContent='닫기'; panel.style.display=''; await loadCommits(key, panel); }
+        else { S.opened.delete(key); btn.textContent='열기'; panel.style.display='none'; }
+    });
+
+    async function loadCommits(key, panel) {
+        const [repo, branch] = key.split('|'); panel.textContent='...';
+        const d=await api('/commits',{repo,branch});
+        panel.innerHTML = (d.commits||[]).map(c=>`<div class="commit" data-repo="${repo}" data-sha="${c.sha}"><div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div></div>`).join('');
+    }
+
+    branchesBox.addEventListener('click', e => {
+        const commitEl = e.target.closest('.commit');
+        if(commitEl) showCommit(commitEl.dataset.repo, commitEl.dataset.sha);
+    });
+
+    async function showCommit(repo, sha) {
+        S.selCommit={repo,sha}; detailBox.textContent='...';
+        updateSecuritySummary('loading');
+        const [details, security] = await Promise.all([
+            api('/commit_detail', {repo, sha}),
+            api('/security_status', {repo, ref: sha})
+        ]);
+        detailBox.innerHTML = `<div class="field"><h3>제목</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>작성자</h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
+        updateSecuritySummary(security);
+    }
+
+    function updateSecuritySummary(data) {
+        btnDetails.disabled = true;
+        if (!data || data === 'loading') {
+            securityCard.className = 'card status-unknown';
+            statusIcon.innerHTML = ICONS.unknown;
+            summaryTitle.textContent = '보안 현황 분석 중...';
+            summaryText.textContent = '잠시만 기다려 주세요.';
+            return;
+        }
+
+        const statuses = [data.defender.status, data.sentinel.status, data.bricks.status];
+        const overallStatus = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
+        const issues = statuses.filter(s => s === 'bad' || s === 'warn').length;
+
+        securityCard.className = `card status-${overallStatus}`;
+        statusIcon.innerHTML = ICONS[overallStatus];
+        statusIcon.style.backgroundColor = `var(--status-${overallStatus}-icon)`;
+        statusIcon.style.color = `var(--status-${overallStatus}-bg)`;
+        
+        summaryTitle.textContent = {good: '양호', warn: '주의 필요', bad: '심각'}[overallStatus];
+        summaryText.textContent = issues > 0 ? `${issues}개 항목 확인 필요` : '모든 항목이 안전합니다.';
+        btnDetails.disabled = false;
+    }
+
+    function refreshAll() { /* ... */ }
+    function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false}); el.textContent=`마지막 새로 고침: ${now}`; }
     function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
-    function ago(d){const s=Math.floor((Date.now()-d.getTime())/1000); if(s<5)return'방금'; const u=[['일',86400],['시간',3600],['분',60]]; for(const[k,t]of u){const v=Math.floor(s/t); if(v>=1)return`${v}${k} 전`;} return`${s}초 전`; }
+    function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < 180000; }
+    function ago(d){const s=(Date.now()-new Date(d).getTime())/1000; if(s<60)return'방금 전';if(s<3600)return`${Math.floor(s/60)}분 전`;if(s<86400)return`${Math.floor(s/3600)}시간 전`;return`${Math.floor(s/86400)}일 전`;}
+    
   })();
   </script>
 </body>
 </html>
+
