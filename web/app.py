@@ -151,7 +151,6 @@ def api_my_repos():
     ]
     return jsonify({"repos": trimmed})
 
-# --- 수정된 부분: 브랜치의 마지막 커밋 시간 정보 추가 ---
 @app.get("/api/branches")
 def api_branches():
     repo = request.args.get("repo")
@@ -164,18 +163,15 @@ def api_branches():
     out = []
     for b in branches_data:
         sha = (b.get("commit") or {}).get("sha")
-        # 각 브랜치의 최신 커밋 정보를 가져와서 날짜를 포함시킴
         commit_url = f"{GITHUB_URL_BASE}/repos/{repo}/commits/{sha}"
         try:
             commit_data, _ = _gh_get(commit_url)
             commit_date = (commit_data.get("commit", {}).get("author") or {}).get("date")
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": commit_date})
         except requests.exceptions.RequestException:
-            # 커밋 정보를 가져오지 못하면 날짜 없이 추가
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
 
     return jsonify({"branches": out})
-# --- 수정 끝 ---
 
 @app.get("/api/commits")
 def api_commits():
@@ -236,6 +232,47 @@ def api_commit_detail():
         ],
         "html_url": data.get("html_url"),
     })
+
+@app.get("/api/sbom")
+def api_sbom():
+    repo = request.args.get("repo")
+    if not repo: return jsonify({"error": "repo required"}), 400
+    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
+
+    sbom_url = f"{GITHUB_URL_BASE}/repos/{repo}/dependency-graph/sbom"
+    log.info(f"Fetching SBOM for repository: {repo}")
+    
+    try:
+        sbom_res, _ = _gh_get(sbom_url)
+        
+        dependencies = []
+        sbom_data = sbom_res.get('sbom', {})
+        packages = sbom_data.get('packages', [])
+        
+        repo_name_lower = repo.split('/')[1].lower() if '/' in repo else ''
+        
+        for pkg in packages:
+            name = pkg.get('name', '')
+            version = pkg.get('versionInfo', '')
+            if name and repo_name_lower not in name.lower():
+                dependencies.append(f"{name} (version: {version or 'N/A'})")
+
+        return jsonify({
+            "repository": repo,
+            "dependency_count": len(dependencies),
+            "dependencies": sorted(dependencies)
+        })
+
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return jsonify(error="Dependency graph is not enabled for this repository, or the SBOM could not be found."), 404
+        elif e.response.status_code == 403:
+             return jsonify(error="Permission denied. The dependency graph may be disabled in the repository settings."), 403
+        log.exception(f"HTTP error while fetching SBOM for {repo}")
+        return jsonify(error=f"Error fetching dependency graph: {e.response.status_code}"), e.response.status_code
+    except Exception:
+        log.exception(f"Failed to process SBOM for {repo}")
+        return jsonify(error="An unexpected error occurred while processing SBOM."), 500
 
 # ---------- 오류 처리 ----------
 @app.errorhandler(PermissionError)
