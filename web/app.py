@@ -151,6 +151,7 @@ def api_my_repos():
     ]
     return jsonify({"repos": trimmed})
 
+# --- 수정된 부분: 브랜치의 마지막 커밋 시간 정보 추가 ---
 @app.get("/api/branches")
 def api_branches():
     repo = request.args.get("repo")
@@ -158,9 +159,23 @@ def api_branches():
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
 
     url = GITHUB_URL_REPO_BRANCHES.format(repo=repo)
-    branches = _page_all(url, params={"per_page": 100}, max_pages=3)
-    out = [{"name": b.get("name"), "sha": (b.get("commit") or {}).get("sha")} for b in branches]
+    branches_data = _page_all(url, params={"per_page": 100}, max_pages=3)
+    
+    out = []
+    for b in branches_data:
+        sha = (b.get("commit") or {}).get("sha")
+        # 각 브랜치의 최신 커밋 정보를 가져와서 날짜를 포함시킴
+        commit_url = f"{GITHUB_URL_BASE}/repos/{repo}/commits/{sha}"
+        try:
+            commit_data, _ = _gh_get(commit_url)
+            commit_date = (commit_data.get("commit", {}).get("author") or {}).get("date")
+            out.append({"name": b.get("name"), "sha": sha, "last_commit_date": commit_date})
+        except requests.exceptions.RequestException:
+            # 커밋 정보를 가져오지 못하면 날짜 없이 추가
+            out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
+
     return jsonify({"branches": out})
+# --- 수정 끝 ---
 
 @app.get("/api/commits")
 def api_commits():
