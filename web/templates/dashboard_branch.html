@@ -8,14 +8,18 @@
     :root{
       --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
       --text-main: #111827; --text-muted: #6b7280; --text-accent: #3b82f6; --panel-hover: #f9fafb; --vh: 100vh;
+      --status-good: #dcfce7; --status-good-text: #166534;
+      --status-warn: #fef9c3; --status-warn-text: #854d0e;
+      --status-bad: #fee2e2; --status-bad-text: #991b1b;
+      --status-unknown: #f3f4f6; --status-unknown-text: #4b5563;
       --status-recent: #22c55e;
     }
     *{box-sizing:border-box}
     html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; font-size: 15px; line-height: 1.5; }
     a{color:var(--text-accent); text-decoration:none} a:hover{text-decoration:underline}
-    .wrap{max-width:1400px; margin:0 auto; padding:24px}
+    .wrap{max-width:1400px; margin:0 auto; padding:24px; display:flex; flex-direction:column; height:100%;}
     .monospace{font-family: ui-monospace,"Fira Code",Consolas,Menlo,monospace;}
-    .toolbar{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:20px}
+    .toolbar{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:16px; flex-shrink: 0;}
     .toolbar-left{display:flex; gap:8px; align-items:center; flex:1 1 480px}
     .toolbar-right{display:flex; gap:8px; align-items:center}
     .input{ width:100%; padding:10px 14px; border:1px solid var(--border); background:var(--panel); color:var(--text-main); border-radius:8px; outline:none; font-size:15px; box-shadow: var(--shadow); }
@@ -23,43 +27,60 @@
     button{ padding:8px 16px; border:1px solid var(--border); border-radius:8px; background:var(--panel); font-size: 14px; font-weight:500; cursor:pointer; box-shadow: var(--shadow); transition: background-color 0.2s; }
     button:hover{background-color: #f3f4f6;}
     button:disabled{cursor:not-allowed; opacity:0.6;}
-    .row{ display:grid; grid-template-columns:minmax(360px, 1.2fr) 2fr minmax(420px, 1.5fr); gap:20px; height:calc(var(--vh) - 100px); min-height:500px; }
+    
+    .main-grid { display: flex; flex-direction: column; gap: 16px; flex-grow: 1; min-height: 0; }
+    .grid-row { display: grid; gap: 16px; }
+    .grid-row-top { grid-template-columns: 1fr; flex-shrink: 0; }
+    .grid-row-mid { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); flex: 1; min-height: 0;}
+    .grid-row-bottom { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); flex-shrink: 0; }
+
     .card{ display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; background:var(--panel); min-height:0; box-shadow: var(--shadow); }
-    .card h2{ margin:0; padding:12px 20px; border-bottom:1px solid var(--border); font-size:16px; font-weight:600; }
-    .body{padding:12px; overflow:auto; min-height:0; display:flex; flex-direction:column; gap:8px}
+    .card h2{ margin:0; padding:10px 16px; border-bottom:1px solid var(--border); font-size:14px; font-weight:600; }
+    .body{padding:12px; overflow:auto; min-height:0;}
     .stamp{padding:0 8px 8px 8px; font-size:12px; color:var(--text-muted)}
-    .repo-item{ display:flex; align-items:center; gap:12px; justify-content:space-between; padding:12px 14px; border:none; border-radius:8px; background:transparent; cursor:pointer; overflow:hidden; width:100%; text-align:left; transition: background-color 0.2s; }
+    
+    /* 레포 목록 스타일 */
+    .repo-item{ display:flex; align-items:center; gap:12px; justify-content:space-between; padding:10px 12px; border:none; border-radius:8px; background:transparent; cursor:pointer; overflow:hidden; width:100%; text-align:left; transition: background-color 0.2s; }
     .repo-item:hover{background-color: var(--panel-hover);}
-    .repo-name{font-weight:500; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-    .repo-meta{font-size:13px; color:var(--text-muted); flex:0 0 140px; text-align:right; white-space:nowrap;}
-    .branch{border:1px solid var(--border); border-radius:10px; overflow:hidden;}
-    .branch-head{ display:flex; gap:12px; align-items:center; background:var(--panel-hover); padding:10px 16px; font-size:16px; }
+    .repo-name{font-weight:500; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px;}
+    .repo-meta{font-size:12px; color:var(--text-muted); flex:0 0 140px; text-align:right; white-space:nowrap;}
+    .status-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; background-color: var(--status-recent); box-shadow: 0 0 5px var(--status-recent); }
+
+    /* 중단 영역 (브랜치, 커밋상세) 스타일 */
+    #midBody { display: flex; flex-direction: column; height: 100%; }
+    #branches-container { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+    #detail-container { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+
+    .branch{border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+    .branch-head{ display:flex; gap:8px; align-items:center; background:var(--panel-hover); padding:8px 12px; font-size:14px; }
     .branch-head b{flex-grow:1;}
-    .sha-tag{ border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:12px; color:var(--text-muted); background: var(--panel); }
-    .panel{padding:8px; overflow:auto}
-    .commit{ display:grid; grid-template-columns:1fr auto; gap:12px; border:none; border-radius:8px; padding:10px 12px; margin-bottom:4px; cursor:pointer; transition: background-color 0.2s; }
+    .sha-tag{ border:1px solid var(--border); border-radius:999px; padding:1px 6px; font-size:11px; color:var(--text-muted); background: var(--panel); }
+    .panel{padding:6px; overflow:auto}
+    .commit{ display:grid; grid-template-columns:1fr auto; gap:8px; border:none; border-radius:6px; padding:8px 10px; margin-bottom:4px; cursor:pointer; transition: background-color 0.2s; }
     .commit:hover{background:var(--panel-hover)}
-    .commit .sha{color:var(--text-muted); font-size:13px;}
-    .card:last-child .body { padding: 0; }
-    #detail { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .detail-top, .detail-files { padding: 12px; }
-    .detail-top { flex-shrink: 0; }
-    .detail-files { flex-grow: 1; border-top: 1px solid var(--border); overflow-y: auto; }
-    .detail-top .field { border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:6px; }
-    .detail-top .field h3{ margin:0; padding:4px 10px; background:var(--panel-hover); font-size:11px; font-weight:600; color:var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-    .detail-top .field .val{ padding:6px 10px; font-size:14px; }
-    .detail-files .field {border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:8px;}
-    .detail-files .field h3{ margin:0; padding:6px 12px; background:var(--panel-hover); font-size:12px; font-weight:600; color:var(--text-muted); }
-    .detail-files .field .val{padding:10px 12px; font-size:14px;}
+    .commit .msg { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+    .commit .meta { font-size: 11px; color: var(--text-muted); }
+    .commit .sha{color:var(--text-muted); font-size:12px;}
+
+    .detail .field { border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:6px; }
+    .detail .field h3{ margin:0; padding:3px 8px; background:var(--panel-hover); font-size:10px; font-weight:600; color:var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail .field .val{ padding:5px 8px; font-size:13px; }
     .plus{color:#16a34a}.minus{color:#dc2626}
     .detail .val a{font-weight:500;}
-    .status-indicator { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: middle; background-color: var(--status-recent); box-shadow: 0 0 5px var(--status-recent); }
-    .sbom-container { padding: 12px; overflow-y: auto; flex-grow: 1;}
-    .sbom-container h3 { margin-top:0; font-size: 16px; }
-    .sbom-list { list-style-type: none; padding-left: 0; font-size: 14px; }
-    .sbom-list li { padding: 6px 0; border-bottom: 1px solid var(--border); }
-    .sbom-list li:last-child { border-bottom: none; }
-    .error-box { padding: 20px; color: var(--text-muted); text-align: center; }
+
+    /* 하단 보안 카드 스타일 */
+    .security-card .body { padding: 16px; text-align: center; }
+    .security-card h3 { margin: 0 0 4px 0; font-size: 16px; font-weight: 600; }
+    .security-card p { margin: 0; font-size: 14px; }
+    
+    .status-good { background-color: var(--status-good); }
+    .status-good h3, .status-good p { color: var(--status-good-text); }
+    .status-warn { background-color: var(--status-warn); }
+    .status-warn h3, .status-warn p { color: var(--status-warn-text); }
+    .status-bad { background-color: var(--status-bad); }
+    .status-bad h3, .status-bad p { color: var(--status-bad-text); }
+    .status-unknown { background-color: var(--status-unknown); }
+    .status-unknown h3, .status-unknown p { color: var(--status-unknown-text); }
   </style>
 </head>
 <body>
@@ -68,71 +89,87 @@
       <div class="toolbar-left"><input id="repoFilter" class="input" placeholder="리포지토리 검색 (owner/name)..." /></div>
       <div class="toolbar-right">
         <button id="btnSync">새로고침</button>
-        <button id="btnSbom" disabled>SBOM</button>
-        <a href="{{ url_for('logout') }}"><button type="button">로그아웃</button></a>
         <span>로그인 사용자: <b id="userId">{{ user_id }}</b></span>
+        <a href="{{ url_for('logout') }}"><button type="button">로그아웃</button></a>
       </div>
     </div>
-    <div class="row">
-      <section class="card">
-        <h2>나의 리포지토리</h2>
-        <div class="body"><div id="repoList"></div></div>
-        <div id="repoStamp" class="stamp"></div>
-      </section>
-      <section class="card">
-        <h2>브랜치 & 커밋</h2>
-        <div class="body" id="midBody"><div id="branches">리포를 선택하세요.</div></div>
-        <div id="branchStamp" class="stamp"></div>
-      </section>
-      <section class="card">
-        <h2>커밋 상세</h2>
-        <div class="body"><div id="detail" class="detail"></div></div>
-        <div id="detailStamp" class="stamp"></div>
-      </section>
+    
+    <div class="main-grid">
+      <div class="grid-row grid-row-top">
+        <section class="card">
+          <h2>나의 리포지토리</h2>
+          <div class="body" id="repoList" style="max-height: 200px;"></div>
+          <div id="repoStamp" class="stamp"></div>
+        </section>
+      </div>
+
+      <div class="grid-row grid-row-mid">
+        <section class="card">
+          <h2>브랜치 & 커밋</h2>
+          <div id="midBody" class="body">
+            <div id="branches-container">리포를 선택하세요.</div>
+          </div>
+        </section>
+        <section class="card">
+          <h2>커밋 상세</h2>
+          <div id="detail" class="body detail">
+            <div id="detail-container"></div>
+          </div>
+        </section>
+      </div>
+      
+      <div class="grid-row grid-row-bottom">
+        <section id="defenderCard" class="card security-card status-unknown">
+          <div class="body">
+            <h3>Defender</h3>
+            <p>커밋을 선택하세요.</p>
+          </div>
+        </section>
+        <section id="sentinelCard" class="card security-card status-unknown">
+          <div class="body">
+            <h3>Sentinel</h3>
+            <p>커밋을 선택하세요.</p>
+          </div>
+        </section>
+        <section id="bricksCard" class="card security-card status-unknown">
+          <div class="body">
+            <h3>BRICKS Model</h3>
+            <p>커밋을 선택하세요.</p>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 
   <script>
   (()=>{
     const $ = (s,el=document)=>el.querySelector(s);
-    const $$= (s,el=document)=>Array.from(el.querySelectorAll(s));
-    const setVH = ()=>document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
-    window.addEventListener('resize', setVH); setVH();
-    function sizePanelToBottom(panel){
-      const midBody = $('#midBody'); if(!midBody) return;
-      const bodyRect = midBody.getBoundingClientRect();
-      const pRect    = panel.getBoundingClientRect();
-      const h = Math.max(150, Math.floor(bodyRect.bottom - pRect.top - 12));
-      panel.style.maxHeight = h + 'px';
-    }
-    function syncAllPanels(){ $$('.panel').forEach(sizePanelToBottom); }
-    window.addEventListener('resize', syncAllPanels);
-    window.__syncCommitPanelHeights = syncAllPanels;
     const S = { repos:[], repo:null, branches:{}, opened:new Set(), selCommit:null };
+    
+    // UI Elements
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
-    const branchesBox = $('#branches'), branchStamp=$('#branchStamp');
-    const detailBox = $('#detail'), detailStamp=$('#detailStamp');
+    const branchesBox = $('#branches-container');
+    const detailBox = $('#detail-container');
+    const defenderCard = $('#defenderCard'), sentinelCard = $('#sentinelCard'), bricksCard = $('#bricksCard');
     const filter = $('#repoFilter'); 
     const btnSync = $('#btnSync');
-    const btnSbom = $('#btnSbom');
+    
     btnSync.addEventListener('click', refreshAll);
-    btnSbom.addEventListener('click', ()=>showSbom(S.repo));
     filter.addEventListener('input', renderRepos);
     
     document.addEventListener('DOMContentLoaded', init);
     
     async function init(){
-      await loadRepos(); stampAll();
-      const obs = new MutationObserver(syncAllPanels);
-      obs.observe($('#midBody'), {childList:true, subtree:true});
+      await loadRepos(); stamp(repoStamp);
       setInterval(refreshAll, 60000);
     }
+
     function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}); el.textContent=`마지막 새로 고침: ${now} (KST)`; }
-    function stampAll(){ [repoStamp,branchStamp,detailStamp].forEach(x=>x&&stamp(x)); }
+    
     async function api(path, params={}){
       const qs = new URLSearchParams(params); const url = path + (qs.toString()?`?${qs}`:'');
       const r = await fetch(url); 
-      if(r.status===401) { location.href="{{ url_for('index') }}"; return; }
+      if(r.status===401) { location.href="{{ url_for('login') }}"; return; }
       if (!r.ok) {
         const errData = await r.json().catch(()=>({error: r.statusText}));
         throw new Error(errData.error || `HTTP error ${r.status}`);
@@ -146,7 +183,7 @@
       return diffMinutes >= 0 && diffMinutes < RECENT_THRESHOLD_MINUTES;
     }
 
-    async function loadRepos(){ const d=await api('/api/my_repos'); S.repos=d.repos||[]; renderRepos(); stamp(repoStamp); }
+    async function loadRepos(){ const d=await api('/api/my_repos'); S.repos=d.repos||[]; renderRepos(); }
 
     function renderRepos(){
       const q=(filter.value||'').toLowerCase(); const frag=document.createDocumentFragment();
@@ -162,21 +199,17 @@
     
     async function selectRepo(repo){
       S.repo=repo; branchesBox.textContent='브랜치 불러오는 중...'; detailBox.innerHTML = '';
-      btnSbom.disabled = false;
+      resetSecurityCards();
       const d=await api('/api/branches',{repo});
       S.branches[repo] = sortBranchesMainFirst(d.branches || []);
-      renderBranches(); stamp(branchStamp);
-      requestAnimationFrame(syncAllPanels);
+      renderBranches();
     }
+
     function sortBranchesMainFirst(list){
-      const copy=[...(list||[])];
-      copy.sort((a,b)=>{
-        const an=(a.name||''), bn=(b.name||'');
-        if(an==='main') return -1;
-        if(bn==='main') return  1;
-        return an.localeCompare(bn, undefined, {sensitivity:'base'});
+      return [...(list||[])].sort((a,b)=>{
+        if(a.name==='main') return -1; if(b.name==='main') return 1;
+        return (a.name||'').localeCompare(b.name||'', undefined, {sensitivity:'base'});
       });
-      return copy;
     }
     
     function renderBranches(){
@@ -199,12 +232,9 @@
           if (panel.style.display==='none'){
             S.opened.add(key); btn.textContent='닫기'; panel.style.display='';
             await loadCommits(repo,b.name,panel);
-          } else {
-            S.opened.delete(key); btn.textContent='열기'; panel.style.display='none';
-          }
-          requestAnimationFrame(()=>sizePanelToBottom(panel));
+          } else { S.opened.delete(key); btn.textContent='열기'; panel.style.display='none'; }
         });
-        if (open) loadCommits(repo,b.name,panel).then(()=>sizePanelToBottom(panel)).catch(()=>{});
+        if (open) loadCommits(repo,b.name,panel);
         frag.appendChild(wrap);
       });
       branchesBox.replaceChildren(frag);
@@ -217,39 +247,31 @@
       items.forEach(c=>{
         const row=document.createElement('div'); row.className='commit';
         const recentIndicator = isRecent(c.date) ? '<span class="status-indicator"></span>' : '';
-        row.innerHTML=`<div><div>${recentIndicator}${esc(c.message||'(no message)')}</div><div class="repo-meta">${esc(c.author||'')} · ${c.date?ago(new Date(c.date)):''}</div></div><div class="sha monospace">${(c.sha||'').slice(0,7)}</div>`;
+        row.innerHTML=`<div><div class="msg">${recentIndicator}${esc(c.message||'(no message)')}</div><div class="meta">${esc(c.author||'')} · ${c.date?ago(new Date(c.date)):''}</div></div><div class="sha monospace">${(c.sha||'').slice(0,7)}</div>`;
         row.onclick=()=>showCommit(repo,c.sha);
         frag.appendChild(row);
       });
       panel.replaceChildren(frag);
-      requestAnimationFrame(()=>sizePanelToBottom(panel));
     }
 
     async function showCommit(repo, sha){
       S.selCommit={repo,sha};
-      detailBox.innerHTML='<div style="padding:12px;">상세 불러오는 중...</div>';
+      detailBox.innerHTML='상세 불러오는 중...';
+      updateSecurityCards({status:'loading'});
 
-      // 두 API(커밋 상세, 보안 상태)를 동시에 호출해서 더 빠르게 결과를 가져옵니다.
       const [commitDetails, securityStatus] = await Promise.all([
         api('/api/commit_detail', {repo, sha}),
-        api('/api/security_status', {repo, ref: sha}) // 1단계에서 만든 API 호출
-      ]);
+        api('/api/security_status', {repo, ref: sha})
+      ]).catch(err => {
+        console.error("Error loading commit details:", err);
+        detailBox.innerHTML = '데이터를 불러오는 데 실패했습니다.';
+        updateSecurityCards({status:'error'});
+        return [null, null];
+      });
 
-      // 보안 상태를 표시할 HTML 블록을 만듭니다.
-      const securityHTML = `
-        <div class="field">
-          <h3>보안 검토 결과</h3>
-          <div class="val">${esc(securityStatus.status || 'N/A')}</div>
-        </div>
-        <div class="field">
-          <h3>보안 요약</h3>
-          <div class="val">${esc(securityStatus.summary || '결과 없음')}</div>
-        </div>
-      `;
+      if (!commitDetails) return;
 
-      // 기존 상세 정보 HTML의 맨 위에 보안 상태 HTML을 추가합니다.
       const topInfoHTML = `
-        ${securityHTML}
         <div class="field"><h3>제목</h3><div class="val">${esc((commitDetails.message||'').split('\n')[0])}</div></div>
         <div class="field"><h3>작성자</h3><div class="val">${esc(commitDetails.author||'')}</div></div>
         <div class="field"><h3>날짜(KST)</h3><div class="val">${commitDetails.date?new Date(commitDetails.date).toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}):''}</div></div>
@@ -257,35 +279,36 @@
         <div class="field"><h3>변경</h3><div class="val">총 ${commitDetails.stats?.total??0} (<span class="plus">+${commitDetails.stats?.additions??0}</span> / <span class="minus">-${commitDetails.stats?.deletions??0}</span>)</div></div>
         <div class="field"><h3>GitHub에서 보기</h3><div class="val"><a href="${commitDetails.html_url}" target="_blank" rel="noopener">열기</a></div></div>
       `;
+      const filesHTML = (commitDetails.files||[]).map(f=>`<div class="val">${esc(f.filename)}</div>`).join('');
+      detailBox.innerHTML = `${topInfoHTML}<div class="field"><h3>변경 파일</h3>${filesHTML||'<div class="val">-</div>'}</div>`;
       
-      const filesHTML = (commitDetails.files||[]).slice(0,100).map(f=>{ const diff=(f.additions||0)-(f.deletions||0); const s = diff>=0?`<span class="plus">+${diff}</span>`:`<span class="minus">${diff}</span>`; return `<div class="field"><h3>${esc(f.filename)}</h3><div class="val monospace">${esc(f.status||'')} · +${f.additions||0} / -${f.deletions||0} (${s})</div></div>`; }).join('');
-      
-      detailBox.innerHTML = `<div class="detail-top">${topInfoHTML}</div><div class="detail-files"><div class="field"><h3>Files (상위)</h3></div>${filesHTML || '<div style="padding:12px; color:var(--text-muted);">변경 파일 없음</div>'}</div>`;
-      stamp(detailStamp);
+      updateSecurityCards(securityStatus);
+    }
+
+    function updateSecurityCards(data) {
+        if (!data || data.status === 'error') {
+            resetSecurityCards('데이터 로드 실패');
+            return;
+        }
+        if (data.status === 'loading') {
+            resetSecurityCards('결과 분석 중...');
+            return;
+        }
+        
+        const cards = { defender: defenderCard, sentinel: sentinelCard, bricks: bricksCard };
+        for (const key in cards) {
+            const card = cards[key];
+            const result = data[key] || { status: 'unknown', summary: '데이터 없음' };
+            card.className = `card security-card status-${result.status}`;
+            card.querySelector('p').textContent = result.summary;
+        }
     }
     
-    async function showSbom(repo) {
-        if (!repo) return;
-        S.selCommit = null;
-        detailBox.parentElement.previousElementSibling.textContent = "SBOM 상세"; // Card H2 title 변경
-        detailBox.innerHTML = '<div class="sbom-container"><h3>SBOM 불러오는 중...</h3></div>';
-        try {
-            const d = await api('/api/sbom', { repo });
-            const depsHtml = d.dependencies.length 
-                ? d.dependencies.map(dep => `<li>${esc(dep)}</li>`).join('')
-                : '<li>발견된 의존성이 없습니다.</li>';
-
-            detailBox.innerHTML = `
-                <div class="sbom-container">
-                    <h3>${esc(d.repository)}</h3>
-                    <p>${d.dependency_count}개의 의존성 발견</p>
-                    <ul class="sbom-list">${depsHtml}</ul>
-                </div>
-            `;
-        } catch (e) {
-            detailBox.innerHTML = `<div class="error-box"><h3>SBOM을 불러올 수 없습니다</h3><p>${esc(e.message)}</p></div>`;
-        }
-        stamp(detailStamp);
+    function resetSecurityCards(message = '커밋을 선택하세요.') {
+        [defenderCard, sentinelCard, bricksCard].forEach(card => {
+            card.className = 'card security-card status-unknown';
+            card.querySelector('p').textContent = message;
+        });
     }
 
     async function refreshAll(){
@@ -294,17 +317,11 @@
         const d=await api('/api/branches',{repo:S.repo});
         S.branches[S.repo]=sortBranchesMainFirst(d.branches||[]);
         renderBranches();
-        for (const key of [...S.opened]) {
-          const [repo,branch]=key.split('|');
-          const card=[...$$('.branch')].find(x=>x.querySelector('.branch-head b')?.textContent===branch);
-          if(card){ const panel=card.querySelector('.panel'); await loadCommits(repo,branch,panel); }
-        }
       }
       if (S.selCommit){ 
-          detailBox.parentElement.previousElementSibling.textContent = "커밋 상세";
           await showCommit(S.selCommit.repo, S.selCommit.sha); 
       }
-      stampAll(); requestAnimationFrame(syncAllPanels);
+      stamp(repoStamp);
     }
     function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
     function ago(d){const s=Math.floor((Date.now()-d.getTime())/1000); if(s<5)return'방금'; const u=[['일',86400],['시간',3600],['분',60]]; for(const[k,t]of u){const v=Math.floor(s/t); if(v>=1)return`${v}${k} 전`;} return`${s}초 전`; }

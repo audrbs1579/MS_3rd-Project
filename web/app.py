@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import random # 임의의 심각도 생성을 위해 추가
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -16,7 +17,8 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
-GITHUB_OAUTH_SCOPE = "repo"
+# security_events 스코프를 추가하여 코드 스캐닝 결과에 접근할 권한을 요청합니다.
+GITHUB_OAUTH_SCOPE = "repo,security_events"
 TIMEOUT = 15
 
 # GitHub API URL
@@ -233,88 +235,50 @@ def api_commit_detail():
         "html_url": data.get("html_url"),
     })
 
-@app.get("/api/sbom")
-def api_sbom():
-    repo = request.args.get("repo")
-    if not repo: return jsonify({"error": "repo required"}), 400
-    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
-
-    sbom_url = f"{GITHUB_URL_BASE}/repos/{repo}/dependency-graph/sbom"
-    log.info(f"Fetching SBOM for repository: {repo}")
-    
-    try:
-        sbom_res, _ = _gh_get(sbom_url)
-        
-        dependencies = []
-        sbom_data = sbom_res.get('sbom', {})
-        packages = sbom_data.get('packages', [])
-        
-        repo_name_lower = repo.split('/')[1].lower() if '/' in repo else ''
-        
-        for pkg in packages:
-            name = pkg.get('name', '')
-            version = pkg.get('versionInfo', '')
-            if name and repo_name_lower not in name.lower():
-                dependencies.append(f"{name} (version: {version or 'N/A'})")
-
-        return jsonify({
-            "repository": repo,
-            "dependency_count": len(dependencies),
-            "dependencies": sorted(dependencies)
-        })
-
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            return jsonify(error="Dependency graph is not enabled for this repository, or the SBOM could not be found."), 404
-        elif e.response.status_code == 403:
-             return jsonify(error="Permission denied. The dependency graph may be disabled in the repository settings."), 403
-        log.exception(f"HTTP error while fetching SBOM for {repo}")
-        return jsonify(error=f"Error fetching dependency graph: {e.response.status_code}"), e.response.status_code
-    except Exception:
-        log.exception(f"Failed to process SBOM for {repo}")
-        return jsonify(error="An unexpected error occurred while processing SBOM."), 500
-
 @app.get("/api/security_status")
 def api_security_status():
     repo = request.args.get("repo")
-    ref = request.args.get("ref") # ref는 브랜치 이름 또는 커밋 SHA가 될 수 있습니다.
-    if not repo or not ref:
-        return jsonify({"error": "repo and ref required"}), 400
-    if "access_token" not in session:
-        return jsonify({"error": "unauthorized"}), 401
+    ref = request.args.get("ref")
+    if not repo or not ref: return jsonify({"error": "repo and ref required"}), 400
+    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
 
-    # GitHub Code Scanning API를 사용하여 특정 커밋의 분석 결과를 가져옵니다.
     url = f"{GITHUB_URL_BASE}/repos/{repo}/code-scanning/alerts"
     params = {"ref": ref, "per_page": 100}
     
     try:
         alerts, _ = _gh_get(url, params=params)
         
-        # === 나중에 BRICKS 모델로 교체할 부분 ===
-        is_vulnerable = any(alert.get('rule', {}).get('severity') in ['critical', 'high'] for alert in alerts)
+        # Defender 결과 시뮬레이션
+        high_alerts = [a for a in alerts if a.get('rule', {}).get('severity') in ['critical', 'high']]
         
-        if is_vulnerable:
-            status = "취약 (Vulnerable)"
-            summary = f"심각도 'high' 이상의 보안 이슈 {len(alerts)}건 발견"
-        elif alerts:
-            status = "경고 (Warning)"
-            summary = f"심각도 'medium' 이하의 보안 이슈 {len(alerts)}건 발견"
-        else:
-            status = "양호 (Good)"
-            summary = "발견된 보안 이슈 없음"
-        # === 여기까지가 BRICKS 모델 연동 영역 ===
+        defender_status = "good"
+        defender_summary = f"CodeQL: {len(alerts)}개의 경고 발견"
+        if len(high_alerts) > 0:
+            defender_status = "bad"
+        elif len(alerts) > 0:
+            defender_status = "warn"
+
+        # Sentinel 및 BRICKS 모델 결과는 임의로 생성
+        sentinel_status = random.choice(["good", "warn", "bad"])
+        sentinel_summary = f"SIEM: {random.randint(0,5)}개의 의심스러운 활동"
+        if sentinel_status == "good": sentinel_summary = "SIEM: 특이사항 없음"
+        
+        # BRICKS 모델은 고정값 0.5와 임의의 심각도 반환
+        bricks_model_value = 0.5
+        bricks_status = random.choice(["good", "warn", "bad"])
 
         return jsonify({
-            "status": status,
-            "summary": summary,
-            "alert_count": len(alerts),
-            "alerts": [] # 필요시 상세 정보 추가
+            "defender": {"status": defender_status, "summary": defender_summary},
+            "sentinel": {"status": sentinel_status, "summary": sentinel_summary},
+            "bricks": {"status": bricks_status, "summary": f"모델 예측 점수: {bricks_model_value}"}
         })
+
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             return jsonify({
-                "status": "알 수 없음",
-                "summary": "보안 스캔이 활성화되지 않았거나 결과가 없습니다.",
+                "defender": {"status": "unknown", "summary": "보안 스캔 결과 없음"},
+                "sentinel": {"status": "unknown", "summary": "데이터 없음"},
+                "bricks": {"status": "unknown", "summary": "분석 불가"}
             })
         raise
     except Exception:
