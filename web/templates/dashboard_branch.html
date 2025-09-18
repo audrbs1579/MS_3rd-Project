@@ -117,7 +117,6 @@
       overflow-y: auto; /* 파일 목록만 스크롤되도록 설정 */
     }
     
-    /* --- 요청사항 반영: 상단 정보 간격 축소 --- */
     .detail-top .field {
       border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:6px; /* 간격 줄임 */
     }
@@ -129,7 +128,6 @@
     .detail-top .field .val{
       padding:6px 10px; font-size:14px; /* 패딩 줄임 */
     }
-    /* 파일 목록의 필드 스타일은 원래대로 유지 */
     .detail-files .field {border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:8px;}
     .detail-files .field h3{
       margin:0; padding:6px 12px; background:var(--panel-hover);
@@ -234,8 +232,10 @@
         .filter(r=>(r.full_name||'').toLowerCase().includes(q))
         .forEach(r=>{
           const b=document.createElement('button'); b.className='repo-item';
-          b.innerHTML=`<span class="repo-name">${esc(r.full_name||r.name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
-          b.onclick=()=>selectRepo(r.full_name); frag.appendChild(b);
+          /* --- 요청사항 반영: full_name 대신 name을 표시 --- */
+          b.innerHTML=`<span class="repo-name">${esc(r.name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
+          b.onclick=()=>selectRepo(r.full_name); // API 호출을 위해 full_name은 그대로 사용
+          frag.appendChild(b);
         });
       repoList.replaceChildren(frag);
     }
