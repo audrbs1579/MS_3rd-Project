@@ -127,7 +127,7 @@
 
     async function api(path, params={}) {
         const qs = new URLSearchParams(params);
-        const url = `${path}?${qs.toString()}`; // **This is the critical fix**
+        const url = `${path}?${qs.toString()}`;
         const r = await fetch(url);
         if(r.status===401) { location.href='/'; throw new Error('Unauthorized'); }
         if (!r.ok) { 
@@ -138,8 +138,13 @@
     }
     
     async function loadRepos(){ 
-        S.repos = (await api('/api/my_repos')).repos || []; 
-        renderRepos(); 
+        try{
+          S.repos = (await api('/api/my_repos')).repos || [];
+          renderRepos();
+        }catch(e){
+          console.error('Failed to load repos:', e);
+          repoList.innerHTML = `<div style="color:#b91c1c">레포지토리를 불러오는 중 오류: ${e.message}</div>`;
+        }
     }
     
     function renderRepos() {
@@ -159,6 +164,7 @@
     }
     
     async function selectRepo(repo) {
+      try {
         S.repo=repo; 
         document.querySelectorAll('.repo-item.selected').forEach(el => el.classList.remove('selected'));
         const currentRepoEl = Array.from(document.querySelectorAll('.repo-item')).find(el => el.textContent.includes(repo));
@@ -167,10 +173,17 @@
         branchesBox.textContent='...'; 
         detailBox.innerHTML = ''; 
         S.selCommit=null;
+
+        // 안전하게 초기화
         updateSecuritySummary('unknown');
-        
-        S.branches[repo] = (await api('/api/branches',{repo})).branches || [];
+
+        const res = await api('/api/branches',{repo});
+        S.branches[repo] = res.branches || [];
         renderBranches(repo);
+      } catch (e) {
+        console.error('Failed to load branches:', e);
+        branchesBox.textContent = `브랜치를 불러오는 중 오류: ${e.message}`;
+      }
     };
     
     function renderBranches(repo) {
@@ -212,7 +225,8 @@
     }
 
     async function loadCommits(key, panel) {
-        const [repo, branch] = key.split('|'); 
+      try {
+        const [repo, branch] = key.split('|');   // ← 핵심 분리
         panel.textContent='...';
         const d=await api('/api/commits',{repo,branch});
         const frag = document.createDocumentFragment();
@@ -225,36 +239,63 @@
         });
         panel.innerHTML = '';
         panel.appendChild(frag);
+      } catch (e) {
+        console.error('Failed to load commits:', e);
+        panel.textContent = `커밋을 불러오는 중 오류: ${e.message}`;
+      }
     }
 
     async function showCommit(repo, sha) {
         S.selCommit={repo,sha}; 
         
         document.querySelectorAll('.commit.selected').forEach(el => el.classList.remove('selected'));
-        // This is tricky, we can't easily find the element without better identifiers
-        
         detailBox.textContent='...';
         updateSecuritySummary('loading');
         
-        const [details, security] = await Promise.all([
-            api('/api/commit_detail', {repo, sha}),
-            api('/api/security_status', {repo, ref: sha})
-        ]);
-        detailBox.innerHTML = `<div class="field"><h3>제목</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>작성자</h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
-        updateSecuritySummary(security);
+        try{
+          const [details, security] = await Promise.all([
+              api('/api/commit_detail', {repo, sha}),
+              api('/api/security_status', {repo, ref: sha})
+          ]);
+          detailBox.innerHTML = `<div class="field"><h3>제목</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>작성자</h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
+          updateSecuritySummary(security);
+        }catch(e){
+          console.error('Failed to load commit detail/security:', e);
+          detailBox.innerHTML = `<div style="color:#b91c1c">상세 조회 중 오류: ${e.message}</div>`;
+          updateSecuritySummary('unknown');
+        }
     }
 
+    // ✅ 방어 로직 보강
     function updateSecuritySummary(data) {
         btnDetails.disabled = true;
-        if (!data || data === 'loading' || (data.defender && data.defender.status === 'unknown')) {
+
+        const isLoading = data === 'loading';
+        const isUnknownInput =
+          data === 'unknown' ||
+          !data ||
+          typeof data !== 'object' ||
+          !('defender' in data) ||
+          !('sentinel' in data) ||
+          !('bricks' in data);
+
+        if (isLoading || isUnknownInput) {
             securityCard.className = 'card status-unknown';
             statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = data === 'loading' ? '보안 현황 분석 중...' : '통합 보안 현황';
-            summaryText.textContent = data === 'loading' ? '잠시만 기다려 주세요.' : '분석할 커밋을 선택하세요.';
+            summaryTitle.textContent = isLoading ? '보안 현황 분석 중...' : '통합 보안 현황';
+            summaryText.textContent = isLoading ? '잠시만 기다려 주세요.' : '분석할 커밋을 선택하세요.';
             return;
         }
 
-        const statuses = [data.defender.status, data.sentinel.status, data.bricks.status];
+        const statuses = [data.defender?.status, data.sentinel?.status, data.bricks?.status].filter(Boolean);
+        if (statuses.length === 0) {
+            securityCard.className = 'card status-unknown';
+            statusIcon.innerHTML = ICONS.unknown;
+            summaryTitle.textContent = '통합 보안 현황';
+            summaryText.textContent = '분석할 커밋을 선택하세요.';
+            return;
+        }
+
         const overallStatus = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
         const issues = statuses.filter(s => s === 'bad' || s === 'warn').length;
 
@@ -268,7 +309,7 @@
         btnDetails.disabled = false;
     }
 
-    async function refreshAll() { /* ... */ }
+    async function refreshAll() { /* 필요 시 구현 */ }
     
     // --- Init & Helpers ---
     document.addEventListener('DOMContentLoaded', () => {
@@ -291,4 +332,3 @@
   </script>
 </body>
 </html>
-
