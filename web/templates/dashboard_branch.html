@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>??쒕낫??/title>
+  <title>대시보드</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
@@ -399,16 +399,34 @@
         }
     });
 
-    function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false}); el.textContent=`留덉?留??덈줈 怨좎묠: ${now}`; }
-    function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
+    function stamp(el) {
+        const now = new Date().toLocaleString('ko-KR', { hour12: false });
+        el.textContent = `Last refresh: ${now}`;
+    }
+    function esc(s) {
+        return (s || '').toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
     function isRecent(d) {
         if (!d) return false;
         return (Date.now() - new Date(d).getTime()) < RECENT_THRESHOLD_MS;
     }
-    function ago(d){const s=(Date.now()-new Date(d).getTime())/1000; if(s<60)return'諛⑷툑 ??;if(s<3600)return`${Math.floor(s/60)}遺???;if(s<86400)return`${Math.floor(s/3600)}?쒓컙 ??;return`${Math.floor(s/86400)}????;}
-    
+    function ago(d) {
+        const seconds = (Date.now() - new Date(d).getTime()) / 1000;
+        if (seconds < 60) return 'just now';
+        if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
+        return `${Math.floor(seconds / 86400)} day(s) ago`;
+    }
+
   })();
   </script>
 </body>
 </html>
+
+
 
