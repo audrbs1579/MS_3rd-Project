@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import random
+import base64
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -58,6 +59,41 @@ def _gh_get(url, params=None, accept_header=None):
     except requests.exceptions.RequestException as e:
         log.error(f"GitHub API request failed for URL {url}: {e}")
         raise
+
+
+def _get_code_excerpt(repo_full_name, ref, path, start_line, end_line):
+    """Fetch a small excerpt of code around the offending lines."""
+    if not path or not start_line:
+        return []
+    url = f"{GITHUB_URL_BASE}/repos/{repo_full_name}/contents/{path}"
+    try:
+        file_data, _ = _gh_get(url, params={"ref": ref})
+    except requests.exceptions.RequestException:
+        return []
+    if not isinstance(file_data, dict):
+        return []
+    if file_data.get('encoding') != 'base64' or not file_data.get('content'):
+        return []
+    try:
+        decoded = base64.b64decode(file_data['content']).decode('utf-8', errors='replace')
+    except Exception:
+        return []
+    lines = decoded.splitlines()
+    if not lines:
+        return []
+    total_lines = len(lines)
+    end_line = end_line or start_line
+    start = max(1, start_line - 2)
+    end = min(total_lines, end_line + 2)
+    excerpt = []
+    for lineno in range(start, end + 1):
+        line_text = lines[lineno - 1] if 0 <= lineno - 1 < total_lines else ''
+        excerpt.append({
+            'line': lineno,
+            'content': line_text,
+            'highlight': start_line <= lineno <= end_line,
+        })
+    return excerpt
 
 # ---------- 라우팅 ----------
 @app.route("/")
@@ -170,32 +206,76 @@ def api_commit_diff():
     diff_text, _ = _gh_get(url, accept_header="application/vnd.github.diff")
     return Response(diff_text, mimetype='text/plain')
 
+
 @app.get("/api/security_status")
 def api_security_status():
     repo, ref = request.args.get("repo"), request.args.get("ref")
-    if not repo or not ref: return jsonify({"error": "repo and ref required"}), 400
-    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
+    if not repo or not ref:
+        return jsonify({"error": "repo and ref required"}), 400
+    if "access_token" not in session:
+        return jsonify({"error": "unauthorized"}), 401
     url = f"{GITHUB_URL_BASE}/repos/{repo}/code-scanning/alerts"
     try:
         alerts, _ = _gh_get(url, params={"ref": ref, "per_page": 100})
         alerts = alerts or []
-        high_alerts = [a for a in alerts if a.get('rule', {}).get('severity') in ['critical', 'high']]
-        defender_status = "bad" if high_alerts else "warn" if alerts else "good"
+        enriched_alerts = []
+        for alert in alerts[:10]:
+            rule = alert.get('rule') or {}
+            severity = (rule.get('severity') or '').lower()
+            most_recent = alert.get('most_recent_instance') or {}
+            location = most_recent.get('location') or {}
+            message = (most_recent.get('message') or {}).get('text') or alert.get('description') or ''
+            path_name = location.get('path') or ''
+            start_line = location.get('start_line') or 0
+            end_line = location.get('end_line') or start_line or 0
+            excerpt = _get_code_excerpt(repo, ref, path_name, start_line or 0, end_line)
+            enriched_alerts.append({
+                'number': alert.get('number'),
+                'rule_id': rule.get('id'),
+                'rule_name': rule.get('name') or rule.get('id'),
+                'severity': severity,
+                'description': message,
+                'path': path_name,
+                'start_line': start_line or None,
+                'end_line': end_line or None,
+                'html_url': alert.get('html_url'),
+                'code_excerpt': excerpt,
+            })
+        high_alerts = [a for a in alerts if (a.get('rule') or {}).get('severity') in ['critical', 'high']]
+        defender_status = 'bad' if high_alerts else 'warn' if alerts else 'good'
         defender_summary = f"CodeQL: {len(alerts)}개 경고"
-        sentinel_status = random.choice(["good", "warn", "bad"])
-        sentinel_summary = f"SIEM: {random.randint(0,5)}개 활동" if sentinel_status != "good" else "SIEM: 특이사항 없음"
-        bricks_status = random.choice(["good", "warn", "bad"])
-        bricks_summary = f"모델 예측 점수: 0.5"
-        return jsonify({"defender": {"status": defender_status, "summary": defender_summary}, "sentinel": {"status": sentinel_status, "summary": sentinel_summary}, "bricks": {"status": bricks_status, "summary": bricks_summary}})
+        sentinel_status = random.choice(['good', 'warn', 'bad'])
+        sentinel_summary = f"SIEM: {random.randint(1,5)}건 활동" if sentinel_status != 'good' else "SIEM: 특이사항 없음"
+        bricks_status = random.choice(['good', 'warn', 'bad'])
+        bricks_summary = "모델 예측 점수: 0.5"
+        return jsonify({
+            'defender': {
+                'status': defender_status,
+                'summary': defender_summary,
+                'alerts': enriched_alerts,
+            },
+            'sentinel': {
+                'status': sentinel_status,
+                'summary': sentinel_summary,
+            },
+            'bricks': {
+                'status': bricks_status,
+                'summary': bricks_summary,
+            }
+        })
     except requests.exceptions.HTTPError as e:
         if e.response.status_code in [404, 403]:
-            return jsonify({"defender": {"status": "unknown", "summary": "결과 없음"}, "sentinel": {"status": "unknown", "summary": "데이터 없음"}, "bricks": {"status": "unknown", "summary": "분석 불가"}})
+            return jsonify({
+                'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []},
+                'sentinel': {'status': 'unknown', 'summary': '데이터 없음'},
+                'bricks': {'status': 'unknown', 'summary': '분석 불가'}
+            })
         raise
     except Exception:
         log.exception(f"Failed to get security status for {repo}@{ref}")
-        return jsonify(error="보안 상태를 가져오는 중 오류 발생"), 500
+        return jsonify(error="보안 상태 가져오기 중 오류 발생"), 500
 
-# ---------- 오류 처리 ----------
+
 @app.errorhandler(PermissionError)
 def _unauth(_):
     session.clear()
