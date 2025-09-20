@@ -250,11 +250,11 @@ def api_security_status():
 
         sentinel = {
             'status': 'good',
-            'summary': 'SIEM: 0건 활동',
+            'summary': 'SIEM: 0개 활동',
         }
         bricks = {
             'status': 'good',
-            'summary': '모델 예측 점수: 0.5',
+            'summary': '모델 예측 점수: 0.8',
         }
 
         return jsonify({
@@ -270,8 +270,8 @@ def api_security_status():
         if e.response.status_code in [404, 403]:
             return jsonify({
                 'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []},
-                'sentinel': {'status': 'good', 'summary': 'SIEM: 0건 활동'},
-                'bricks': {'status': 'good', 'summary': '모델 예측 점수: 0.5'},
+                'sentinel': {'status': 'good', 'summary': 'SIEM: 0개 활동'},
+                'bricks': {'status': 'good', 'summary': '모델 예측 점수: 0.8'},
             })
         raise
     except Exception:

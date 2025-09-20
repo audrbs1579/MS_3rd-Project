@@ -30,7 +30,6 @@
         .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
         .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
         .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
-        #gemini-review-body { white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -43,7 +42,6 @@
             <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><div class="spinner"></div></div></div>
             <div id="sentinelCard" class="card status-unknown"><div class="card-header"><h2>Sentinel</h2></div><div class="card-body"><div class="spinner"></div></div></div>
             <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><div class="spinner"></div></div></div>
-            <div id="geminiCard" class="card status-unknown" style="grid-column: 1 / -1;"><div class="card-header"><h2>✨ AI 코드 리뷰</h2></div><div id="gemini-review-body" class="card-body"><div class="spinner"></div></div></div>
         </main>
     </div>
 
@@ -55,8 +53,6 @@
         const defenderCard = document.getElementById('defenderCard');
         const sentinelCard = document.getElementById('sentinelCard');
         const bricksCard = document.getElementById('bricksCard');
-        const geminiCard = document.getElementById('geminiCard');
-        const geminiBody = document.getElementById('gemini-review-body');
 
         async function api(path, params={}) {
             const qs = new URLSearchParams(params);
@@ -72,48 +68,13 @@
             cardEl.querySelector('.card-body').innerHTML = `<p>${data.summary.replace(/\n/g, '<br>')}</p>`;
         }
 
-        // 보안 상태와 AI 리뷰를 병렬로 로드
-        const [securityStatus, commitDiff] = await Promise.all([
-            api('/security_status', { repo, ref: sha }),
-            api('/commit_diff', { repo, sha })
-        ]);
+        // Load security status data
+        const securityStatus = await api('/security_status', { repo, ref: sha });
 
-        // 보안 카드 업데이트
+        // Update security cards
         updateCard(defenderCard, securityStatus.defender);
         updateCard(sentinelCard, securityStatus.sentinel);
         updateCard(bricksCard, securityStatus.bricks);
-
-        // Gemini AI 리뷰 생성
-        try {
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-            const systemPrompt = "You are an expert code reviewer. Analyze the following code changes in diff format and provide a concise, helpful code review in Korean. Use markdown for formatting.";
-            const userPrompt = `다음 코드 변경사항을 리뷰해 주세요:\n\n\`\`\`diff\n${commitDiff}\n\`\`\``;
-            
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    systemInstruction: { parts: [{ text: systemPrompt }] },
-                    contents: [{ parts: [{ text: userPrompt }] }]
-                })
-            });
-
-            if (!response.ok) throw new Error(`API error ${response.status}`);
-            const result = await response.json();
-            const reviewText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-            
-            if (reviewText) {
-                geminiCard.className = 'card status-good';
-                geminiBody.innerHTML = reviewText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-            } else {
-                throw new Error("No content in response");
-            }
-
-        } catch (e) {
-            geminiCard.className = 'card status-bad';
-            geminiBody.innerHTML = `<p>AI 리뷰 생성에 실패했습니다: ${e.message}</p>`;
-        }
 
     })();
     </script>
