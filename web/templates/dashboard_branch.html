@@ -112,7 +112,10 @@
   (()=>{
     const $ = (s,el=document)=>el.querySelector(s);
     const S = { repo:null, selCommit:null, repos:[], branches:{}, opened:new Set() };
+    const REFRESH_INTERVAL_MS = 60000;
+    let refreshInFlight = false;
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
+    const btnSync = $('#btnSync');
     const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
     const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
     const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
@@ -157,6 +160,7 @@
                 b.className = 'repo-item';
                 b.onclick = () => selectRepo(r.full_name);
                 b.innerHTML = `<span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
+                if (S.repo === r.full_name) { b.classList.add('selected'); }
                 frag.appendChild(b);
             });
         repoList.innerHTML = '';
@@ -224,6 +228,16 @@
         branchesBox.appendChild(frag);
     }
 
+    function highlightSelectedCommit() {
+        document.querySelectorAll('.commit.selected').forEach(el => el.classList.remove('selected'));
+        if (!S.selCommit) return;
+        document.querySelectorAll('.commit').forEach(el => {
+            if (el.dataset.repo === S.selCommit.repo && el.dataset.sha === S.selCommit.sha) {
+                el.classList.add('selected');
+            }
+        });
+    }
+
     async function loadCommits(key, panel) {
       try {
         const [repo, branch] = key.split('|');   // ← 핵심 분리
@@ -233,12 +247,17 @@
         (d.commits||[]).forEach(c => {
             const commitEl = document.createElement('div');
             commitEl.className = 'commit';
+            commitEl.dataset.repo = repo;
+            commitEl.dataset.sha = c.sha;
             commitEl.onclick = () => showCommit(repo, c.sha);
             commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
+            if (S.selCommit && S.selCommit.repo === repo && S.selCommit.sha === c.sha) { commitEl.classList.add('selected'); }
             frag.appendChild(commitEl);
         });
         panel.innerHTML = '';
         panel.appendChild(frag);
+
+        highlightSelectedCommit();
       } catch (e) {
         console.error('Failed to load commits:', e);
         panel.textContent = `커밋을 불러오는 중 오류: ${e.message}`;
@@ -246,9 +265,8 @@
     }
 
     async function showCommit(repo, sha) {
-        S.selCommit={repo,sha}; 
-        
-        document.querySelectorAll('.commit.selected').forEach(el => el.classList.remove('selected'));
+        S.selCommit = { repo, sha };
+        highlightSelectedCommit();
         detailBox.textContent='...';
         updateSecuritySummary('loading');
         
@@ -309,17 +327,74 @@
         btnDetails.disabled = false;
     }
 
-    async function refreshAll() { /* 필요 시 구현 */ }
+    async function refreshAll() {
+        if (refreshInFlight) { return; }
+        refreshInFlight = true;
+        if (btnSync) { btnSync.disabled = true; }
+
+        const prevRepo = S.repo;
+        const prevSelCommit = S.selCommit ? { ...S.selCommit } : null;
+        const prevOpened = new Set(S.opened);
+
+        try {
+            await loadRepos();
+
+            if (prevRepo) {
+                try {
+                    const branchRes = await api('/api/branches', { repo: prevRepo });
+                    S.branches[prevRepo] = branchRes.branches || [];
+
+                    const validKeys = new Set((S.branches[prevRepo] || []).map(b => `${prevRepo}|${b.name}`));
+                    const merged = new Set();
+                    prevOpened.forEach(key => {
+                        if (key.startsWith(`${prevRepo}|`)) {
+                            if (validKeys.has(key)) { merged.add(key); }
+                        } else {
+                            merged.add(key);
+                        }
+                    });
+                    S.opened = merged;
+
+                    S.selCommit = prevSelCommit;
+                    renderBranches(prevRepo);
+
+                    if (prevSelCommit && prevSelCommit.repo === prevRepo) {
+                        try {
+                            await showCommit(prevSelCommit.repo, prevSelCommit.sha);
+                        } catch (commitErr) {
+                            console.error('Failed to refresh selected commit:', commitErr);
+                            S.selCommit = null;
+                            highlightSelectedCommit();
+                        }
+                    } else {
+                        highlightSelectedCommit();
+                    }
+                } catch (branchErr) {
+                    console.error('Failed to refresh branches:', branchErr);
+                }
+            }
+
+            stamp(repoStamp);
+        } catch (err) {
+            console.error('Failed to refresh dashboard:', err);
+        } finally {
+            if (btnSync) { btnSync.disabled = false; }
+            refreshInFlight = false;
+        }
+    }
     
     // --- Init & Helpers ---
     document.addEventListener('DOMContentLoaded', () => {
-        loadRepos(); stamp(repoStamp);
+        refreshAll().catch(err => console.error('Initial refresh failed:', err));
+        setInterval(() => {
+            refreshAll().catch(err => console.error('Auto refresh failed:', err));
+        }, REFRESH_INTERVAL_MS);
     });
     $('#repoFilter').addEventListener('input', renderRepos);
-    $('#btnSync').addEventListener('click', refreshAll);
+    btnSync.addEventListener('click', () => refreshAll());
     btnDetails.addEventListener('click', () => {
-        if(S.selCommit) {
-            window.open(`/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}`, '_blank');
+        if (S.selCommit) {
+            window.location.href = `/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}`;
         }
     });
 
