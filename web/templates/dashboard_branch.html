@@ -1,8 +1,8 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>대시보드</title>
+  <title>??쒕낫??/title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
@@ -67,28 +67,28 @@
 <body>
   <div class="wrap">
     <div class="toolbar">
-      <input id="repoFilter" class="input" placeholder="리포지토리 검색..." />
+      <input id="repoFilter" class="input" placeholder="由ы룷吏?좊━ 寃??.." />
       <div>
-        <button id="btnSync">새로고침</button>
-        <span>사용자: <b>{{ user_id }}</b></span>
-        <a href="/logout"><button type="button">로그아웃</button></a>
+        <button id="btnSync">?덈줈怨좎묠</button>
+        <span>?ъ슜?? <b>{{ user_id }}</b></span>
+        <a href="/logout"><button type="button">濡쒓렇?꾩썐</button></a>
       </div>
     </div>
     
     <div class="main-grid">
       <section class="card">
-        <h2>나의 리포지토리</h2>
+        <h2>?섏쓽 由ы룷吏?좊━</h2>
         <div class="body" id="repoList" style="max-height: 200px;"></div>
         <div id="repoStamp" class="stamp"></div>
       </section>
 
       <div class="grid-row-mid">
         <section class="card">
-          <h2>브랜치 & 커밋</h2>
-          <div id="branches-container" class="body">리포를 선택하세요.</div>
+          <h2>釉뚮옖移?& 而ㅻ컠</h2>
+          <div id="branches-container" class="body">由ы룷瑜??좏깮?섏꽭??</div>
         </section>
         <section class="card">
-          <h2>커밋 상세</h2>
+          <h2>而ㅻ컠 ?곸꽭</h2>
           <div id="detail-container" class="body detail"></div>
         </section>
       </div>
@@ -98,11 +98,11 @@
           <div class="security-status">
             <div id="status-icon-container" class="status-icon"></div>
             <div class="status-text">
-              <h3 id="security-summary-title">통합 보안 현황</h3>
-              <p id="security-summary-text">분석할 커밋을 선택하세요.</p>
+              <h3 id="security-summary-title">?듯빀 蹂댁븞 ?꾪솴</h3>
+              <p id="security-summary-text">遺꾩꽍??而ㅻ컠???좏깮?섏꽭??</p>
             </div>
           </div>
-          <button id="btn-view-details" disabled>상세 분석 보기</button>
+          <button id="btn-view-details" disabled>?곸꽭 遺꾩꽍 蹂닿린</button>
         </div>
       </section>
     </div>
@@ -114,6 +114,7 @@
     const S = { repo:null, selCommit:null, repos:[], branches:{}, opened:new Set() };
     const REFRESH_INTERVAL_MS = 60000;
     let refreshInFlight = false;
+    const RECENT_THRESHOLD_MS = 5 * 60 * 1000;
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
     const btnSync = $('#btnSync');
     const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
@@ -146,7 +147,7 @@
           renderRepos();
         }catch(e){
           console.error('Failed to load repos:', e);
-          repoList.innerHTML = `<div style="color:#b91c1c">레포지토리를 불러오는 중 오류: ${e.message}</div>`;
+          repoList.innerHTML = `<div style="color:#b91c1c">?덊룷吏?좊━瑜?遺덈윭?ㅻ뒗 以??ㅻ쪟: ${e.message}</div>`;
         }
     }
     
@@ -178,7 +179,7 @@
         detailBox.innerHTML = ''; 
         S.selCommit=null;
 
-        // 안전하게 초기화
+        // ?덉쟾?섍쾶 珥덇린??
         updateSecuritySummary('unknown');
 
         const res = await api('/api/branches',{repo});
@@ -186,7 +187,7 @@
         renderBranches(repo);
       } catch (e) {
         console.error('Failed to load branches:', e);
-        branchesBox.textContent = `브랜치를 불러오는 중 오류: ${e.message}`;
+        branchesBox.textContent = `釉뚮옖移섎? 遺덈윭?ㅻ뒗 以??ㅻ쪟: ${e.message}`;
       }
     };
     
@@ -194,7 +195,7 @@
         const list=S.branches[repo]||[];
         const frag = document.createDocumentFragment();
         if(!list.length) {
-            branchesBox.textContent = '브랜치가 없습니다.';
+            branchesBox.textContent = '釉뚮옖移섍? ?놁뒿?덈떎.';
             return;
         }
         list.forEach(b => {
@@ -202,7 +203,7 @@
             const open=S.opened.has(key);
             const branchEl = document.createElement('div');
             branchEl.className = 'branch';
-            branchEl.innerHTML = `<div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button>${open?'닫기':'열기'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div>`;
+            branchEl.innerHTML = `<div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button>${open?'?リ린':'?닿린'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div>`;
             
             const btn = branchEl.querySelector('button');
             const panel = branchEl.querySelector('.panel');
@@ -210,12 +211,12 @@
             btn.addEventListener('click', async () => {
                 if (panel.style.display==='none') { 
                     S.opened.add(key); 
-                    btn.textContent='닫기'; 
+                    btn.textContent='?リ린'; 
                     panel.style.display=''; 
                     await loadCommits(key, panel); 
                 } else { 
                     S.opened.delete(key); 
-                    btn.textContent='열기'; 
+                    btn.textContent='?닿린'; 
                     panel.style.display='none'; 
                 }
             });
@@ -240,7 +241,7 @@
 
     async function loadCommits(key, panel) {
       try {
-        const [repo, branch] = key.split('|');   // ← 핵심 분리
+        const [repo, branch] = key.split('|');   // ???듭떖 遺꾨━
         panel.textContent='...';
         const d=await api('/api/commits',{repo,branch});
         const frag = document.createDocumentFragment();
@@ -250,7 +251,7 @@
             commitEl.dataset.repo = repo;
             commitEl.dataset.sha = c.sha;
             commitEl.onclick = () => showCommit(repo, c.sha);
-            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
+            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} 쨌 ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
             if (S.selCommit && S.selCommit.repo === repo && S.selCommit.sha === c.sha) { commitEl.classList.add('selected'); }
             frag.appendChild(commitEl);
         });
@@ -260,7 +261,7 @@
         highlightSelectedCommit();
       } catch (e) {
         console.error('Failed to load commits:', e);
-        panel.textContent = `커밋을 불러오는 중 오류: ${e.message}`;
+        panel.textContent = `而ㅻ컠??遺덈윭?ㅻ뒗 以??ㅻ쪟: ${e.message}`;
       }
     }
 
@@ -275,16 +276,16 @@
               api('/api/commit_detail', {repo, sha}),
               api('/api/security_status', {repo, ref: sha})
           ]);
-          detailBox.innerHTML = `<div class="field"><h3>제목</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>작성자</h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
+          detailBox.innerHTML = `<div class="field"><h3>?쒕ぉ</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>?묒꽦??/h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
           updateSecuritySummary(security);
         }catch(e){
           console.error('Failed to load commit detail/security:', e);
-          detailBox.innerHTML = `<div style="color:#b91c1c">상세 조회 중 오류: ${e.message}</div>`;
+          detailBox.innerHTML = `<div style="color:#b91c1c">?곸꽭 議고쉶 以??ㅻ쪟: ${e.message}</div>`;
           updateSecuritySummary('unknown');
         }
     }
 
-    // ✅ 방어 로직 보강
+    // ??諛⑹뼱 濡쒖쭅 蹂닿컯
     function updateSecuritySummary(data) {
         btnDetails.disabled = true;
 
@@ -300,8 +301,8 @@
         if (isLoading || isUnknownInput) {
             securityCard.className = 'card status-unknown';
             statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = isLoading ? '보안 현황 분석 중...' : '통합 보안 현황';
-            summaryText.textContent = isLoading ? '잠시만 기다려 주세요.' : '분석할 커밋을 선택하세요.';
+            summaryTitle.textContent = isLoading ? '蹂댁븞 ?꾪솴 遺꾩꽍 以?..' : '?듯빀 蹂댁븞 ?꾪솴';
+            summaryText.textContent = isLoading ? '?좎떆留?湲곕떎??二쇱꽭??' : '遺꾩꽍??而ㅻ컠???좏깮?섏꽭??';
             return;
         }
 
@@ -309,8 +310,8 @@
         if (statuses.length === 0) {
             securityCard.className = 'card status-unknown';
             statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = '통합 보안 현황';
-            summaryText.textContent = '분석할 커밋을 선택하세요.';
+            summaryTitle.textContent = '?듯빀 蹂댁븞 ?꾪솴';
+            summaryText.textContent = '遺꾩꽍??而ㅻ컠???좏깮?섏꽭??';
             return;
         }
 
@@ -322,8 +323,8 @@
         statusIcon.style.backgroundColor = `var(--status-${overallStatus}-icon)`;
         statusIcon.style.color = `var(--status-${overallStatus}-bg)`;
         
-        summaryTitle.textContent = {good: '양호', warn: '주의 필요', bad: '심각'}[overallStatus];
-        summaryText.textContent = issues > 0 ? `${issues}개 항목 확인 필요` : '모든 항목이 안전합니다.';
+        summaryTitle.textContent = {good: '?묓샇', warn: '二쇱쓽 ?꾩슂', bad: '?ш컖'}[overallStatus];
+        summaryText.textContent = issues > 0 ? `${issues}媛???ぉ ?뺤씤 ?꾩슂` : '紐⑤뱺 ??ぉ???덉쟾?⑸땲??';
         btnDetails.disabled = false;
     }
 
@@ -398,12 +399,16 @@
         }
     });
 
-    function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false}); el.textContent=`마지막 새로 고침: ${now}`; }
+    function stamp(el){ const now=new Date().toLocaleString('ko-KR',{hour12:false}); el.textContent=`留덉?留??덈줈 怨좎묠: ${now}`; }
     function esc(s){return (s||'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[m]));}
-    function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < 180000*10; }
-    function ago(d){const s=(Date.now()-new Date(d).getTime())/1000; if(s<60)return'방금 전';if(s<3600)return`${Math.floor(s/60)}분 전`;if(s<86400)return`${Math.floor(s/3600)}시간 전`;return`${Math.floor(s/86400)}일 전`;}
+    function isRecent(d) {
+        if (!d) return false;
+        return (Date.now() - new Date(d).getTime()) < RECENT_THRESHOLD_MS;
+    }
+    function ago(d){const s=(Date.now()-new Date(d).getTime())/1000; if(s<60)return'諛⑷툑 ??;if(s<3600)return`${Math.floor(s/60)}遺???;if(s<86400)return`${Math.floor(s/3600)}?쒓컙 ??;return`${Math.floor(s/86400)}????;}
     
   })();
   </script>
 </body>
 </html>
+
