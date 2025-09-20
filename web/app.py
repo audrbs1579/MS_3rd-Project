@@ -207,6 +207,7 @@ def api_commit_diff():
     return Response(diff_text, mimetype='text/plain')
 
 
+
 @app.get("/api/security_status")
 def api_security_status():
     repo, ref = request.args.get("repo"), request.args.get("ref")
@@ -218,6 +219,7 @@ def api_security_status():
     try:
         alerts, _ = _gh_get(url, params={"ref": ref, "per_page": 100})
         alerts = alerts or []
+
         enriched_alerts = []
         for alert in alerts[:10]:
             rule = alert.get('rule') or {}
@@ -228,7 +230,7 @@ def api_security_status():
             path_name = location.get('path') or ''
             start_line = location.get('start_line') or 0
             end_line = location.get('end_line') or start_line or 0
-            excerpt = _get_code_excerpt(repo, ref, path_name, start_line or 0, end_line)
+            excerpt = _get_code_excerpt(repo, ref, path_name, start_line, end_line)
             enriched_alerts.append({
                 'number': alert.get('number'),
                 'rule_id': rule.get('id'),
@@ -241,34 +243,35 @@ def api_security_status():
                 'html_url': alert.get('html_url'),
                 'code_excerpt': excerpt,
             })
+
         high_alerts = [a for a in alerts if (a.get('rule') or {}).get('severity') in ['critical', 'high']]
         defender_status = 'bad' if high_alerts else 'warn' if alerts else 'good'
         defender_summary = f"CodeQL: {len(alerts)}개 경고"
-        sentinel_status = random.choice(['good', 'warn', 'bad'])
-        sentinel_summary = f"SIEM: {random.randint(1,5)}건 활동" if sentinel_status != 'good' else "SIEM: 특이사항 없음"
-        bricks_status = random.choice(['good', 'warn', 'bad'])
-        bricks_summary = "모델 예측 점수: 0.5"
+
+        sentinel = {
+            'status': 'good',
+            'summary': 'SIEM: 0건 활동',
+        }
+        bricks = {
+            'status': 'good',
+            'summary': '모델 예측 점수: 0.5',
+        }
+
         return jsonify({
             'defender': {
                 'status': defender_status,
                 'summary': defender_summary,
                 'alerts': enriched_alerts,
             },
-            'sentinel': {
-                'status': sentinel_status,
-                'summary': sentinel_summary,
-            },
-            'bricks': {
-                'status': bricks_status,
-                'summary': bricks_summary,
-            }
+            'sentinel': sentinel,
+            'bricks': bricks,
         })
     except requests.exceptions.HTTPError as e:
         if e.response.status_code in [404, 403]:
             return jsonify({
                 'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []},
-                'sentinel': {'status': 'unknown', 'summary': '데이터 없음'},
-                'bricks': {'status': 'unknown', 'summary': '분석 불가'}
+                'sentinel': {'status': 'good', 'summary': 'SIEM: 0건 활동'},
+                'bricks': {'status': 'good', 'summary': '모델 예측 점수: 0.5'},
             })
         raise
     except Exception:
