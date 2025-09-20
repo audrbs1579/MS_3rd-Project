@@ -1,8 +1,8 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>대시보드</title>
+  <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
@@ -67,28 +67,28 @@
 <body>
   <div class="wrap">
     <div class="toolbar">
-      <input id="repoFilter" class="input" placeholder="由ы룷吏?좊━ 寃??.." />
+      <input id="repoFilter" class="input" placeholder="Search repositories..." />
       <div>
-        <button id="btnSync">?덈줈怨좎묠</button>
-        <span>?ъ슜?? <b>{{ user_id }}</b></span>
-        <a href="/logout"><button type="button">濡쒓렇?꾩썐</button></a>
+        <button id="btnSync">Refresh</button>
+        <span>Signed in as <b>{{ user_id }}</b></span>
+        <a href="/logout"><button type="button">Log out</button></a>
       </div>
     </div>
     
     <div class="main-grid">
       <section class="card">
-        <h2>?섏쓽 由ы룷吏?좊━</h2>
+        <h2>My repositories</h2>
         <div class="body" id="repoList" style="max-height: 200px;"></div>
         <div id="repoStamp" class="stamp"></div>
       </section>
 
       <div class="grid-row-mid">
         <section class="card">
-          <h2>釉뚮옖移?& 而ㅻ컠</h2>
-          <div id="branches-container" class="body">由ы룷瑜??좏깮?섏꽭??</div>
+          <h2>Branches & commits</h2>
+          <div id="branches-container" class="body">Select a repository to continue.</div>
         </section>
         <section class="card">
-          <h2>而ㅻ컠 ?곸꽭</h2>
+          <h2>Commit details</h2>
           <div id="detail-container" class="body detail"></div>
         </section>
       </div>
@@ -98,11 +98,11 @@
           <div class="security-status">
             <div id="status-icon-container" class="status-icon"></div>
             <div class="status-text">
-              <h3 id="security-summary-title">?듯빀 蹂댁븞 ?꾪솴</h3>
-              <p id="security-summary-text">遺꾩꽍??而ㅻ컠???좏깮?섏꽭??</p>
+              <h3 id="security-summary-title">Security summary</h3>
+              <p id="security-summary-text">Choose a commit to analyze.</p>
             </div>
           </div>
-          <button id="btn-view-details" disabled>?곸꽭 遺꾩꽍 蹂닿린</button>
+          <button id="btn-view-details" disabled>View details</button>
         </div>
       </section>
     </div>
@@ -113,8 +113,8 @@
     const $ = (s,el=document)=>el.querySelector(s);
     const S = { repo:null, selCommit:null, repos:[], branches:{}, opened:new Set() };
     const REFRESH_INTERVAL_MS = 60000;
-    let refreshInFlight = false;
     const RECENT_THRESHOLD_MS = 5 * 60 * 1000;
+    let refreshInFlight = false;
     const repoList = $('#repoList'), repoStamp=$('#repoStamp');
     const btnSync = $('#btnSync');
     const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
@@ -147,7 +147,7 @@
           renderRepos();
         }catch(e){
           console.error('Failed to load repos:', e);
-          repoList.innerHTML = `<div style="color:#b91c1c">?덊룷吏?좊━瑜?遺덈윭?ㅻ뒗 以??ㅻ쪟: ${e.message}</div>`;
+          repoList.innerHTML = `<div style="color:#b91c1c">Failed to load repositories: ${e.message}</div>`;
         }
     }
     
@@ -179,7 +179,6 @@
         detailBox.innerHTML = ''; 
         S.selCommit=null;
 
-        // ?덉쟾?섍쾶 珥덇린??
         updateSecuritySummary('unknown');
 
         const res = await api('/api/branches',{repo});
@@ -187,7 +186,7 @@
         renderBranches(repo);
       } catch (e) {
         console.error('Failed to load branches:', e);
-        branchesBox.textContent = `釉뚮옖移섎? 遺덈윭?ㅻ뒗 以??ㅻ쪟: ${e.message}`;
+        branchesBox.textContent = `Failed to load branches: ${e.message}`;
       }
     };
     
@@ -195,7 +194,7 @@
         const list=S.branches[repo]||[];
         const frag = document.createDocumentFragment();
         if(!list.length) {
-            branchesBox.textContent = '釉뚮옖移섍? ?놁뒿?덈떎.';
+            branchesBox.textContent = 'Branches not found.';
             return;
         }
         list.forEach(b => {
@@ -203,7 +202,7 @@
             const open=S.opened.has(key);
             const branchEl = document.createElement('div');
             branchEl.className = 'branch';
-            branchEl.innerHTML = `<div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button>${open?'?リ린':'?닿린'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div>`;
+            branchEl.innerHTML = `<div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button>${open ? 'Hide commits' : 'Show commits'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div>`;
             
             const btn = branchEl.querySelector('button');
             const panel = branchEl.querySelector('.panel');
@@ -211,12 +210,12 @@
             btn.addEventListener('click', async () => {
                 if (panel.style.display==='none') { 
                     S.opened.add(key); 
-                    btn.textContent='?リ린'; 
+                    btn.textContent='Hide commits'; 
                     panel.style.display=''; 
                     await loadCommits(key, panel); 
                 } else { 
                     S.opened.delete(key); 
-                    btn.textContent='?닿린'; 
+                    btn.textContent='Show commits'; 
                     panel.style.display='none'; 
                 }
             });
@@ -241,7 +240,7 @@
 
     async function loadCommits(key, panel) {
       try {
-        const [repo, branch] = key.split('|');   // ???듭떖 遺꾨━
+        const [repo, branch] = key.split('|');
         panel.textContent='...';
         const d=await api('/api/commits',{repo,branch});
         const frag = document.createDocumentFragment();
@@ -251,7 +250,7 @@
             commitEl.dataset.repo = repo;
             commitEl.dataset.sha = c.sha;
             commitEl.onclick = () => showCommit(repo, c.sha);
-            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} 쨌 ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
+            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
             if (S.selCommit && S.selCommit.repo === repo && S.selCommit.sha === c.sha) { commitEl.classList.add('selected'); }
             frag.appendChild(commitEl);
         });
@@ -261,7 +260,7 @@
         highlightSelectedCommit();
       } catch (e) {
         console.error('Failed to load commits:', e);
-        panel.textContent = `而ㅻ컠??遺덈윭?ㅻ뒗 以??ㅻ쪟: ${e.message}`;
+        panel.textContent = `Failed to load commits: ${e.message}`;
       }
     }
 
@@ -276,16 +275,15 @@
               api('/api/commit_detail', {repo, sha}),
               api('/api/security_status', {repo, ref: sha})
           ]);
-          detailBox.innerHTML = `<div class="field"><h3>?쒕ぉ</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>?묒꽦??/h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
+          detailBox.innerHTML = `<div class="field"><h3>Title</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>Author</h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
           updateSecuritySummary(security);
         }catch(e){
           console.error('Failed to load commit detail/security:', e);
-          detailBox.innerHTML = `<div style="color:#b91c1c">?곸꽭 議고쉶 以??ㅻ쪟: ${e.message}</div>`;
+          detailBox.innerHTML = `<div style="color:#b91c1c">Failed to load details: ${e.message}</div>`;
           updateSecuritySummary('unknown');
         }
     }
 
-    // ??諛⑹뼱 濡쒖쭅 蹂닿컯
     function updateSecuritySummary(data) {
         btnDetails.disabled = true;
 
@@ -301,8 +299,8 @@
         if (isLoading || isUnknownInput) {
             securityCard.className = 'card status-unknown';
             statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = isLoading ? '蹂댁븞 ?꾪솴 遺꾩꽍 以?..' : '?듯빀 蹂댁븞 ?꾪솴';
-            summaryText.textContent = isLoading ? '?좎떆留?湲곕떎??二쇱꽭??' : '遺꾩꽍??而ㅻ컠???좏깮?섏꽭??';
+            summaryTitle.textContent = isLoading ? 'Analyzing security...' : 'Security summary';
+            summaryText.textContent = isLoading ? 'Please wait...' : 'Choose a commit to analyze.';
             return;
         }
 
@@ -310,8 +308,8 @@
         if (statuses.length === 0) {
             securityCard.className = 'card status-unknown';
             statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = '?듯빀 蹂댁븞 ?꾪솴';
-            summaryText.textContent = '遺꾩꽍??而ㅻ컠???좏깮?섏꽭??';
+            summaryTitle.textContent = 'Security summary';
+            summaryText.textContent = 'Choose a commit to analyze.';
             return;
         }
 
@@ -323,8 +321,8 @@
         statusIcon.style.backgroundColor = `var(--status-${overallStatus}-icon)`;
         statusIcon.style.color = `var(--status-${overallStatus}-bg)`;
         
-        summaryTitle.textContent = {good: '?묓샇', warn: '二쇱쓽 ?꾩슂', bad: '?ш컖'}[overallStatus];
-        summaryText.textContent = issues > 0 ? `${issues}媛???ぉ ?뺤씤 ?꾩슂` : '紐⑤뱺 ??ぉ???덉쟾?⑸땲??';
+        summaryTitle.textContent = {good: 'Healthy', warn: 'Warning', bad: 'Critical'}[overallStatus];
+        summaryText.textContent = issues > 0 ? `${issues} issue(s) require attention` : 'All checks passed.';
         btnDetails.disabled = false;
     }
 
@@ -427,6 +425,3 @@
   </script>
 </body>
 </html>
-
-
-
