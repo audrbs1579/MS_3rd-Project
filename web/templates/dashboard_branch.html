@@ -5,6 +5,36 @@
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+    <style>
+      .commit {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .commit-extra {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-shrink: 0;
+      }
+      .commit-indicators {
+        display: flex;
+        gap: 5px;
+        padding: 0 8px;
+      }
+      .indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #e5e7eb; /* default/loading gray */
+        transition: background-color 0.3s;
+        box-shadow: inset 0 0 2px rgba(0,0,0,0.1);
+      }
+      .indicator.status-good { background-color: #22c55e; }
+      .indicator.status-warn { background-color: #f59e0b; }
+      .indicator.status-bad { background-color: #ef4444; }
+      .indicator.status-unknown { background-color: #9ca3af; }
+    </style>
 </head>
 <body>
   <div class="wrap">
@@ -61,8 +91,10 @@
     selCommit: null,
     repos: [],
     branches: {},
+    commits: {},
     opened: new Set(),
     identityByCommit: {},
+    securityByCommit: {},
     commentsByCommit: {},
   };
   
@@ -90,13 +122,16 @@
 
   // --- Cache Management ---
   const CACHE_KEY = 'dashboardCache';
-  let cache = {};
-
+  
   function loadCache() {
     try {
       const cachedData = sessionStorage.getItem(CACHE_KEY);
       if (cachedData) {
-        cache = JSON.parse(cachedData);
+        const data = JSON.parse(cachedData);
+        S.repos = data.repos || [];
+        S.branches = data.branches || {};
+        S.commits = data.commits || {};
+        repoStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
         return true;
       }
     } catch (e) {
@@ -104,11 +139,6 @@
       sessionStorage.removeItem(CACHE_KEY);
     }
     return false;
-  }
-
-  function clearCache() {
-    sessionStorage.removeItem(CACHE_KEY);
-    cache = {};
   }
 
   // --- API & Data Loading ---
@@ -143,26 +173,33 @@
     return res.json();
   }
 
-function createCommitEl(repo, branch, commit) {
-    const el = document.createElement('div');
-    el.className = 'commit';
-    el.dataset.repo = repo;
-    el.dataset.sha = commit.sha;
-    el.addEventListener('click', () => showCommit(repo, commit.sha, branch));
-    el.innerHTML = `
-      <div class="commit-info">
-        <div class="msg">${isRecent(commit.date) ? '<span class="status-indicator"></span>' : ''}${esc(commit.message)}</div>
-        <div class="meta">
-          <span class="identity-chip" data-role="identity-pill">${renderIdentityChip(S.identityByCommit[commit.sha])}</span>
-          <span>${esc(commit.author)} · ${ago(commit.date)}</span>
+  function createCommitEl(repo, branch, commit) {
+      const el = document.createElement('div');
+      el.className = 'commit';
+      el.dataset.repo = repo;
+      el.dataset.sha = commit.sha;
+      el.addEventListener('click', () => showCommit(repo, commit.sha, branch));
+      el.innerHTML = `
+        <div class="commit-info">
+          <div class="msg">${isRecent(commit.date) ? '<span class="status-indicator"></span>' : ''}${esc(commit.message)}</div>
+          <div class="meta">
+            <span class="identity-chip" data-role="identity-pill">${renderIdentityChip(S.identityByCommit[commit.sha])}</span>
+            <span>${esc(commit.author)} · ${ago(commit.date)}</span>
+          </div>
         </div>
-      </div>
-      <div class="monospace sha">${esc(commit.sha.slice(0, 7))}</div>
-    `;
-    if (S.identityByCommit[commit.sha]?.first_contribution) {
-      el.classList.add('commit-first');
-    }
-    return el;
+        <div class="commit-extra">
+          <div class="commit-indicators" data-role="indicators" title="CodeQL / 계정 / BRICKS">
+            <span class="indicator"></span>
+            <span class="indicator"></span>
+            <span class="indicator"></span>
+          </div>
+          <div class="monospace sha">${esc(commit.sha.slice(0, 7))}</div>
+        </div>
+      `;
+      if (S.identityByCommit[commit.sha]?.first_contribution) {
+        el.classList.add('commit-first');
+      }
+      return el;
   }
 
   function renderIdentityChip(identity, options = {}) {
@@ -191,6 +228,22 @@ function createCommitEl(repo, branch, commit) {
       commitEl.classList.remove('commit-first');
     }
   }
+  
+  function updateCommitIndicators(sha, status) {
+      const commitEl = $(`.commit[data-sha="${sha}"]`);
+      if (!commitEl) return;
+      const indicators = $$('.indicator', commitEl);
+      if (indicators.length !== 3) return;
+
+      const defenderStatus = status?.defender?.status || 'unknown';
+      const sentinelStatus = status?.sentinel?.status || 'unknown';
+      const bricksStatus = status?.bricks?.status || 'unknown';
+
+      indicators[0].className = `indicator status-${defenderStatus}`;
+      indicators[1].className = `indicator status-${sentinelStatus}`;
+      indicators[2].className = `indicator status-${bricksStatus}`;
+  }
+
 
   function associationToLevel(association = '') {
     const key = association.toUpperCase();
@@ -437,107 +490,6 @@ function createCommitEl(repo, branch, commit) {
     btnVsConfig.title = base ? `현재 경로: ${base}` : '로컬 VS Code 경로를 설정하세요.';
   }
 
-async function loadRepos() {
-    if (cache.repos && cache.repos.length > 0) {
-        S.repos = cache.repos;
-        renderRepos();
-        return;
-    }
-    try {
-      S.repos = (await api('/my_repos')).repos || [];
-      renderRepos();
-    } catch (e) {
-      console.error('Failed to load repos:', e);
-      repoList.innerHTML = `<div class="error-banner">저장소를 불러오지 못했습니다: ${e.message}</div>`;
-    }
-  }
-
-  async function loadBranches(repo) {
-    if (cache.branches && cache.branches[repo]) {
-        S.branches[repo] = cache.branches[repo];
-        renderBranches(repo);
-        return;
-    }
-    try {
-      const res = await api('/branches', { query: { repo } });
-      S.branches[repo] = res.branches || [];
-      renderBranches(repo);
-    } catch(e) {
-      console.error('브랜치를 불러오지 못했습니다:', e);
-      branchesBox.innerHTML = `브랜치를 불러오지 못했습니다: ${e.message}`;
-    }
-  }
-  
-  async function loadCommits(key, panel) {
-    const [repo, branch] = key.split('|');
-    if (cache.commits && cache.commits[key]) {
-        panel.innerHTML = '';
-        const commits = cache.commits[key];
-        if (!commits || commits.length === 0) {
-            panel.textContent = '최근 커밋이 없습니다.';
-            return;
-        }
-        commits.forEach(c => {
-            const commitEl = createCommitEl(repo, branch, c);
-            panel.appendChild(commitEl);
-            updateCommitIdentityBadge(c.sha, S.identityByCommit[c.sha]);
-        });
-        highlightSelection();
-        return;
-    }
-    try {
-      panel.textContent = '커밋을 불러오는 중...';
-      const d = await api('/commits', { query: { repo, branch } });
-      panel.innerHTML = '';
-      (d.commits || []).forEach(c => {
-        const commitEl = createCommitEl(repo, branch, c);
-        panel.appendChild(commitEl);
-        updateCommitIdentityBadge(c.sha, S.identityByCommit[c.sha]);
-      });
-      highlightSelection();
-    } catch (e) {
-      console.error('커밋을 불러오지 못했습니다:', e);
-      panel.textContent = `커밋을 불러오지 못했습니다: ${e.message}`;
-    }
-  }
-
-  async function showCommit(repo, sha, branch) {
-    S.selCommit = { repo, sha, branch };
-    highlightSelection();
-    detailBox.innerHTML = '<div class="detail-loading">커밋 정보를 불러오는 중...</div>';
-    updateSecuritySummary('loading');
-
-    try {
-      const securityParams = { repo, commit: sha };
-      if (branch) { securityParams.branch = branch; }
-
-      const [details, security] = await Promise.all([
-        api('/commit_detail', { query: { repo, sha } }),
-        api('/security_status', { query: securityParams })
-      ]);
-
-      let comments = [];
-      try {
-        const commentData = await api('/commit_comments', { query: { repo, sha } });
-        comments = commentData?.comments || [];
-      } catch (err) {
-        console.warn('댓글을 불러오지 못했습니다:', err);
-      }
-
-      const identity = security?.sentinel || {};
-      S.identityByCommit[sha] = identity;
-      S.commentsByCommit[sha] = comments;
-
-      renderCommitDetails({ repo, sha, branch, details, security, comments });
-      updateCommitIdentityBadge(sha, identity);
-      updateSecuritySummary(security);
-    } catch (e) {
-      console.error('커밋 상세/보안 정보를 불러오지 못했습니다:', e);
-      detailBox.innerHTML = `<div class="detail-error">상세 정보를 불러오지 못했습니다: ${esc(e.message)}</div>`;
-      updateSecuritySummary('unknown');
-    }
-  }
-
   function renderRepos() {
     const q = repoFilter.value.toLowerCase();
     const frag = document.createDocumentFragment();
@@ -606,6 +558,89 @@ async function loadRepos() {
       branchesBox.appendChild(branchEl);
     });
   }
+  
+  async function fetchAndRenderCommitStatus(repo, branch, sha) {
+      if (S.securityByCommit[sha]) {
+          updateCommitIndicators(sha, S.securityByCommit[sha]);
+          return;
+      }
+      try {
+          const securityParams = { repo, commit: sha, branch };
+          const securityStatus = await api('/security_status', { query: securityParams });
+          S.securityByCommit[sha] = securityStatus;
+          updateCommitIndicators(sha, securityStatus);
+          
+          // Update identity cache as well
+          if(securityStatus.sentinel) {
+            S.identityByCommit[sha] = securityStatus.sentinel;
+            updateCommitIdentityBadge(sha, securityStatus.sentinel);
+          }
+
+      } catch (e) {
+          console.error(`Failed to fetch security status for ${sha}`, e);
+          const failureStatus = { 
+              defender: { status: 'unknown' }, 
+              sentinel: { status: 'unknown' }, 
+              bricks: { status: 'unknown' } 
+          };
+          S.securityByCommit[sha] = failureStatus;
+          updateCommitIndicators(sha, failureStatus);
+      }
+  }
+
+  function loadCommits(key, panel) {
+    const [repo, branch] = key.split('|');
+    const commits = S.commits[key] || [];
+    panel.innerHTML = '';
+    
+    if (!commits.length) {
+        panel.textContent = '최근 커밋이 없습니다.';
+        return;
+    }
+    
+    commits.forEach(c => {
+        const commitEl = createCommitEl(repo, branch, c);
+        panel.appendChild(commitEl);
+        updateCommitIndicators(c.sha, S.securityByCommit[c.sha]);
+        fetchAndRenderCommitStatus(repo, branch, c.sha);
+    });
+
+    highlightSelection();
+  }
+
+  async function showCommit(repo, sha, branch) {
+    S.selCommit = { repo, sha, branch };
+    highlightSelection();
+    detailBox.innerHTML = '<div class="detail-loading">커밋 정보를 불러오는 중...</div>';
+    updateSecuritySummary('loading');
+
+    try {
+      const security = S.securityByCommit[sha] || await api('/security_status', { query: { repo, commit: sha, branch } });
+      S.securityByCommit[sha] = security;
+
+      const [details, commentData] = await Promise.all([
+        api('/commit_detail', { query: { repo, sha } }),
+        api('/commit_comments', { query: { repo, sha } }).catch(err => {
+          console.warn('댓글을 불러오지 못했습니다:', err);
+          return { comments: [] };
+        })
+      ]);
+      const comments = commentData?.comments || [];
+      
+      const identity = security?.sentinel || {};
+      S.identityByCommit[sha] = identity;
+      S.commentsByCommit[sha] = comments;
+
+      renderCommitDetails({ repo, sha, branch, details, security, comments });
+      updateCommitIdentityBadge(sha, identity);
+      updateCommitIndicators(sha, security);
+      updateSecuritySummary(security);
+    } catch (e) {
+      console.error('커밋 상세/보안 정보를 불러오지 못했습니다:', e);
+      detailBox.innerHTML = `<div class="detail-error">상세 정보를 불러오지 못했습니다: ${esc(e.message)}</div>`;
+      updateSecuritySummary('unknown');
+    }
+  }
 
   function highlightSelection() {
     $$('.repo-item.selected').forEach(el => el.classList.remove('selected'));
@@ -665,13 +700,13 @@ async function loadRepos() {
     detailBox.innerHTML = '<div class="empty-state">커밋을 선택하면 상세 정보가 표시됩니다.</div>';
     updateSecuritySummary('unknown');
     highlightSelection();
-    loadBranches(repo);
+    renderBranches(repo);
   }
 
   // --- Main Execution & Event Listeners ---
   function refreshAll() {
     btnSync.disabled = true;
-    clearCache();
+    sessionStorage.removeItem(CACHE_KEY);
     window.location.href = '/loading';
   }
 
@@ -679,8 +714,7 @@ async function loadRepos() {
     refreshVsConfigLabel();
     if (loadCache()) {
         console.log('Loaded data from cache.');
-        loadRepos();
-        stamp(repoStamp, cache.timestamp);
+        renderRepos();
     } else {
         window.location.href = '/loading';
     }
@@ -712,11 +746,6 @@ async function loadRepos() {
   });
 
   // --- Helpers ---
-  function stamp(el, isoTimestamp) {
-    const dt = isoTimestamp ? new Date(isoTimestamp) : new Date();
-    const now = dt.toLocaleString('ko-KR', { hour12: false });
-    el.textContent = `마지막 갱신: ${now}`;
-  }
   function esc(s) {
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     return (s || '').toString().replace(/[&<>"']/g, (c) => map[c] || c);
@@ -733,4 +762,3 @@ async function loadRepos() {
 </script>
 </body>
 </html>
-
