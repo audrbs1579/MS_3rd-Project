@@ -17,6 +17,9 @@ from flask import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
+# 사용자가 요청한 N값 (브랜치당 캐시할 커밋 수)
+COMMITS_PER_BRANCH = 5
+
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_OAUTH_SCOPE = "repo,security_events"
@@ -679,12 +682,18 @@ def callback():
     session["access_token"] = tok_res.json().get("access_token")
     me, _ = _gh_get(GITHUB_URL_USER)
     session["user_login"] = me.get("login", "")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("loading"))
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("index"))
+
+@app.route("/loading")
+def loading():
+    if "access_token" not in session:
+        return redirect(url_for("index"))
+    return render_template("loading.html")
 
 @app.route("/dashboard")
 def dashboard():
@@ -744,7 +753,7 @@ def api_commits():
     if not repo or not branch: return jsonify({"error": "repo and branch required"}), 400
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
     url = GITHUB_URL_REPO_COMMITS.format(repo=repo)
-    commits, _ = _gh_get(url, params={"sha": branch, "per_page": 100})
+    commits, _ = _gh_get(url, params={"sha": branch, "per_page": COMMITS_PER_BRANCH})
     pick = lambda c: {"sha": c.get("sha"), "message": (c.get("commit", {}).get("message") or "").split("\n")[0], "author": (c.get("commit", {}).get("author") or {}).get("name"), "date": (c.get("commit", {}).get("author") or {}).get("date")}
     return jsonify({"commits": [pick(c) for c in (commits or [])]})
 

@@ -67,7 +67,6 @@
   };
   
   // --- Constants ---
-  const REFRESH_INTERVAL_MS = 60000;
   const RECENT_THRESHOLD_MS = 5 * 60 * 1000;
   const ICONS = {
     good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
@@ -88,6 +87,29 @@
   const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
   const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
   const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
+
+  // --- Cache Management ---
+  const CACHE_KEY = 'dashboardCache';
+  let cache = {};
+
+  function loadCache() {
+    try {
+      const cachedData = sessionStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        cache = JSON.parse(cachedData);
+        return true;
+      }
+    } catch (e) {
+      console.error("Failed to load from cache", e);
+      sessionStorage.removeItem(CACHE_KEY);
+    }
+    return false;
+  }
+
+  function clearCache() {
+    sessionStorage.removeItem(CACHE_KEY);
+    cache = {};
+  }
 
   // --- API & Data Loading ---
   async function api(path, options = {}) {
@@ -416,6 +438,11 @@ function createCommitEl(repo, branch, commit) {
   }
 
 async function loadRepos() {
+    if (cache.repos && cache.repos.length > 0) {
+        S.repos = cache.repos;
+        renderRepos();
+        return;
+    }
     try {
       S.repos = (await api('/my_repos')).repos || [];
       renderRepos();
@@ -426,6 +453,11 @@ async function loadRepos() {
   }
 
   async function loadBranches(repo) {
+    if (cache.branches && cache.branches[repo]) {
+        S.branches[repo] = cache.branches[repo];
+        renderBranches(repo);
+        return;
+    }
     try {
       const res = await api('/branches', { query: { repo } });
       S.branches[repo] = res.branches || [];
@@ -437,8 +469,23 @@ async function loadRepos() {
   }
   
   async function loadCommits(key, panel) {
+    const [repo, branch] = key.split('|');
+    if (cache.commits && cache.commits[key]) {
+        panel.innerHTML = '';
+        const commits = cache.commits[key];
+        if (!commits || commits.length === 0) {
+            panel.textContent = '최근 커밋이 없습니다.';
+            return;
+        }
+        commits.forEach(c => {
+            const commitEl = createCommitEl(repo, branch, c);
+            panel.appendChild(commitEl);
+            updateCommitIdentityBadge(c.sha, S.identityByCommit[c.sha]);
+        });
+        highlightSelection();
+        return;
+    }
     try {
-      const [repo, branch] = key.split('|');
       panel.textContent = '커밋을 불러오는 중...';
       const d = await api('/commits', { query: { repo, branch } });
       panel.innerHTML = '';
@@ -528,29 +575,36 @@ async function loadRepos() {
           <span class="sha-tag">${esc((b.sha || '').slice(0, 7))}</span>
           <button class="branch-toggle">${open ? 'Hide' : 'Show'}</button>
         </div>
-        <div class="panel${open ? '' : ' is-hidden'}"></div>`;
-
+        <div class="panel is-hidden"></div>`;
+        
+      const head = branchEl.querySelector('.branch-head');
       const btn = branchEl.querySelector('button');
       const panel = branchEl.querySelector('.panel');
 
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = panel.style.display !== 'none';
-        if (isOpen) {
-          S.opened.delete(key);
-          btn.textContent = 'Show';
-          panel.style.display = 'none';
-        } else {
+      const toggle = (e) => {
+        if (e.target === btn) return; // Prevent double toggle
+        const willOpen = panel.classList.contains('is-hidden');
+        if (willOpen) {
           S.opened.add(key);
           btn.textContent = 'Hide';
-          panel.style.display = '';
-          if (!panel.hasChildNodes()) {
+          panel.classList.remove('is-hidden');
+          if (panel.innerHTML === '') {
             loadCommits(key, panel);
           }
+        } else {
+          S.opened.delete(key);
+          btn.textContent = 'Show';
+          panel.classList.add('is-hidden');
         }
-      });
+      };
 
-      if (open) loadCommits(key, panel);
+      head.addEventListener('click', toggle);
+      btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(e); });
+
+      if (open) {
+          panel.classList.remove('is-hidden');
+          loadCommits(key, panel);
+      }
       branchesBox.appendChild(branchEl);
     });
   }
@@ -558,7 +612,7 @@ async function loadRepos() {
   function highlightSelection() {
     $$('.repo-item.selected').forEach(el => el.classList.remove('selected'));
     if (S.repo) {
-      const repoEl = Array.from($$('.repo-item')).find(el => el.textContent.includes(S.repo));
+      const repoEl = Array.from($$('.repo-item')).find(el => el.textContent.trim().startsWith(S.repo));
       if (repoEl) repoEl.classList.add('selected');
     }
     
@@ -617,32 +671,26 @@ async function loadRepos() {
   }
 
   // --- Main Execution & Event Listeners ---
-  let refreshTimer;
   function refreshAll() {
-    clearTimeout(refreshTimer);
     btnSync.disabled = true;
-    Promise.all([
-      loadRepos(),
-      S.repo ? loadBranches(S.repo) : Promise.resolve()
-    ]).then(() => {
-      if (S.selCommit) {
-        showCommit(S.selCommit.repo, S.selCommit.sha, S.selCommit.branch);
-      }
-      stamp(repoStamp);
-    }).catch(err => {
-      console.error('새로고침 failed:', err);
-    }).finally(() => {
-      btnSync.disabled = false;
-      refreshTimer = setTimeout(refreshAll, REFRESH_INTERVAL_MS);
-    });
+    clearCache();
+    window.location.href = '/loading';
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     refreshVsConfigLabel();
-    refreshAll();
+    if (loadCache()) {
+        console.log('Loaded data from cache.');
+        loadRepos();
+        stamp(repoStamp, cache.timestamp);
+    } else {
+        window.location.href = '/loading';
+    }
   });
+
   repoFilter.addEventListener('input', renderRepos);
   btnSync.addEventListener('click', refreshAll);
+
   if (btnVsConfig) {
     btnVsConfig.addEventListener('click', () => {
       const current = localStorage.getItem('vsCodeBasePath') || '';
@@ -666,8 +714,9 @@ async function loadRepos() {
   });
 
   // --- Helpers ---
-  function stamp(el) {
-    const now = new Date().toLocaleString('ko-KR', { hour12: false });
+  function stamp(el, isoTimestamp) {
+    const dt = isoTimestamp ? new Date(isoTimestamp) : new Date();
+    const now = dt.toLocaleString('ko-KR', { hour12: false });
     el.textContent = `마지막 갱신: ${now}`;
   }
   function esc(s) {
