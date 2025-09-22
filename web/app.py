@@ -464,12 +464,21 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
 
     # --- 예외 처리 로직 시작 ---
     if email.lower() == "audrbs1579@naver.com":
+        display_name = commit_name or "박병규 (Naver)"
         level_map = { "internal": {"icon": "✅", "label": "내부 직원"} }
         identity_meta = level_map["internal"]
+        
+        summary = f"{display_name} 님은 조직 내부에서 인증된 계정입니다."
+        details = [
+            f"확인된 표시 이름: {display_name}",
+            f"이메일: {email}",
+            "사용자 유형: Member (시스템 예외)",
+        ]
+
         return {
             "status": "good",
-            "summary": "지정된 예외 계정으로, 내부 직원으로 처리됩니다.",
-            "details": ["이 계정(audrbs1579@naver.com)은 시스템에 의해 내부 직원으로 지정되었습니다."],
+            "summary": summary,
+            "details": details,
             "metadata": metadata_lines,
             "identity_level": "internal",
             "identity_label": identity_meta["label"],
@@ -478,10 +487,11 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
             "identity_badges": [],
             "login": display_login or "audrbs1579",
             "email": email,
-            "display_name": commit_name or "박병규-깃네이버 계정",
+            "display_name": display_name,
             "github_profile": {
                 "login": display_login or "audrbs1579",
-                "name": commit_name or "박병규-깃네이버 계정"
+                "name": display_name,
+                "avatar_url": github_author.get("avatar_url") or github_committer.get("avatar_url"),
             },
         }
     # --- 예외 처리 로직 끝 ---
