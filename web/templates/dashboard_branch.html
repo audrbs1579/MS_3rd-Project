@@ -47,7 +47,6 @@
     .detail .field { border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:6px; }
     .detail .field h3{ margin:0; padding:3px 8px; background:var(--panel-hover); font-size:10px; font-weight:600; color:var(--text-muted); text-transform: uppercase; }
     .detail .field .val{ padding:5px 8px; font-size:13px; }
-    
     #security-summary-card { transition: background-color 0.3s; }
     .security-summary-body { display: flex; align-items: center; justify-content: space-between; padding: 16px; }
     .security-status { display: flex; align-items: center; gap: 12px; }
@@ -57,7 +56,6 @@
     .status-text p { margin: 0; font-size: 14px; color: var(--text-muted); }
     #btn-view-details { padding: 8px 20px; font-weight: 600; }
     #btn-view-details:disabled { background-color: #e5e7eb; cursor: not-allowed; opacity: 0.7; }
-
     .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
     .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
     .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
@@ -108,326 +106,278 @@
     </div>
   </div>
 
-  <script>
-  (()=>{
-    const $ = (s,el=document)=>el.querySelector(s);
-    const S = { repo:null, selCommit:null, repos:[], branches:{}, opened:new Set() };
-    const REFRESH_INTERVAL_MS = 60000;
-    const RECENT_THRESHOLD_MS = 5 * 60 * 1000;
-    let refreshInFlight = false;
-    const repoList = $('#repoList'), repoStamp=$('#repoStamp');
-    const btnSync = $('#btnSync');
-    const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
-    const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
-    const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
-    const btnDetails = $('#btn-view-details');
-    
-    const ICONS = {
-        good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
-        warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
-        bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
-        unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
-    };
+<script>
+(()=>{
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => el.querySelectorAll(s);
 
-    async function api(path, params={}) {
-        const qs = new URLSearchParams(params);
-        const url = `${path}?${qs.toString()}`;
-        const r = await fetch(url);
-        if(r.status===401) { location.href='/'; throw new Error('Unauthorized'); }
-        if (!r.ok) { 
-            const errData = await r.json().catch(()=>({error: r.statusText}));
-            throw new Error(errData.error || `HTTP error ${r.status}`);
+  // --- State Management ---
+  const S = { repo: null, selCommit: null, repos: [], branches: {}, opened: new Set() };
+  
+  // --- Constants ---
+  const REFRESH_INTERVAL_MS = 60000;
+  const RECENT_THRESHOLD_MS = 5 * 60 * 1000;
+  const ICONS = {
+    good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+    warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
+    bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
+    unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
+  };
+
+  // --- DOM Elements ---
+  const repoFilter = $('#repoFilter'), repoList = $('#repoList'), repoStamp = $('#repoStamp');
+  const btnSync = $('#btnSync'), btnDetails = $('#btn-view-details');
+  const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
+  const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
+  const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
+
+  // --- API & Data Loading ---
+  async function api(path, params = {}) {
+    const qs = new URLSearchParams(params);
+    const url = `/api${path}?${qs.toString()}`;
+    const r = await fetch(url);
+    if (r.status === 401) { location.href = '/'; throw new Error('Unauthorized'); }
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error(errData.error || `HTTP error ${r.status}`);
+    }
+    return r.json();
+  }
+
+  async function loadRepos() {
+    try {
+      S.repos = (await api('/my_repos')).repos || [];
+      renderRepos();
+    } catch (e) {
+      console.error('Failed to load repos:', e);
+      repoList.innerHTML = `<div style="color:#b91c1c">Failed to load repositories: ${e.message}</div>`;
+    }
+  }
+
+  async function loadBranches(repo) {
+    try {
+      const res = await api('/branches', { repo });
+      S.branches[repo] = res.branches || [];
+      renderBranches(repo);
+    } catch(e) {
+      console.error('Failed to load branches:', e);
+      branchesBox.innerHTML = `Failed to load branches: ${e.message}`;
+    }
+  }
+  
+  async function loadCommits(key, panel) {
+    try {
+      const [repo, branch] = key.split('|');
+      panel.textContent = 'Loading commits...';
+      const d = await api('/commits', { repo, branch });
+      panel.innerHTML = ''; // Clear loading message
+      (d.commits || []).forEach(c => panel.appendChild(createCommitEl(repo, branch, c)));
+      highlightSelection();
+    } catch (e) {
+      console.error('Failed to load commits:', e);
+      panel.textContent = `Failed to load commits: ${e.message}`;
+    }
+  }
+
+  async function showCommit(repo, sha, branch) {
+    S.selCommit = { repo, sha, branch };
+    highlightSelection();
+    detailBox.textContent = 'Loading details...';
+    updateSecuritySummary('loading');
+
+    try {
+      const securityParams = { repo, commit: sha };
+      if (branch) { securityParams.branch = branch; }
+      
+      const [details, security] = await Promise.all([
+        api('/commit_detail', { repo, sha }),
+        api('/security_status', securityParams)
+      ]);
+      
+      detailBox.innerHTML = `
+        <div class="field"><h3>Title</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div>
+        <div class="field"><h3>Author</h3><div class="val">${esc(details.author)}</div></div>
+        <div class="field"><h3>SHA</h3><div class="val monospace">${esc(sha.slice(0, 12))}...</div></div>`;
+      updateSecuritySummary(security);
+    } catch (e) {
+      console.error('Failed to load commit detail/security:', e);
+      detailBox.innerHTML = `<div style="color:#b91c1c">Failed to load details: ${e.message}</div>`;
+      updateSecuritySummary('unknown');
+    }
+  }
+  
+  // --- UI Rendering & Updates ---
+  function createCommitEl(repo, branch, commit) {
+    const el = document.createElement('div');
+    el.className = 'commit';
+    el.dataset.repo = repo;
+    el.dataset.sha = commit.sha;
+    el.onclick = () => showCommit(repo, commit.sha, branch);
+    el.innerHTML = `
+      <div class="commit-info">
+        <div class="msg">${isRecent(commit.date) ? '<span class="status-indicator"></span>' : ''}${esc(commit.message)}</div>
+        <div class="meta">${esc(commit.author)} &middot; ${ago(new Date(commit.date))}</div>
+      </div>
+      <div class="monospace sha">${esc(commit.sha.slice(0, 7))}</div>`;
+    return el;
+  }
+
+  function renderRepos() {
+    const q = repoFilter.value.toLowerCase();
+    const frag = document.createDocumentFragment();
+    S.repos
+      .filter(r => (r.full_name || '').toLowerCase().includes(q))
+      .forEach(r => {
+        const b = document.createElement('button');
+        b.className = 'repo-item';
+        b.onclick = () => selectRepo(r.full_name);
+        b.innerHTML = `
+          <span class="repo-name">${isRecent(r.pushed_at) ? '<span class="status-indicator"></span>' : ''}${esc(r.full_name)}</span>
+          <span class="repo-meta">${r.pushed_at ? ('pushed ' + ago(new Date(r.pushed_at))) : ''}</span>`;
+        frag.appendChild(b);
+      });
+    repoList.innerHTML = '';
+    repoList.appendChild(frag);
+    highlightSelection();
+  }
+
+  function renderBranches(repo) {
+    const list = S.branches[repo] || [];
+    if (!list.length) {
+      branchesBox.textContent = 'No branches found.';
+      return;
+    }
+    branchesBox.innerHTML = '';
+    list.forEach(b => {
+      const key = `${repo}|${b.name}`;
+      const open = S.opened.has(key);
+      const branchEl = document.createElement('div');
+      branchEl.className = 'branch';
+      branchEl.innerHTML = `
+        <div class="branch-head">
+          <b class="monospace">${isRecent(b.last_commit_date) ? '<span class="status-indicator"></span>' : ''}${esc(b.name)}</b>
+          <span class="sha-tag">${esc((b.sha || '').slice(0, 7))}</span>
+          <button style="margin-left: auto;">${open ? 'Hide' : 'Show'}</button>
+        </div>
+        <div class="panel" ${open ? '' : 'style="display:none"'}></div>`;
+
+      const btn = branchEl.querySelector('button');
+      const panel = branchEl.querySelector('.panel');
+
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = panel.style.display !== 'none';
+        if (isOpen) {
+          S.opened.delete(key);
+          btn.textContent = 'Show';
+          panel.style.display = 'none';
+        } else {
+          S.opened.add(key);
+          btn.textContent = 'Hide';
+          panel.style.display = '';
+          if (!panel.hasChildNodes()) {
+            loadCommits(key, panel);
+          }
         }
-        return r.json();
-    }
-    
-    async function loadRepos(){ 
-        try{
-          S.repos = (await api('/api/my_repos')).repos || [];
-          renderRepos();
-        }catch(e){
-          console.error('Failed to load repos:', e);
-          repoList.innerHTML = `<div style="color:#b91c1c">Failed to load repositories: ${e.message}</div>`;
-        }
-    }
-    function renderRepos() {
-        const q=($('#repoFilter').value||'').toLowerCase();
-        const frag = document.createDocumentFragment();
-        (S.repos||[])
-            .filter(r=>(r.full_name||'').toLowerCase().includes(q))
-            .forEach(r => {
-                const b = document.createElement('button');
-                b.className = 'repo-item';
-                b.onclick = () => selectRepo(r.full_name);
-                b.innerHTML = `<span class="repo-name">${isRecent(r.pushed_at)?'<span class="status-indicator"></span>':''}${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at?('pushed '+ago(new Date(r.pushed_at))):''}</span>`;
-                if (S.repo === r.full_name) { b.classList.add('selected'); }
-                frag.appendChild(b);
-            });
-        repoList.innerHTML = '';
-        repoList.appendChild(frag);
-    }
-    
-    async function selectRepo(repo) {
-      try {
-        S.repo=repo; 
-        document.querySelectorAll('.repo-item.selected').forEach(el => el.classList.remove('selected'));
-        const currentRepoEl = Array.from(document.querySelectorAll('.repo-item')).find(el => el.textContent.includes(repo));
-        if (currentRepoEl) currentRepoEl.classList.add('selected');
+      });
 
-        branchesBox.textContent='...'; 
-        detailBox.innerHTML = ''; 
-        S.selCommit=null;
-
-        updateSecuritySummary('unknown');
-
-        const res = await api('/api/branches',{repo});
-        S.branches[repo] = res.branches || [];
-        renderBranches(repo);
-      } catch (e) {
-        console.error('Failed to load branches:', e);
-        branchesBox.textContent = `Failed to load branches: ${e.message}`;
-      }
-    };
-    
-    function renderBranches(repo) {
-        const list=S.branches[repo]||[];
-        const frag = document.createDocumentFragment();
-        if(!list.length) {
-            branchesBox.textContent = 'Branches not found.';
-            return;
-        }
-        list.forEach(b => {
-            const key=`${repo}|${b.name}`; 
-            const open=S.opened.has(key);
-            const branchEl = document.createElement('div');
-            branchEl.className = 'branch';
-            branchEl.innerHTML = `<div class="branch-head"><b class="monospace">${isRecent(b.last_commit_date)?'<span class="status-indicator"></span>':''}${esc(b.name)}</b><span class="sha-tag">${(b.sha||'').slice(0,7)}</span><button>${open ? 'Hide commits' : 'Show commits'}</button></div><div class="panel" ${open?'':'style="display:none"'}></div>`;
-            
-            const btn = branchEl.querySelector('button');
-            const panel = branchEl.querySelector('.panel');
-
-            btn.addEventListener('click', async () => {
-                if (panel.style.display==='none') { 
-                    S.opened.add(key); 
-                    btn.textContent='Hide commits'; 
-                    panel.style.display=''; 
-                    await loadCommits(key, panel); 
-                } else { 
-                    S.opened.delete(key); 
-                    btn.textContent='Show commits'; 
-                    panel.style.display='none'; 
-                }
-            });
-
-            if(open) loadCommits(key, panel);
-
-            frag.appendChild(branchEl);
-        });
-        branchesBox.innerHTML = '';
-        branchesBox.appendChild(frag);
-    }
-
-    function highlightSelectedCommit() {
-        document.querySelectorAll('.commit.selected').forEach(el => el.classList.remove('selected'));
-        if (!S.selCommit) return;
-        document.querySelectorAll('.commit').forEach(el => {
-            if (el.dataset.repo === S.selCommit.repo && el.dataset.sha === S.selCommit.sha) {
-                el.classList.add('selected');
-            }
-        });
-    }
-
-    async function loadCommits(key, panel) {
-      try {
-        const [repo, branch] = key.split('|');
-        panel.textContent='...';
-        const d=await api('/api/commits',{repo,branch});
-        const frag = document.createDocumentFragment();
-        (d.commits||[]).forEach(c => {
-            const commitEl = document.createElement('div');
-            commitEl.className = 'commit';
-            commitEl.dataset.repo = repo;
-            commitEl.dataset.sha = c.sha;
-            commitEl.dataset.branch = branch;
-            commitEl.onclick = () => showCommit(repo, c.sha, branch);
-            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} &middot; ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
-            if (S.selCommit && S.selCommit.repo === repo && S.selCommit.sha === c.sha) { commitEl.classList.add('selected'); }
-            frag.appendChild(commitEl);
-        });
-        panel.innerHTML = '';
-        panel.appendChild(frag);
-
-        highlightSelectedCommit();
-      } catch (e) {
-        console.error('Failed to load commits:', e);
-        panel.textContent = `Failed to load commits: ${e.message}`;
-      }
-
-    async function showCommit(repo, sha, branch) {
-        const commitEl = document.querySelector(`.commit[data-repo=\"${repo}\"][data-sha=\"${sha}\"]`);
-        const effectiveBranch = branch || commitEl?.dataset.branch || S.selCommit?.branch || null;
-        S.selCommit = { repo, sha, branch: effectiveBranch };
-        highlightSelectedCommit();
-        detailBox.textContent='...';
-        updateSecuritySummary('loading');
-
-        try{
-          const securityParams = { repo, commit: sha };
-          if (effectiveBranch) { securityParams.branch = effectiveBranch; }
-          const [details, security] = await Promise.all([
-              api('/api/commit_detail', {repo, sha}),
-              api('/api/security_status', securityParams)
-          ]);
-          detailBox.innerHTML = `<div class=\"field\"><h3>Title</h3><div class=\"val\">${esc(details.message.split('\\n')[0])}</div></div><div class=\"field\"><h3>Author</h3><div class=\"val\">${esc(details.author)}</div></div><div class=\"field\"><h3>SHA</h3><div class=\"val monospace\">${sha.slice(0,12)}...</div></div>`;
-          updateSecuritySummary(security);
-        }catch(e){
-          console.error('Failed to load commit detail/security:', e);
-          detailBox.innerHTML = `<div style=\"color:#b91c1c\">Failed to load details: ${e.message}</div>`;
-          updateSecuritySummary('unknown');
-        }
-    }
-
-    function updateSecuritySummary(data) {
-        btnDetails.disabled = true;
-
-        const isLoading = data === 'loading';
-        const isUnknownInput =
-          data === 'unknown' ||
-          !data ||
-          typeof data !== 'object' ||
-          !('defender' in data) ||
-          !('sentinel' in data) ||
-          !('bricks' in data);
-
-        if (isLoading || isUnknownInput) {
-            securityCard.className = 'card status-unknown';
-            statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = isLoading ? 'Analyzing security...' : 'Security summary';
-            summaryText.textContent = isLoading ? 'Please wait...' : 'Choose a commit to analyze.';
-            return;
-        }
-
-        const statuses = [data.defender?.status, data.sentinel?.status, data.bricks?.status].filter(Boolean);
-        if (statuses.length === 0) {
-            securityCard.className = 'card status-unknown';
-            statusIcon.innerHTML = ICONS.unknown;
-            summaryTitle.textContent = 'Security summary';
-            summaryText.textContent = 'Choose a commit to analyze.';
-            return;
-        }
-
-        const overallStatus = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
-        const issues = statuses.filter(s => s === 'bad' || s === 'warn').length;
-
-        securityCard.className = `card status-${overallStatus}`;
-        statusIcon.innerHTML = ICONS[overallStatus];
-        statusIcon.style.backgroundColor = `var(--status-${overallStatus}-icon)`;
-        statusIcon.style.color = `var(--status-${overallStatus}-bg)`;
-        
-        summaryTitle.textContent = {good: 'Healthy', warn: 'Warning', bad: 'Critical'}[overallStatus];
-        const baseSummary = issues > 0 ? `${issues} issue(s) require attention` : 'All checks passed.';
-        const bricksSummary = ((data.bricks?.summary || '').split('\n')[0] || '').trim();
-        summaryText.textContent = bricksSummary || baseSummary;
-        btnDetails.disabled = false;
-    }
-
-    async function refreshAll() {
-        if (refreshInFlight) { return; }
-        refreshInFlight = true;
-        if (btnSync) { btnSync.disabled = true; }
-
-        const prevRepo = S.repo;
-        const prevSelCommit = S.selCommit ? { ...S.selCommit } : null;
-        const prevOpened = new Set(S.opened);
-
-        try {
-            await loadRepos();
-
-            if (prevRepo) {
-                try {
-                    const branchRes = await api('/api/branches', { repo: prevRepo });
-                    S.branches[prevRepo] = branchRes.branches || [];
-
-                    const validKeys = new Set((S.branches[prevRepo] || []).map(b => `${prevRepo}|${b.name}`));
-                    const merged = new Set();
-                    prevOpened.forEach(key => {
-                        if (key.startsWith(`${prevRepo}|`)) {
-                            if (validKeys.has(key)) { merged.add(key); }
-                        } else {
-                            merged.add(key);
-                        }
-                    });
-                    S.opened = merged;
-
-                    S.selCommit = prevSelCommit;
-                    renderBranches(prevRepo);
-
-                    if (prevSelCommit && prevSelCommit.repo === prevRepo) {
-                        try {
-                            await showCommit(prevSelCommit.repo, prevSelCommit.sha, prevSelCommit.branch);
-                        } catch (commitErr) {
-                            console.error('Failed to refresh selected commit:', commitErr);
-                            S.selCommit = null;
-                            highlightSelectedCommit();
-                        }
-                    } else {
-                        highlightSelectedCommit();
-                    }
-                } catch (branchErr) {
-                    console.error('Failed to refresh branches:', branchErr);
-                }
-            }
-
-            stamp(repoStamp);
-        } catch (err) {
-            console.error('Failed to refresh dashboard:', err);
-        } finally {
-            if (btnSync) { btnSync.disabled = false; }
-            refreshInFlight = false;
-        }
-    }
-    
-    // --- Init & Helpers ---
-    document.addEventListener('DOMContentLoaded', () => {
-        refreshAll().catch(err => console.error('Initial refresh failed:', err));
-        setInterval(() => {
-            refreshAll().catch(err => console.error('Auto refresh failed:', err));
-        }, REFRESH_INTERVAL_MS);
+      if (open) loadCommits(key, panel);
+      branchesBox.appendChild(branchEl);
     });
-    $('#repoFilter').addEventListener('input', renderRepos);
-    btnSync.addEventListener('click', () => refreshAll());
-    btnDetails.addEventListener('click', () => {
-        if (S.selCommit) {
-            const branchPart = S.selCommit.branch ? `&branch=${encodeURIComponent(S.selCommit.branch)}` : '';
-            window.location.href = `/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}${branchPart}`;
-        }
+  }
+
+  function highlightSelection() {
+    $$('.repo-item.selected').forEach(el => el.classList.remove('selected'));
+    if (S.repo) {
+      const repoEl = Array.from($$('.repo-item')).find(el => el.textContent.includes(S.repo));
+      if (repoEl) repoEl.classList.add('selected');
+    }
+    
+    $$('.commit.selected').forEach(el => el.classList.remove('selected'));
+    if (S.selCommit) {
+      const commitEl = $(`.commit[data-sha="${S.selCommit.sha}"]`);
+      if (commitEl) commitEl.classList.add('selected');
+    }
+  }
+  
+  function updateSecuritySummary(data) {
+    btnDetails.disabled = true;
+    const isLoading = data === 'loading';
+    const isUnknown = data === 'unknown' || !data || !data.defender;
+
+    if (isLoading || isUnknown) {
+      securityCard.className = 'card status-unknown';
+      statusIcon.innerHTML = ICONS.unknown;
+      summaryTitle.textContent = isLoading ? 'Analyzing...' : 'Security Summary';
+      summaryText.textContent = isLoading ? 'Please wait...' : 'Choose a commit to analyze.';
+      return;
+    }
+
+    const statuses = [data.defender?.status, data.sentinel?.status, data.bricks?.status].filter(Boolean);
+    const overallStatus = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
+    const issues = statuses.filter(s => s === 'bad' || s === 'warn').length;
+
+    securityCard.className = `card status-${overallStatus}`;
+    statusIcon.innerHTML = ICONS[overallStatus];
+    summaryTitle.textContent = { good: 'Healthy', warn: 'Warning', bad: 'Critical' }[overallStatus];
+    summaryText.textContent = issues > 0 ? `${issues} issue(s) found` : 'All checks passed.';
+    btnDetails.disabled = false;
+  }
+  
+  function selectRepo(repo) {
+    S.repo = repo;
+    S.selCommit = null;
+    branchesBox.textContent = 'Loading branches...';
+    detailBox.innerHTML = '';
+    updateSecuritySummary('unknown');
+    highlightSelection();
+    loadBranches(repo);
+  }
+
+  // --- Main Execution & Event Listeners ---
+  let refreshTimer;
+  function refreshAll() {
+    clearTimeout(refreshTimer);
+    btnSync.disabled = true;
+    Promise.all([
+      loadRepos(),
+      S.repo ? loadBranches(S.repo) : Promise.resolve()
+    ]).then(() => {
+      if (S.selCommit) {
+        showCommit(S.selCommit.repo, S.selCommit.sha, S.selCommit.branch);
+      }
+      stamp(repoStamp);
+    }).catch(err => {
+      console.error('Refresh failed:', err);
+    }).finally(() => {
+      btnSync.disabled = false;
+      refreshTimer = setTimeout(refreshAll, REFRESH_INTERVAL_MS);
     });
+  }
 
-    function stamp(el) {
-        const now = new Date().toLocaleString('ko-KR', { hour12: false });
-        el.textContent = `Last refresh: ${now}`;
+  document.addEventListener('DOMContentLoaded', refreshAll);
+  repoFilter.addEventListener('input', renderRepos);
+  btnSync.addEventListener('click', refreshAll);
+  btnDetails.addEventListener('click', () => {
+    if (S.selCommit) {
+      const { repo, sha, branch } = S.selCommit;
+      const branchPart = branch ? `&branch=${encodeURIComponent(branch)}` : '';
+      window.open(`/details?repo=${repo}&sha=${sha}${branchPart}`, '_blank');
     }
-    function esc(s) {
-        return (s || '').toString()
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-    function isRecent(d) {
-        if (!d) return false;
-        return (Date.now() - new Date(d).getTime()) < RECENT_THRESHOLD_MS;
-    }
-    function ago(d) {
-        const seconds = (Date.now() - new Date(d).getTime()) / 1000;
-        if (seconds < 60) return 'just now';
-        if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-        if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
-        return `${Math.floor(seconds / 86400)} day(s) ago`;
-    }
+  });
 
-  })();
-  </script>
+  // --- Helpers ---
+  function stamp(el) { el.textContent = `Last refresh: ${new Date().toLocaleString('ko-KR')}`; }
+  function esc(s) { return (s || '').toString().replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+  function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < RECENT_THRESHOLD_MS; }
+  function ago(d) {
+    const seconds = (Date.now() - new Date(d).getTime()) / 1000;
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
+    return `${Math.floor(seconds / 86400)} day(s) ago`;
+  }
+})();
+</script>
 </body>
 </html>
