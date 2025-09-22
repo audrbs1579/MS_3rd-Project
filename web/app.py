@@ -14,11 +14,11 @@ from flask import (
 )
 
 # ---------- 기본 설정 ----------
+# 캐시할 브랜치당 커밋 수
+COMMITS_PER_BRANCH = 5
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
-
-# 사용자가 요청한 N값 (브랜치당 캐시할 커밋 수)
-COMMITS_PER_BRANCH = 5
 
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
@@ -462,6 +462,30 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
     if commit_name:
         _push_meta(f"커밋 작성자: {commit_name}")
 
+    # --- 예외 처리 로직 시작 ---
+    if email.lower() == "audrbs1579@naver.com":
+        level_map = { "internal": {"icon": "✅", "label": "내부 직원"} }
+        identity_meta = level_map["internal"]
+        return {
+            "status": "good",
+            "summary": "지정된 예외 계정으로, 내부 직원으로 처리됩니다.",
+            "details": ["이 계정(audrbs1579@naver.com)은 시스템에 의해 내부 직원으로 지정되었습니다."],
+            "metadata": metadata_lines,
+            "identity_level": "internal",
+            "identity_label": identity_meta["label"],
+            "identity_icon": identity_meta["icon"],
+            "first_contribution": False,
+            "identity_badges": [],
+            "login": display_login or "audrbs1579",
+            "email": email,
+            "display_name": commit_name or "박병규-깃네이버 계정",
+            "github_profile": {
+                "login": display_login or "audrbs1579",
+                "name": commit_name or "박병규-깃네이버 계정"
+            },
+        }
+    # --- 예외 처리 로직 끝 ---
+
     level_map = {
         "internal": {"icon": "✅", "label": "내부 직원"},
         "external": {"icon": "ℹ️", "label": "외부 협력자"},
@@ -664,6 +688,10 @@ def index():
         return render_template("index.html")
     return redirect(url_for("dashboard"))
 
+@app.route("/loading")
+def loading():
+    return render_template("loading.html")
+
 @app.route("/login")
 def login():
     params = {
@@ -688,12 +716,6 @@ def callback():
 def logout():
     session.clear()
     return redirect(url_for("index"))
-
-@app.route("/loading")
-def loading():
-    if "access_token" not in session:
-        return redirect(url_for("index"))
-    return render_template("loading.html")
 
 @app.route("/dashboard")
 def dashboard():
@@ -721,6 +743,55 @@ def details():
     )
 
 # ---------- API ----------
+@app.get("/api/get_initial_data")
+def get_initial_data():
+    if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
+    
+    # 1. Repos 가져오기
+    repos, _ = _gh_get(GITHUB_URL_REPOS, params={"per_page": 100, "sort": "pushed"})
+    repos_list = [{"full_name": r.get("full_name"), "name": r.get("name"), "pushed_at": r.get("pushed_at")} for r in (repos or [])]
+    
+    branches_map = {}
+    commits_map = {}
+
+    # 2. 각 Repo의 Branch 및 Commit 가져오기
+    for repo in repos_list:
+        repo_name = repo['full_name']
+        
+        # Branches
+        branch_url = GITHUB_URL_REPO_BRANCHES.format(repo=repo_name)
+        branches_data, _ = _gh_get(branch_url, params={"per_page": 100})
+        
+        branch_list = []
+        for b in (branches_data or []):
+            sha = (b.get("commit") or {}).get("sha")
+            commit_url = f"{GITHUB_URL_BASE}/repos/{repo_name}/commits/{sha}"
+            try:
+                commit_data, _ = _gh_get(commit_url)
+                commit_date = (commit_data.get("commit", {}).get("author") or {}).get("date")
+                branch_list.append({"name": b.get("name"), "sha": sha, "last_commit_date": commit_date})
+            except requests.exceptions.RequestException:
+                branch_list.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
+        
+        branches_map[repo_name] = branch_list
+
+        # Commits (for each branch)
+        for branch_info in branch_list:
+            branch_name = branch_info['name']
+            commit_url = GITHUB_URL_REPO_COMMITS.format(repo=repo_name)
+            commits_data, _ = _gh_get(commit_url, params={"sha": branch_name, "per_page": COMMITS_PER_BRANCH})
+            
+            key = f"{repo_name}|{branch_name}"
+            pick = lambda c: {"sha": c.get("sha"), "message": (c.get("commit", {}).get("message") or "").split("\n")[0], "author": (c.get("commit", {}).get("author") or {}).get("name"), "date": (c.get("commit", {}).get("author") or {}).get("date")}
+            commits_map[key] = [pick(c) for c in (commits_data or [])]
+
+    return jsonify({
+        "repos": repos_list,
+        "branches": branches_map,
+        "commits": commits_map,
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
 @app.get("/api/my_repos")
 def api_my_repos():
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
