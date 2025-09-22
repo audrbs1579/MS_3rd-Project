@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <title>상세 분석 - {{ commit_sha[:7] }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root{
+            --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            --text-main: #111827; --text-muted: #6b7280;
+            --status-good-bg: #dcfce7; --status-good-text: #166534;
+            --status-warn-bg: #fef9c3; --status-warn-text: #854d0e;
+            --status-bad-bg: #fee2e2; --status-bad-text: #991b1b;
+            --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
+        }
+        body { margin: 0; background-color: var(--bg); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
+        header { background-color: var(--panel); padding: 16px 24px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 24px; }
+        header h1 { font-size: 20px; margin: 0 0 4px 0; }
+        header p { margin: 0; color: var(--text-muted); font-family: monospace; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; }
+        .card { background-color: var(--panel); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+        .card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+        .card-header h2 { font-size: 16px; margin: 0; }
+        .card-body { padding: 16px; font-size: 14px; line-height: 1.6; }
+        .card-body p { margin: 0; }
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
+        .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
+        .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
+        .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>상세 보안 & 코드 분석</h1>
+            <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
+        </header>
+        <main class="grid">
+            <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><div class="spinner"></div></div></div>
+            <div id="sentinelCard" class="card status-unknown"><div class="card-header"><h2>Sentinel</h2></div><div class="card-body"><div class="spinner"></div></div></div>
+            <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><div class="spinner"></div></div></div>
+        </main>
+    </div>
+
+    <script>
+    (async () => {
+        const repo = {{ repo_name|tojson }};
+        const sha = {{ commit_sha|tojson }};
+        
+        const defenderCard = document.getElementById('defenderCard');
+        const sentinelCard = document.getElementById('sentinelCard');
+        const bricksCard = document.getElementById('bricksCard');
+
+        async function api(path, params={}) {
+            const qs = new URLSearchParams(params);
+            const url = `/api${path}?${qs}`;
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(`HTTP error ${r.status}`);
+            const contentType = r.headers.get("content-type");
+            return contentType?.includes("application/json") ? r.json() : r.text();
+        }
+
+        function updateCard(cardEl, data) {
+            cardEl.className = `card status-${data.status}`;
+            cardEl.querySelector('.card-body').innerHTML = `<p>${data.summary.replace(/\n/g, '<br>')}</p>`;
+        }
+
+        // Load security status data
+        const securityStatus = await api('/security_status', { repo, ref: sha });
+
+        // Update security cards
+        updateCard(defenderCard, securityStatus.defender);
+        updateCard(sentinelCard, securityStatus.sentinel);
+        updateCard(bricksCard, securityStatus.bricks);
+
+    })();
+    </script>
+</body>
+</html>
+

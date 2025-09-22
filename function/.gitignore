@@ -133,9 +133,3 @@ __blobstorage__
 __queuestorage__
 __azurite_db*__.json
 .python_packages
-
-# Large files
-Project/models/test_anomaly_scores.csv
-Project/models/train_anomaly_scores.csv
-
-Project/data/*.json

@@ -1,26 +1,25 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <title>Analysis Results</title>
+  <meta charset="utf-8" />
+  <title>결과</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#0b0b0c;--card:#17171a;--text:#f0f0f0;--muted:#a8a8a8;--border:#2a2a2f}
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Arial}
+    .wrap{max-width:780px;margin:64px auto;padding:0 20px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px}
+    h1{margin:0 0 8px 0;font-size:20px}
+    p{margin:0;color:var(--muted)}
+  </style>
 </head>
 <body>
-    <h1>Analysis for: {{ repo_full_name }}</h1>
-    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
-
-    {% if error %}
-        <p style="color: red;"><strong>Error:</strong> {{ error }}</p>
-    {% else %}
-        <h2>Detected Open Source Dependencies:</h2>
-        {% if dependencies %}
-            <ul>
-                {% for dep in dependencies %}
-                    <li>{{ dep }}</li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p>No dependencies found.</p>
-        {% endif %}
-    {% endif %}
+  <div class="wrap">
+    <div class="card">
+      <h1>결과 페이지</h1>
+      <p>임시 보관용 페이지입니다.</p>
+    </div>
+  </div>
 </body>
 </html>
