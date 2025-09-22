@@ -65,28 +65,28 @@
 <body>
   <div class="wrap">
     <div class="toolbar">
-      <input id="repoFilter" class="input" placeholder="Search repositories..." />
+      <input id="repoFilter" class="input" placeholder="저장소 검색..." />
       <div>
-        <button id="btnSync">Refresh</button>
+        <button id="btnSync">새로고침</button>
         <span>Signed in as <b>{{ user_id }}</b></span>
-        <a href="/logout"><button type="button">Log out</button></a>
+        <a href="/logout"><button type="button">로그아웃</button></a>
       </div>
     </div>
     
     <div class="main-grid">
       <section class="card">
-        <h2>My repositories</h2>
+        <h2>내 저장소</h2>
         <div class="body" id="repoList" style="max-height: 200px;"></div>
         <div id="repoStamp" class="stamp"></div>
       </section>
 
       <div class="grid-row-mid">
         <section class="card">
-          <h2>Branches & commits</h2>
-          <div id="branches-container" class="body">Select a repository to continue.</div>
+          <h2>브랜치와 커밋</h2>
+          <div id="branches-container" class="body">계속하려면 저장소를 선택하세요.</div>
         </section>
         <section class="card">
-          <h2>Commit details</h2>
+          <h2>커밋 상세 정보</h2>
           <div id="detail-container" class="body detail"></div>
         </section>
       </div>
@@ -96,11 +96,11 @@
           <div class="security-status">
             <div id="status-icon-container" class="status-icon"></div>
             <div class="status-text">
-              <h3 id="security-summary-title">Security summary</h3>
-              <p id="security-summary-text">Choose a commit to analyze.</p>
+              <h3 id="security-summary-title">보안 요약</h3>
+              <p id="security-summary-text">분석할 커밋을 선택하세요.</p>
             </div>
           </div>
-          <button id="btn-view-details" disabled>View details</button>
+          <button id="btn-view-details" disabled>상세 보기</button>
         </div>
       </section>
     </div>
@@ -150,7 +150,7 @@
       renderRepos();
     } catch (e) {
       console.error('Failed to load repos:', e);
-      repoList.innerHTML = `<div style="color:#b91c1c">Failed to load repositories: ${e.message}</div>`;
+      repoList.innerHTML = `<div style="color:#b91c1c">저장소를 불러오지 못했습니다: ${e.message}</div>`;
     }
   }
 
@@ -160,22 +160,22 @@
       S.branches[repo] = res.branches || [];
       renderBranches(repo);
     } catch(e) {
-      console.error('Failed to load branches:', e);
-      branchesBox.innerHTML = `Failed to load branches: ${e.message}`;
+      console.error('브랜치를 불러오지 못했습니다:', e);
+      branchesBox.innerHTML = `브랜치를 불러오지 못했습니다: ${e.message}`;
     }
   }
   
   async function loadCommits(key, panel) {
     try {
       const [repo, branch] = key.split('|');
-      panel.textContent = 'Loading commits...';
+      panel.textContent = '커밋을 불러오는 중...';
       const d = await api('/commits', { repo, branch });
       panel.innerHTML = ''; // Clear loading message
       (d.commits || []).forEach(c => panel.appendChild(createCommitEl(repo, branch, c)));
       highlightSelection();
     } catch (e) {
-      console.error('Failed to load commits:', e);
-      panel.textContent = `Failed to load commits: ${e.message}`;
+      console.error('커밋을 불러오지 못했습니다:', e);
+      panel.textContent = `커밋을 불러오지 못했습니다: ${e.message}`;
     }
   }
 
@@ -200,8 +200,8 @@
         <div class="field"><h3>SHA</h3><div class="val monospace">${esc(sha.slice(0, 12))}...</div></div>`;
       updateSecuritySummary(security);
     } catch (e) {
-      console.error('Failed to load commit detail/security:', e);
-      detailBox.innerHTML = `<div style="color:#b91c1c">Failed to load details: ${e.message}</div>`;
+      console.error('커밋 상세/보안 정보를 불러오지 못했습니다:', e);
+      detailBox.innerHTML = `<div style="color:#b91c1c">상세 정보를 불러오지 못했습니다: ${e.message}</div>`;
       updateSecuritySummary('unknown');
     }
   }
@@ -309,7 +309,7 @@
       securityCard.className = 'card status-unknown';
       statusIcon.innerHTML = ICONS.unknown;
       summaryTitle.textContent = isLoading ? 'Analyzing...' : 'Security Summary';
-      summaryText.textContent = isLoading ? 'Please wait...' : 'Choose a commit to analyze.';
+      summaryText.textContent = isLoading ? '잠시만 기다려 주세요.' : '분석할 커밋을 선택하세요.';
       return;
     }
 
@@ -319,15 +319,15 @@
 
     securityCard.className = `card status-${overallStatus}`;
     statusIcon.innerHTML = ICONS[overallStatus];
-    summaryTitle.textContent = { good: 'Healthy', warn: 'Warning', bad: 'Critical' }[overallStatus];
-    summaryText.textContent = issues > 0 ? `${issues} issue(s) found` : 'All checks passed.';
+    summaryTitle.textContent = { good: '안전', warn: '주의', bad: '위험' }[overallStatus];
+        summaryText.textContent = issues > 0 ? `${issues}건의 문제가 확인되었습니다` : '모든 점검을 통과했습니다.';
     btnDetails.disabled = false;
   }
   
   function selectRepo(repo) {
     S.repo = repo;
     S.selCommit = null;
-    branchesBox.textContent = 'Loading branches...';
+    branchesBox.textContent = '브랜치를 불러오는 중...';
     detailBox.innerHTML = '';
     updateSecuritySummary('unknown');
     highlightSelection();
@@ -348,7 +348,7 @@
       }
       stamp(repoStamp);
     }).catch(err => {
-      console.error('Refresh failed:', err);
+      console.error('새로고침 failed:', err);
     }).finally(() => {
       btnSync.disabled = false;
       refreshTimer = setTimeout(refreshAll, REFRESH_INTERVAL_MS);
@@ -367,15 +367,21 @@
   });
 
   // --- Helpers ---
-  function stamp(el) { el.textContent = `Last refresh: ${new Date().toLocaleString('ko-KR')}`; }
-  function esc(s) { return (s || '').toString().replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+  function stamp(el) {
+    const now = new Date().toLocaleString('ko-KR', { hour12: false });
+    el.textContent = `마지막 갱신: ${now}`;
+  }
+  function esc(s) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return (s || '').toString().replace(/[&<>"']/g, (c) => map[c] || c);
+  }
   function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < RECENT_THRESHOLD_MS; }
   function ago(d) {
-    const seconds = (Date.now() - new Date(d).getTime()) / 1000;
-    if (seconds < 60) return 'just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
-    return `${Math.floor(seconds / 86400)} day(s) ago`;
+        const seconds = (Date.now() - new Date(d).getTime()) / 1000;
+        if (seconds < 60) return '방금 전';
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+        return `${Math.floor(seconds / 86400)}일 전`;
   }
 })();
 </script>

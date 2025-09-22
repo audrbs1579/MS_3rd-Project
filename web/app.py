@@ -398,30 +398,30 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
     login = (author_login or commit_login or "").strip()
 
     if email:
-        _push_meta(f"Commit email: {email}")
+        _push_meta(f"커밋 이메일: {email}")
     if commit_login or login:
-        _push_meta(f"GitHub login: {commit_login or login}")
+        _push_meta(f"GitHub 로그인: {commit_login or login}")
     if commit_name:
-        _push_meta(f"Author name: {commit_name}")
+        _push_meta(f"작성자 이름: {commit_name}")
 
     if not (MS_TENANT_ID and MS_CLIENT_ID and MS_CLIENT_SECRET):
         details = metadata_lines or [
-            "Configure MS_CLIENT_ID, MS_CLIENT_SECRET, and MS_TENANT_ID to enable identity checks.",
+            "계정 위험 평가를 사용하려면 MS_CLIENT_ID, MS_CLIENT_SECRET, MS_TENANT_ID를 설정해야 합니다.",
         ]
         return {
             'status': 'unknown',
-            'summary': 'Microsoft Graph credentials not configured.',
+            'summary': 'Microsoft Graph 자격 증명이 설정되어 있지 않습니다.',
             'details': details,
             'metadata': metadata_lines,
         }
 
     if not email and not login:
         details = [
-            'Commit author metadata missing email/login; unable to query Microsoft Entra ID.',
+            '커밋 메타데이터에 이메일 또는 로그인 정보가 없어 Microsoft Entra ID를 조회할 수 없습니다.',
         ] + metadata_lines
         return {
             'status': 'bad',
-            'summary': 'GitHub author identity is unknown.',
+            'summary': '커밋 작성자의 계정 정보를 확인할 수 없습니다.',
             'details': details,
             'metadata': metadata_lines,
         }
@@ -462,18 +462,18 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
     if not graph_user:
         details = metadata_lines.copy()
         if last_error:
-            details.append(f"Microsoft Graph lookup error: {last_error}")
+            details.append(f"Microsoft Graph 조회 오류: {last_error}")
             return {
                 'status': 'unknown',
-                'summary': 'Unable to query Microsoft Entra ID.',
+                'summary': 'Microsoft Entra ID를 조회할 수 없습니다.',
                 'details': details,
                 'metadata': metadata_lines,
             }
-        details.append('Microsoft Entra ID lookup returned no match for this commit author.')
-        details.append('Invite or register this contributor in Microsoft Entra ID, or align the commit email with an Entra ID user.')
+        details.append('이 커밋 작성자는 Microsoft Entra ID에 등록되어 있지 않습니다.')
+        details.append('이 기여자를 Microsoft Entra ID에 초대하거나 커밋 이메일을 조직 계정과 일치시키세요.')
         return {
             'status': 'bad',
-            'summary': 'GitHub author is not registered in Microsoft Entra ID.',
+            'summary': '커밋 작성자가 Microsoft Entra ID에 등록되어 있지 않습니다.',
             'details': details,
             'metadata': metadata_lines,
         }
@@ -486,18 +486,18 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
     created = graph_user.get('createdDateTime')
 
     details = []
-    details.append(f"Resolved user: {display_name}")
+    details.append(f"확인된 사용자: {display_name}")
     if principal_name:
-        details.append(f"User principal: {principal_name}")
+        details.append(f"사용자 주체 이름: {principal_name}")
     if mail:
-        details.append(f"Mail: {mail}")
-    details.append(f"User type: {user_type}")
+        details.append(f"이메일: {mail}")
+    details.append(f"사용자 유형: {user_type}")
     if account_enabled is not None:
-        details.append(f"Account enabled: {'Yes' if account_enabled else 'No'}")
+        details.append(f"계정 사용 여부: {'Yes' if account_enabled else 'No'}")
     if created:
-        details.append(f"Created: {created}")
+        details.append(f"계정 생성일: {created}")
 
-    summary = f"{display_name} is registered in Microsoft Entra ID."
+    summary = f"{display_name} 은(는) Microsoft Entra ID에 등록되어 있습니다."
 
     return {
         'status': 'good',
@@ -709,14 +709,14 @@ def api_security_status():
 
         high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
         defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
-        defender_summary = f"CodeQL alerts: {len(commit_alerts)}"
+        defender_summary = f"CodeQL 경고: {len(commit_alerts)}"
 
         sentinel = identity_assessment
 
         bricks = {
             'status': 'unknown',
-            'summary': 'Awaiting Databricks anomaly score...',
-            'details': ['Awaiting Databricks anomaly score...'],
+            'summary': 'Databricks 이상 점수를 대기 중입니다.',
+            'details': ['Databricks 이상 점수를 대기 중입니다.'],
         }
 
         try:
@@ -737,36 +737,36 @@ def api_security_status():
                 else:
                     bricks = {
                         'status': 'unknown',
-                        'summary': 'Databricks response missing anomaly_score.',
+                        'summary': 'Databricks 응답에 anomaly_score가 없습니다.',
                         'features': bricks_features,
-                        'details': ['Databricks response missing anomaly_score.'],
+                        'details': ['Databricks 응답에 anomaly_score가 없습니다.'],
                     }
             else:
                 bricks = {
                     'status': 'unknown',
-                    'summary': 'Failed to build features from commit data.',
-                    'details': ['Failed to build features from commit data.'],
+                    'summary': '모델 입력 데이터를 생성하지 못했습니다.',
+                    'details': ['모델 입력 데이터를 생성하지 못했습니다.'],
                 }
         except RuntimeError as cfg_err:
             log.warning('Databricks configuration error: %s', cfg_err)
             bricks = {
                 'status': 'unknown',
-                'summary': 'Databricks configuration error.',
-                'details': ['Databricks configuration error.'],
+                'summary': 'Databricks 구성 오류가 발생했습니다.',
+                'details': ['Databricks 구성 오류가 발생했습니다.'],
             }
         except requests.exceptions.RequestException:
             log.exception('Databricks model invocation failed')
             bricks = {
                 'status': 'unknown',
-                'summary': 'Databricks model invocation failed.',
-                'details': ['Databricks model invocation failed.'],
+                'summary': 'Databricks 모델 호출에 실패했습니다.',
+                'details': ['Databricks 모델 호출에 실패했습니다.'],
             }
         except Exception:
             log.exception('Unexpected error while calling Databricks model')
             bricks = {
                 'status': 'unknown',
-                'summary': 'Unexpected Databricks model error.',
-                'details': ['Unexpected Databricks model error.'],
+                'summary': 'Databricks 모델 처리 중 알 수 없는 오류가 발생했습니다.',
+                'details': ['Databricks 모델 처리 중 알 수 없는 오류가 발생했습니다.'],
             }
         return jsonify({
             'defender': {
@@ -782,12 +782,12 @@ def api_security_status():
             return jsonify({
                 'defender': {'status': 'unknown', 'summary': 'No results', 'alerts': []},
                 'sentinel': identity_assessment,
-                'bricks': {'status': 'unknown', 'summary': 'No Databricks result', 'details': ['No Databricks result']},
+                'bricks': {'status': 'unknown', 'summary': 'Databricks 결과 없음', 'details': ['Databricks 결과 없음']},
             })
         raise
     except Exception:
         log.exception(f"Failed to get security status for {repo}@{commit_sha}")
-        return jsonify(error="Failed to load security status"), 500
+        return jsonify(error="보안 상태를 불러오지 못했습니다."), 500
 
 @app.errorhandler(PermissionError)
 def _unauth(_):

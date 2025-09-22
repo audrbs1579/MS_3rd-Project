@@ -55,29 +55,29 @@
 <body>
     <div class="wrap">
         <header>
-            <h1>Detailed Security & Code Analysis</h1>
+            <h1>보안 및 코드 상세 분석</h1>
             <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
         </header>
 
         <section class="grid identity-grid">
             <div id="identitySummaryCard" class="card status-unknown">
-                <div class="card-header"><h2>Identity verification</h2></div>
-                <div class="card-body"><p>Loading...</p></div>
+                <div class="card-header"><h2>계정 인증 상태</h2></div>
+                <div class="card-body"><p>불러오는 중...</p></div>
             </div>
             <div id="identityDetailsCard" class="card status-unknown">
-                <div class="card-header"><h2>Identity details</h2></div>
-                <div class="card-body"><p>Loading...</p></div>
+                <div class="card-header"><h2>계정 세부 정보</h2></div>
+                <div class="card-body"><p>불러오는 중...</p></div>
             </div>
         </section>
 
         <section class="grid result-grid">
-            <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><p>Loading...</p></div></div>
-            <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
+            <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS 모델</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
         </section>
 
         <section class="grid detail-grid">
-            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>CodeQL findings</h2></div><div class="card-body"><p>Loading...</p></div></div>
-            <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS details</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>CodeQL 분석 결과</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
+            <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS 상세</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
         </section>
     </div>
 
@@ -119,7 +119,7 @@
         function renderIdentitySummary(data) {
             const status = data?.status || 'unknown';
             setCardStatus(identitySummaryCard, status);
-            const summary = esc(data?.summary || 'Identity information unavailable.').replace(/\n+/g, '<br>');
+            const summary = esc(data?.summary || '계정 정보를 사용할 수 없습니다.').replace(/\n+/g, '<br>');
             identitySummaryCard.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
         }
 
@@ -131,7 +131,7 @@
             const body = identityDetailsCard.querySelector('.card-body');
 
             if (!detailLines.length && !metadataLines.length) {
-                body.innerHTML = '<p>No identity information available.</p>';
+                body.innerHTML = '<p>계정 정보를 표시할 수 없습니다.</p>';
                 return;
             }
 
@@ -141,7 +141,7 @@
             }
             if (metadataLines.length) {
                 html += '<hr class="card-divider">';
-                html += '<p class="section-title">Commit metadata</p>';
+                html += '<p class="section-title">커밋 메타데이터</p>';
                 html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
             }
             body.innerHTML = html;
@@ -150,7 +150,7 @@
         function updateSummaryCard(cardEl, data, fallback) {
             const status = data?.status || 'unknown';
             setCardStatus(cardEl, status);
-            const summary = esc((data?.summary || fallback || 'No data')).replace(/\r?\n/g, '<br>');
+            const summary = esc((data?.summary || fallback || '데이터가 없습니다.')).replace(/\r?\n/g, '<br>');
             cardEl.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
         }
 
@@ -160,16 +160,16 @@
             setCardStatus(defenderDetails, status);
             const body = defenderDetails.querySelector('.card-body');
             if (!alerts.length) {
-                body.innerHTML = '<p>No CodeQL alerts for this commit.</p>';
+                body.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
                 return;
             }
             const items = alerts.map(alert => {
-                const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL alert');
+                const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
                 const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
-                const description = esc(alert.description || 'No description provided.');
+                const description = esc(alert.description || '설명 없음.');
                 const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
                 const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
-                const link = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">View on GitHub</a>` : '';
+                const link = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
                 const excerpt = (alert.code_excerpt || []).map(line => {
                     const lineNo = line?.line ?? '';
                     const text = esc(line?.content || '');
@@ -197,7 +197,7 @@
             const lines = bricks?.details || [];
             const body = bricksDetails.querySelector('.card-body');
             if (!lines.length) {
-                body.innerHTML = '<p>No model details available.</p>';
+                body.innerHTML = '<p>모델 상세 정보가 없습니다.</p>';
                 return;
             }
             body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
@@ -209,7 +209,7 @@
 
         renderIdentitySummary(securityStatus.sentinel || {});
         renderIdentityDetails(securityStatus.sentinel || {});
-        updateSummaryCard(defenderCard, securityStatus.defender, 'No CodeQL data.');
+        updateSummaryCard(defenderCard, securityStatus.defender, 'CodeQL 데이터를 사용할 수 없습니다.');
         updateSummaryCard(bricksCard, securityStatus.bricks, 'Awaiting Databricks anomaly score...');
         renderDefenderDetails(securityStatus.defender);
         renderBricksDetails(securityStatus.bricks);
