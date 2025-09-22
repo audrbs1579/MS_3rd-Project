@@ -50,6 +50,41 @@
         .code-line-number { width: 36px; text-align: right; color: var(--code-muted); flex-shrink: 0; }
         .code-line-text { flex: 1; white-space: pre-wrap; }
         .code-line.highlight { background: rgba(248, 113, 113, 0.18); color: #b91c1c; }
+
+        .review-body { display: flex; flex-direction: column; gap: 18px; }
+        .review-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 14px; }
+        .review-meta .meta-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .review-meta .meta-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+        .review-meta .meta-value { margin-top: 4px; font-weight: 600; }
+        .review-files { display: flex; flex-direction: column; gap: 10px; }
+        .review-file { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f9fafb; }
+        .review-file .file-path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; }
+        .review-file .file-stats { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .review-file .file-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .review-panel { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+        .comments-list { display: flex; flex-direction: column; gap: 10px; max-height: 260px; overflow: auto; padding-right: 4px; }
+        .comment-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+        .comment-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .comment-author { display: flex; align-items: center; gap: 8px; }
+        .comment-author strong { font-size: 13px; }
+        .comment-body { font-size: 13px; line-height: 1.5; }
+        .comment-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
+        .review-form { display: flex; flex-direction: column; gap: 10px; }
+        .review-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+        .review-form input,
+        .review-form select,
+        .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
+        .review-form textarea { min-height: 80px; resize: vertical; }
+        .form-actions { display: flex; align-items: center; gap: 8px; }
+        .form-status { font-size: 12px; color: var(--text-muted); }
+        .identity-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e5e7eb; color: #374151; }
+        .identity-chip.identity-internal { background: #dcfce7; color: #166534; }
+        .identity-chip.identity-external { background: #fef9c3; color: #854d0e; }
+        .identity-chip.identity-unverified { background: #fee2e2; color: #991b1b; }
+        .identity-chip.identity-unknown { background: #e5e7eb; color: #374151; }
+        .identity-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .badge-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; }
+        .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     </style>
 </head>
 <body>
@@ -79,143 +114,427 @@
             <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>CodeQL 분석 결과</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
             <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS 상세</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
         </section>
+
+        <section id="commitReviewCard" class="card">
+            <div class="card-header"><h2>커밋 상세 & 코드 리뷰</h2></div>
+            <div class="card-body review-body">
+                <div id="commitMeta" class="review-meta"></div>
+                <div id="commitFiles" class="review-files"></div>
+                <div class="review-panel">
+                    <h3>대화형 코드 리뷰</h3>
+                    <div id="commentsList" class="comments-list"></div>
+                    <form id="commentForm" class="review-form">
+                        <div class="field">
+                            <label>파일 선택</label>
+                            <select name="path" id="commentFileSelect"><option value="">커밋 전체</option></select>
+                        </div>
+                        <div class="field">
+                            <label>라인 번호 (선택)</label>
+                            <input type="number" name="line" min="1" placeholder="라인 번호" />
+                        </div>
+                        <div class="field">
+                            <label>댓글 내용</label>
+                            <textarea name="body" placeholder="보안 피드백 또는 리뷰 의견을 입력하세요" required></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit">댓글 추가</button>
+                            <span class="form-status" id="commentFormStatus"></span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
     </div>
 
 <script>
-    (async () => {
-        const repo = {{ repo_name|tojson }};
-        const sha = {{ commit_sha|tojson }};
-        const branch = {{ branch_name|tojson }};
+(() => {
+  const repo = {{ repo_name|tojson }};
+  const sha = {{ commit_sha|tojson }};
+  const branch = {{ branch_name|tojson }};
 
-        const identitySummaryCard = document.getElementById('identitySummaryCard');
-        const identityDetailsCard = document.getElementById('identityDetailsCard');
-        const defenderCard = document.getElementById('defenderCard');
-        const bricksCard = document.getElementById('bricksCard');
-        const defenderDetails = document.getElementById('defenderDetails');
-        const bricksDetails = document.getElementById('bricksDetails');
+  const identitySummaryCard = document.getElementById('identitySummaryCard');
+  const identityDetailsCard = document.getElementById('identityDetailsCard');
+  const defenderCard = document.getElementById('defenderCard');
+  const bricksCard = document.getElementById('bricksCard');
+  const defenderDetails = document.getElementById('defenderDetails');
+  const bricksDetails = document.getElementById('bricksDetails');
+  const commitMetaEl = document.getElementById('commitMeta');
+  const commitFilesEl = document.getElementById('commitFiles');
+  const commentsListEl = document.getElementById('commentsList');
+  const commentForm = document.getElementById('commentForm');
+  const commentFileSelect = document.getElementById('commentFileSelect');
+  const commentFormStatus = document.getElementById('commentFormStatus');
 
-        function esc(value) {
-            return (value ?? '').toString()
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
+  let cachedComments = [];
+
+  function esc(value) {
+    return (value ?? '').toString()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function ago(value) {
+    const reference = value instanceof Date ? value : new Date(value);
+    const seconds = (Date.now() - reference.getTime()) / 1000;
+    if (seconds < 60) return '방금 전';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+    return `${Math.floor(seconds / 86400)}일 전`;
+  }
+
+  async function api(path, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const query = options.query || (method === 'GET' ? (options.params || {}) : {});
+    const qs = new URLSearchParams(query);
+    const url = `/api${path}${qs.toString() ? `?${qs.toString()}` : ''}`;
+    const init = {
+      method,
+      headers: Object.assign({ 'Accept': 'application/json' }, options.headers || {}),
+    };
+    if (method !== 'GET') {
+      const body = options.body !== undefined ? options.body : options.params;
+      if (body !== undefined && body !== null) {
+        init.body = typeof body === 'string' ? body : JSON.stringify(body);
+        if (!init.headers['Content-Type']) {
+          init.headers['Content-Type'] = 'application/json';
         }
+      }
+    }
+    const res = await fetch(url, init);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errData.error || `HTTP error ${res.status}`);
+    }
+    const contentType = res.headers.get('content-type');
+    return contentType?.includes('application/json') ? res.json() : res.text();
+  }
 
-        async function api(path, params = {}) {
-            const qs = new URLSearchParams(params);
-            const url = `/api${path}?${qs}`;
-            const r = await fetch(url);
-            if (!r.ok) throw new Error(`HTTP error ${r.status}`);
-            const contentType = r.headers.get('content-type');
-            return contentType?.includes('application/json') ? r.json() : r.text();
+  function setCardStatus(cardEl, status) {
+    cardEl.className = `card status-${status}`;
+  }
+
+  function renderIdentityChip(identity, options = {}) {
+    const showLabel = Boolean(options.showLabel);
+    const showFallback = Boolean(options.showFallback);
+    if (!identity || !identity.identity_level) {
+      return showFallback ? '<span class="identity-chip identity-unknown">❔</span>' : '';
+    }
+    const map = {
+      internal: 'identity-internal',
+      external: 'identity-external',
+      unverified: 'identity-unverified',
+      unknown: 'identity-unknown',
+    };
+    const className = map[identity.identity_level] || 'identity-unknown';
+    const icon = identity.identity_icon || '❔';
+    const label = identity.identity_label || '정보 부족';
+    const labelHtml = showLabel ? `<span class="identity-chip-label">${esc(label)}</span>` : '';
+    return `<span class="identity-chip ${className}">${icon}${labelHtml}</span>`;
+  }
+
+  function renderIdentitySummary(data) {
+    const status = data?.status || 'unknown';
+    setCardStatus(identitySummaryCard, status);
+    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.').replace(/
++/g, '<br>');
+    const chip = renderIdentityChip(data, { showLabel: true, showFallback: true });
+    identitySummaryCard.querySelector('.card-body').innerHTML = `${chip ? `<div>${chip}</div>` : ''}<p>${summary}</p>`;
+  }
+
+  function renderIdentityDetails(data) {
+    const status = data?.status || 'unknown';
+    setCardStatus(identityDetailsCard, status);
+    const detailLines = data?.details || [];
+    const metadataLines = data?.metadata || [];
+    const badges = (data?.identity_badges || []).map(b => {
+      const icon = (b.icon || '').toString();
+      const label = (b.label || '').toString();
+      return `<span class="badge-pill">${icon ? `${esc(icon)} ` : ''}${esc(label)}</span>`;
+    }).join('');
+    const body = identityDetailsCard.querySelector('.card-body');
+
+    if (!detailLines.length && !metadataLines.length && !badges) {
+      body.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>';
+      return;
+    }
+
+    let html = '';
+    if (detailLines.length) {
+      html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+    }
+    if (metadataLines.length) {
+      html += '<hr class="card-divider">';
+      html += '<p class="section-title">커밋 메타데이터</p>';
+      html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+    }
+    if (badges) {
+      html += `<div class="identity-badges">${badges}</div>`;
+    }
+    body.innerHTML = html;
+  }
+
+  function updateSummaryCard(cardEl, data, fallback) {
+    const status = data?.status || 'unknown';
+    setCardStatus(cardEl, status);
+    const summary = esc((data?.summary || fallback || '데이터가 없습니다.')).replace(/
+?
+/g, '<br>');
+    cardEl.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
+  }
+
+  function renderCommentsList(comments) {
+    if (!comments.length) {
+      return '<div class="empty-state">등록된 댓글이 없습니다.</div>';
+    }
+    return comments.map(comment => {
+      const user = comment.user || {};
+      const login = esc(user.login || '익명');
+      const when = comment.created_at ? esc(ago(comment.created_at)) : '';
+      const location = comment.path ? `${comment.path}${comment.line ? ':' + comment.line : ''}` : '커밋 전체';
+      const bodyHtml = esc(comment.body || '').replace(/
+/g, '<br>');
+      const link = comment.html_url ? `<a href="${esc(comment.html_url)}" target="_blank" rel="noopener">GitHub</a>` : '';
+      return `<article class="comment-card">
+        <header class="comment-header">
+          <div class="comment-author"><strong>${login}</strong></div>
+          <time>${when}</time>
+        </header>
+        <div class="comment-body">${bodyHtml}</div>
+        <footer class="comment-meta">${esc(location)}${link ? ' · ' + link : ''}</footer>
+      </article>`;
+    }).join('');
+  }
+
+  function renderCommitReview(details, comments) {
+    const commitInfo = details?.commit || {};
+    const files = details?.files || [];
+    const stats = details?.stats || {};
+
+    if (commitMetaEl) {
+      commitMetaEl.innerHTML = `
+        <div class="review-meta">
+          <div class="meta-item">
+            <div class="meta-label">커밋 메시지</div>
+            <div class="meta-value">${esc((commitInfo.message || '').split('
+')[0])}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">작성자</div>
+            <div class="meta-value">${esc((commitInfo.author || {}).name || '알 수 없음')}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">추가/삭제</div>
+            <div class="meta-value">+${stats.additions || 0} / -${stats.deletions || 0}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">SHA</div>
+            <div class="meta-value monospace">${esc(sha)}</div>
+          </div>
+        </div>`;
+    }
+
+    if (commitFilesEl) {
+      if (!files.length) {
+        commitFilesEl.innerHTML = '<div class="empty-state">변경된 파일이 없습니다.</div>';
+      } else {
+        commitFilesEl.innerHTML = files.map(file => {
+          const path = file.filename || '';
+          const statsText = [
+            file.status ? file.status.toUpperCase() : null,
+            typeof file.additions === 'number' ? `+${file.additions}` : null,
+            typeof file.deletions === 'number' ? `-${file.deletions}` : null,
+          ].filter(Boolean).join(' · ') || '변경 없음';
+          const githubUrl = file.blob_url || details.html_url;
+          return `<div class="review-file">
+            <div>
+              <div class="file-path">${esc(path)}</div>
+              <div class="file-stats">${esc(statsText)}</div>
+            </div>
+            <div class="file-actions">
+              ${githubUrl ? `<button type="button" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}
+              <button type="button" data-action="open-vscode" data-path="${esc(path)}" data-line="1">VS Code</button>
+            </div>
+          </div>`;
+        }).join('');
+        commitFilesEl.querySelectorAll('[data-action="open-vscode"]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
+          });
+        });
+        commitFilesEl.querySelectorAll('[data-action="open-github"]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const url = btn.dataset.url;
+            if (url) window.open(url, '_blank', 'noopener');
+          });
+        });
+      }
+    }
+
+    if (commentFileSelect) {
+      const options = ['<option value="">커밋 전체</option>'].concat(files.map(file => `<option value="${esc(file.filename)}">${esc(file.filename)}</option>`));
+      commentFileSelect.innerHTML = options.join('');
+    }
+
+    if (commentsListEl) {
+      commentsListEl.innerHTML = renderCommentsList(comments);
+    }
+  }
+
+  function renderDefenderDetails(defender) {
+    const alerts = defender?.alerts || [];
+    const status = defender?.status || 'unknown';
+    setCardStatus(defenderDetails, status);
+    const body = defenderDetails.querySelector('.card-body');
+    if (!alerts.length) {
+      body.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
+      return;
+    }
+    body.innerHTML = alerts.map(alert => {
+      const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
+      const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
+      const description = esc(alert.description || '설명이 없습니다.');
+      const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
+      const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
+      const excerpt = (alert.code_excerpt || []).map(line => {
+        const lineNo = line?.line ?? '';
+        const text = esc(line?.content || '');
+        const highlightClass = line?.highlight ? ' highlight' : '';
+        return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
+      }).join('');
+      const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
+      const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
+      const githubLink = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
+      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || alert.start_line || 1}">VS Code에서 열기</button>` : '';
+      return `<article class="alert-item">
+        <header>
+          <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
+          <div class="alert-actions">${githubLink} ${vsButton}</div>
+        </header>
+        <p>${description}</p>
+        ${locationLine}
+        ${excerptBlock}
+      </article>`;
+    }).join('');
+    body.querySelectorAll('.btn-open-vscode').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
+      });
+    });
+  }
+
+  function renderBricksDetails(bricks) {
+    const status = bricks?.status || 'unknown';
+    setCardStatus(bricksDetails, status);
+    const lines = bricks?.details || [];
+    const body = bricksDetails.querySelector('.card-body');
+    if (!lines.length) {
+      body.innerHTML = '<p>모델 상세 정보가 없습니다.</p>';
+      return;
+    }
+    body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+  }
+
+  function openInVSCode({ path, line }) {
+    if (!path) return;
+    const normalizedPath = path.replace(/^[/\]+/, '').replace(/\/g, '/');
+    const fallbackPath = normalizedPath.split('/').map(encodeURIComponent).join('/');
+    const fallbackUrl = `https://vscode.dev/github/${repo}/blob/${sha}/${fallbackPath}${line ? `?line=${line}` : ''}`;
+    const base = (localStorage.getItem('vsCodeBasePath') || '').trim();
+    if (base) {
+      const normalizedBase = base.replace(/[\/]+$/, '');
+      const fullPath = `${normalizedBase}/${normalizedPath}`.replace(/\/g, '/');
+      const vsUrl = encodeURI(`vscode://file/${fullPath}${line ? ':' + line : ''}`);
+      triggerProtocol(vsUrl);
+      setTimeout(() => window.open(fallbackUrl, '_blank', 'noopener'), 400);
+    } else {
+      window.open(fallbackUrl, '_blank', 'noopener');
+    }
+  }
+
+  function triggerProtocol(url) {
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function loadAll() {
+    try {
+      const securityParams = { repo, commit: sha };
+      if (branch) { securityParams.branch = branch; }
+      const [securityStatus, commitDetails] = await Promise.all([
+        api('/security_status', { query: securityParams }),
+        api('/commit_detail', { query: { repo, sha } })
+      ]);
+
+      try {
+        const commentData = await api('/commit_comments', { query: { repo, sha } });
+        cachedComments = commentData?.comments || [];
+      } catch (error) {
+        console.warn('댓글을 불러오지 못했습니다:', error);
+        cachedComments = [];
+      }
+
+      renderIdentitySummary(securityStatus.sentinel || {});
+      renderIdentityDetails(securityStatus.sentinel || {});
+      updateSummaryCard(defenderCard, securityStatus.defender, 'CodeQL 분석 결과가 없습니다.');
+      updateSummaryCard(bricksCard, securityStatus.bricks, 'Databricks anomaly 정보를 기다리는 중입니다.');
+      renderDefenderDetails(securityStatus.defender);
+      renderBricksDetails(securityStatus.bricks);
+      renderCommitReview(commitDetails || {}, cachedComments);
+    } catch (error) {
+      console.error('세부 정보를 불러오지 못했습니다:', error);
+    }
+  }
+
+  if (commentForm) {
+    commentForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const formData = new FormData(commentForm);
+      const body = (formData.get('body') || '').toString().trim();
+      if (!body) {
+        commentFormStatus.textContent = '내용을 입력해주세요.';
+        return;
+      }
+      const pathValue = (formData.get('path') || '').toString().trim();
+      const lineValue = (formData.get('line') || '').toString().trim();
+      const payload = { repo, sha, body };
+      if (pathValue) payload.path = pathValue;
+      if (lineValue) {
+        const parsed = parseInt(lineValue, 10);
+        if (!Number.isNaN(parsed)) {
+          payload.line = parsed;
         }
-
-        function setCardStatus(cardEl, status) {
-            cardEl.className = `card status-${status}`;
+      }
+      commentFormStatus.textContent = '저장 중...';
+      try {
+        const res = await api('/commit_comments', { method: 'POST', body: payload });
+        if (res?.comment) {
+          cachedComments = [res.comment, ...cachedComments];
+          if (commentsListEl) {
+            commentsListEl.innerHTML = renderCommentsList(cachedComments);
+          }
+          commentForm.reset();
+          commentFormStatus.textContent = '등록되었습니다.';
+        } else {
+          commentFormStatus.textContent = '댓글 등록 결과를 확인할 수 없습니다.';
         }
+      } catch (error) {
+        console.error('댓글 등록 실패:', error);
+        commentFormStatus.textContent = `등록 실패: ${error.message}`;
+      }
+    });
+  }
 
-        function renderIdentitySummary(data) {
-            const status = data?.status || 'unknown';
-            setCardStatus(identitySummaryCard, status);
-            const summary = esc(data?.summary || '계정 정보를 사용할 수 없습니다.').replace(/\n+/g, '<br>');
-            identitySummaryCard.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
-        }
-
-        function renderIdentityDetails(data) {
-            const status = data?.status || 'unknown';
-            setCardStatus(identityDetailsCard, status);
-            const detailLines = data?.details || [];
-            const metadataLines = data?.metadata || [];
-            const body = identityDetailsCard.querySelector('.card-body');
-
-            if (!detailLines.length && !metadataLines.length) {
-                body.innerHTML = '<p>계정 정보를 표시할 수 없습니다.</p>';
-                return;
-            }
-
-            let html = '';
-            if (detailLines.length) {
-                html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-            }
-            if (metadataLines.length) {
-                html += '<hr class="card-divider">';
-                html += '<p class="section-title">커밋 메타데이터</p>';
-                html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-            }
-            body.innerHTML = html;
-        }
-
-        function updateSummaryCard(cardEl, data, fallback) {
-            const status = data?.status || 'unknown';
-            setCardStatus(cardEl, status);
-            const summary = esc((data?.summary || fallback || '데이터가 없습니다.')).replace(/\r?\n/g, '<br>');
-            cardEl.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
-        }
-
-        function renderDefenderDetails(defender) {
-            const alerts = defender?.alerts || [];
-            const status = defender?.status || 'unknown';
-            setCardStatus(defenderDetails, status);
-            const body = defenderDetails.querySelector('.card-body');
-            if (!alerts.length) {
-                body.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
-                return;
-            }
-            const items = alerts.map(alert => {
-                const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
-                const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
-                const description = esc(alert.description || '설명 없음.');
-                const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
-                const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
-                const link = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
-                const excerpt = (alert.code_excerpt || []).map(line => {
-                    const lineNo = line?.line ?? '';
-                    const text = esc(line?.content || '');
-                    const highlightClass = line?.highlight ? ' highlight' : '';
-                    return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
-                }).join('');
-                const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
-                const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
-                return `<article class="alert-item">
-                            <header>
-                                <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
-                                ${link}
-                            </header>
-                            <p>${description}</p>
-                            ${locationLine}
-                            ${excerptBlock}
-                        </article>`;
-            }).join('');
-            body.innerHTML = items;
-        }
-
-        function renderBricksDetails(bricks) {
-            const status = bricks?.status || 'unknown';
-            setCardStatus(bricksDetails, status);
-            const lines = bricks?.details || [];
-            const body = bricksDetails.querySelector('.card-body');
-            if (!lines.length) {
-                body.innerHTML = '<p>모델 상세 정보가 없습니다.</p>';
-                return;
-            }
-            body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-        }
-
-        const params = { repo, commit: sha };
-        if (branch) { params.branch = branch; }
-        const securityStatus = await api('/security_status', params);
-
-        renderIdentitySummary(securityStatus.sentinel || {});
-        renderIdentityDetails(securityStatus.sentinel || {});
-        updateSummaryCard(defenderCard, securityStatus.defender, 'CodeQL 데이터를 사용할 수 없습니다.');
-        updateSummaryCard(bricksCard, securityStatus.bricks, 'Awaiting Databricks anomaly score...');
-        renderDefenderDetails(securityStatus.defender);
-        renderBricksDetails(securityStatus.bricks);
-
-    })();
+  loadAll();
+})();
 </script>
+
 
 </body>
 </html>
