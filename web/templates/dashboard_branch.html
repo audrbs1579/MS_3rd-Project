@@ -4,338 +4,7 @@
   <meta charset="utf-8" />
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root{
-      --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-      --text-main: #111827; --text-muted: #6b7280; --text-accent: #3b82f6; --panel-hover: #f9fafb;
-      --status-good-bg: #f0fdf4; --status-good-text: #166534; --status-good-icon: #22c55e;
-      --status-warn-bg: #fefce8; --status-warn-text: #854d0e; --status-warn-icon: #f59e0b;
-      --status-bad-bg: #fef2f2; --status-bad-text: #991b1b; --status-bad-icon: #ef4444;
-      --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
-      --status-recent: #22c55e;
-    }
-    *{box-sizing:border-box}
-    html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 15px; }
-    .wrap{max-width:1400px; margin:0 auto; padding:24px; display:flex; flex-direction:column; height:100%;}
-    .monospace{font-family: ui-monospace, Consolas, Menlo, monospace;}
-    .toolbar{display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px;}
-    .input{ width:100%; padding:10px 14px; border:1px solid var(--border); background:var(--panel); border-radius:8px; font-size:15px; box-shadow: var(--shadow); }
-    button{ padding:8px 16px; border:1px solid var(--border); border-radius:8px; background:var(--panel); font-size: 14px; font-weight:500; cursor:pointer; box-shadow: var(--shadow); transition: background-color 0.2s; }
-    button:hover{background-color: #f3f4f6;}
-    .main-grid { display: grid; grid-template-rows: auto 1fr auto; gap: 16px; flex-grow: 1; min-height: 0; }
-    .grid-row-mid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; min-height: 0; }
-    .card{ display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; background:var(--panel); min-height:0; box-shadow: var(--shadow); }
-    .card h2{ margin:0; padding:10px 16px; border-bottom:1px solid var(--border); font-size:14px; font-weight:600; }
-    .body{padding:12px; overflow:auto;}
-    .stamp{padding:0 8px 8px 8px; font-size:12px; color:var(--text-muted)}
-    .repo-item{ display:flex; align-items:center; gap:12px; padding:10px 12px; border:none; border-radius:8px; cursor:pointer; width:100%; text-align:left; transition: background-color 0.2s; }
-    .repo-item:hover{background-color: var(--panel-hover);}
-    .repo-item.selected { background-color: #eef2ff; }
-    .repo-name{font-weight:500; font-size:14px; }
-    .repo-meta{font-size:12px; color:var(--text-muted); margin-left: auto; }
-    .status-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background-color: var(--status-recent); }
-    #branches-container, #detail-container { padding: 12px; }
-    .branch{border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-top: 8px;}
-    .branch-head{ display:flex; gap:8px; align-items:center; background:var(--panel-hover); padding:8px 12px; font-size:14px; }
-    .sha-tag{ border:1px solid var(--border); border-radius:999px; padding:1px 6px; font-size:11px; color:var(--text-muted); background: var(--panel); }
-    .panel{padding:6px;}
-    .commit{ display:grid; grid-template-columns:1fr auto; gap:8px; border-radius:6px; padding:8px 10px; margin-bottom:4px; cursor:pointer; transition: background-color 0.2s; }
-    .commit:hover{background:var(--panel-hover)}
-    .commit.selected { background-color: #eef2ff; }
-    .commit .msg { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .commit .meta { font-size: 11px; color: var(--text-muted); }
-    .detail .field { border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:6px; }
-    .detail .field h3{ margin:0; padding:3px 8px; background:var(--panel-hover); font-size:10px; font-weight:600; color:var(--text-muted); text-transform: uppercase; }
-    .detail .field .val{ padding:5px 8px; font-size:13px; }
-    #security-summary-card { transition: background-color 0.3s; }
-    .security-summary-body { display: flex; align-items: center; justify-content: space-between; padding: 16px; }
-    .security-status { display: flex; align-items: center; gap: 12px; }
-    .status-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-    .status-icon svg { width: 20px; height: 20px; }
-    .status-text h3 { margin: 0; font-size: 16px; }
-    .status-text p { margin: 0; font-size: 14px; color: var(--text-muted); }
-    #btn-view-details { padding: 8px 20px; font-weight: 600; }
-    #btn-view-details:disabled { background-color: #e5e7eb; cursor: not-allowed; opacity: 0.7; }
-    .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
-    .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
-    .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
-    .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
-  
-    .toolbar-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .error-text {
-      color: #991b1b;
-      background: #fee2e2;
-      border: 1px solid var(--border);
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-    }
-    .detail-loading,
-    .detail-error {
-      padding: 16px;
-      border-radius: 10px;
-      background: #fefce8;
-      border: 1px solid var(--border);
-      font-size: 14px;
-    }
-    .detail-error {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-    .detail-section {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .detail-metadata {
-      display: grid;
-      gap: 8px;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    }
-    .section-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-    }
-    .file-hint {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .file-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .file-item {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #f9fafb;
-      padding: 10px 12px;
-    }
-    .file-path {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 13px;
-      word-break: break-all;
-    }
-    .file-stats {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
-    .file-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .code-review-panel {
-      gap: 12px;
-    }
-    .comments-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-height: 260px;
-      overflow: auto;
-      padding-right: 4px;
-    }
-    .comment-card {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      background: var(--panel);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .comment-author {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .comment-author img {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: 1px solid var(--border);
-      object-fit: cover;
-    }
-    .comment-body {
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    .comment-meta {
-      font-size: 12px;
-      color: var(--text-muted);
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .review-form {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .review-form .field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-size: 13px;
-    }
-    .review-form input,
-    .review-form select,
-    .review-form textarea {
-      padding: 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      font-family: inherit;
-      background: var(--panel);
-    }
-    .review-form textarea {
-      min-height: 80px;
-      resize: vertical;
-    }
-    .form-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .form-status {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .empty-state {
-      padding: 12px;
-      font-size: 13px;
-      color: var(--text-muted);
-      background: #f3f4f6;
-      border-radius: 8px;
-    }
-    .identity-badge {
-      display: flex;
-      gap: 12px;
-      border-radius: 12px;
-      padding: 14px;
-      border: 1px solid var(--border);
-      background: var(--panel);
-    }
-    .identity-badge.identity-internal {
-      border-color: #bbf7d0;
-      background: #f0fdf4;
-      color: #166534;
-    }
-    .identity-badge.identity-external {
-      border-color: #fde68a;
-      background: #fefce8;
-      color: #854d0e;
-    }
-    .identity-badge.identity-unverified {
-      border-color: #fecaca;
-      background: #fef2f2;
-      color: #991b1b;
-    }
-    .identity-badge.identity-unknown {
-      background: #f3f4f6;
-      color: #4b5563;
-    }
-    .identity-icon {
-      font-size: 20px;
-      line-height: 1;
-      display: flex;
-      align-items: center;
-    }
-    .identity-content {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .identity-title {
-      font-weight: 600;
-    }
-    .identity-summary {
-      font-size: 13px;
-    }
-    .identity-sub {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .identity-badges {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    .badge-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #eef2ff;
-      color: #4338ca;
-    }
-    .identity-chip {
-      display: inline-flex;
-      align-items: center;
-      margin-right: 6px;
-    }
-    .identity-chip-inner {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      background: #e5e7eb;
-      color: #374151;
-    }
-    .identity-chip-inner.identity-internal {
-      background: #dcfce7;
-      color: #166534;
-    }
-    .identity-chip-inner.identity-external {
-      background: #fef9c3;
-      color: #854d0e;
-    }
-    .identity-chip-inner.identity-unverified {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-    .identity-chip-inner.identity-unknown {
-      background: #e5e7eb;
-      color: #374151;
-    }
-    .identity-chip-label {
-      font-weight: 500;
-    }
-    .summary-lines {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .commit-first {
-      border-left: 3px solid #6366f1;
-      padding-left: 7px;
-    }
-    .commit .meta {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-  </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
 </head>
 <body>
   <div class="wrap">
@@ -351,7 +20,7 @@
     <div class="main-grid">
       <section class="card">
         <h2>내 저장소</h2>
-        <div class="body" id="repoList" style="max-height: 200px;"></div>
+        <div class="body repo-list" id="repoList"></div>
         <div id="repoStamp" class="stamp"></div>
       </section>
 
@@ -407,10 +76,10 @@
     unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
   };
   const IDENTITY_LEVELS = {
-    internal: { icon: '✅', label: '내부 직원', className: 'identity-internal' },
-    external: { icon: 'ℹ️', label: '외부 협력자', className: 'identity-external' },
-    unverified: { icon: '⚠️', label: '미확인 외부인', className: 'identity-unverified' },
-    unknown: { icon: '❔', label: '정보 부족', className: 'identity-unknown' },
+    internal: { icon: 'IN', label: 'Internal Staff', className: 'identity-internal' },
+    external: { icon: 'EXT', label: 'External Partner', className: 'identity-external' },
+    unverified: { icon: 'UNVER', label: 'Unverified Contributor', className: 'identity-unverified' },
+    unknown: { icon: '?', label: 'Unknown', className: 'identity-unknown' },
   };
 
   // --- DOM Elements ---
@@ -752,7 +421,7 @@ async function loadRepos() {
       renderRepos();
     } catch (e) {
       console.error('Failed to load repos:', e);
-      repoList.innerHTML = `<div style="color:#b91c1c">저장소를 불러오지 못했습니다: ${e.message}</div>`;
+      repoList.innerHTML = `<div class="error-banner">저장소를 불러오지 못했습니다: ${e.message}</div>`;
     }
   }
 
@@ -857,9 +526,9 @@ async function loadRepos() {
         <div class="branch-head">
           <b class="monospace">${isRecent(b.last_commit_date) ? '<span class="status-indicator"></span>' : ''}${esc(b.name)}</b>
           <span class="sha-tag">${esc((b.sha || '').slice(0, 7))}</span>
-          <button style="margin-left: auto;">${open ? 'Hide' : 'Show'}</button>
+          <button class="branch-toggle">${open ? 'Hide' : 'Show'}</button>
         </div>
-        <div class="panel" ${open ? '' : 'style="display:none"'}></div>`;
+        <div class="panel${open ? '' : ' is-hidden'}"></div>`;
 
       const btn = branchEl.querySelector('button');
       const panel = branchEl.querySelector('.panel');
