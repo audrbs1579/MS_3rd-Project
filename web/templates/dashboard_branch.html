@@ -150,7 +150,6 @@
           repoList.innerHTML = `<div style="color:#b91c1c">Failed to load repositories: ${e.message}</div>`;
         }
     }
-    
     function renderRepos() {
         const q=($('#repoFilter').value||'').toLowerCase();
         const frag = document.createDocumentFragment();
@@ -249,8 +248,9 @@
             commitEl.className = 'commit';
             commitEl.dataset.repo = repo;
             commitEl.dataset.sha = c.sha;
-            commitEl.onclick = () => showCommit(repo, c.sha);
-            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
+            commitEl.dataset.branch = branch;
+            commitEl.onclick = () => showCommit(repo, c.sha, branch);
+            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} 쨌 ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
             if (S.selCommit && S.selCommit.repo === repo && S.selCommit.sha === c.sha) { commitEl.classList.add('selected'); }
             frag.appendChild(commitEl);
         });
@@ -262,24 +262,27 @@
         console.error('Failed to load commits:', e);
         panel.textContent = `Failed to load commits: ${e.message}`;
       }
-    }
 
-    async function showCommit(repo, sha) {
-        S.selCommit = { repo, sha };
+    async function showCommit(repo, sha, branch) {
+        const commitEl = document.querySelector(`.commit[data-repo=\"${repo}\"][data-sha=\"${sha}\"]`);
+        const effectiveBranch = branch || commitEl?.dataset.branch || S.selCommit?.branch || null;
+        S.selCommit = { repo, sha, branch: effectiveBranch };
         highlightSelectedCommit();
         detailBox.textContent='...';
         updateSecuritySummary('loading');
-        
+
         try{
+          const securityParams = { repo, commit: sha };
+          if (effectiveBranch) { securityParams.branch = effectiveBranch; }
           const [details, security] = await Promise.all([
               api('/api/commit_detail', {repo, sha}),
-              api('/api/security_status', {repo, ref: sha})
+              api('/api/security_status', securityParams)
           ]);
-          detailBox.innerHTML = `<div class="field"><h3>Title</h3><div class="val">${esc(details.message.split('\n')[0])}</div></div><div class="field"><h3>Author</h3><div class="val">${esc(details.author)}</div></div><div class="field"><h3>SHA</h3><div class="val monospace">${sha.slice(0,12)}...</div></div>`;
+          detailBox.innerHTML = `<div class=\"field\"><h3>Title</h3><div class=\"val\">${esc(details.message.split('\\n')[0])}</div></div><div class=\"field\"><h3>Author</h3><div class=\"val\">${esc(details.author)}</div></div><div class=\"field\"><h3>SHA</h3><div class=\"val monospace\">${sha.slice(0,12)}...</div></div>`;
           updateSecuritySummary(security);
         }catch(e){
           console.error('Failed to load commit detail/security:', e);
-          detailBox.innerHTML = `<div style="color:#b91c1c">Failed to load details: ${e.message}</div>`;
+          detailBox.innerHTML = `<div style=\"color:#b91c1c\">Failed to load details: ${e.message}</div>`;
           updateSecuritySummary('unknown');
         }
     }
@@ -361,7 +364,7 @@
 
                     if (prevSelCommit && prevSelCommit.repo === prevRepo) {
                         try {
-                            await showCommit(prevSelCommit.repo, prevSelCommit.sha);
+                            await showCommit(prevSelCommit.repo, prevSelCommit.sha, prevSelCommit.branch);
                         } catch (commitErr) {
                             console.error('Failed to refresh selected commit:', commitErr);
                             S.selCommit = null;
@@ -395,7 +398,8 @@
     btnSync.addEventListener('click', () => refreshAll());
     btnDetails.addEventListener('click', () => {
         if (S.selCommit) {
-            window.location.href = `/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}`;
+            const branchPart = S.selCommit.branch ? `&branch=${encodeURIComponent(S.selCommit.branch)}` : '';
+            window.location.href = `/details?repo=${S.selCommit.repo}&sha=${S.selCommit.sha}${branchPart}`;
         }
     });
 

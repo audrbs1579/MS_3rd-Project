@@ -49,6 +49,7 @@
     (async () => {
         const repo = {{ repo_name|tojson }};
         const sha = {{ commit_sha|tojson }};
+        const branch = {{ branch_name|tojson }};
         
         const defenderCard = document.getElementById('defenderCard');
         const sentinelCard = document.getElementById('sentinelCard');
@@ -69,7 +70,9 @@
         }
 
         // Load security status data
-        const securityStatus = await api('/security_status', { repo, ref: sha });
+        const params = { repo, commit: sha };
+        if (branch) { params.branch = branch; }
+        const securityStatus = await api('/security_status', params);
 
         // Update security cards
         updateCard(defenderCard, securityStatus.defender);

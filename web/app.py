@@ -339,14 +339,16 @@ def details():
     
     repo = request.args.get("repo")
     sha = request.args.get("sha")
-    
+    branch = request.args.get("branch")
+
     if not repo or not sha:
         return "리포지토리와 커밋 SHA가 필요합니다.", 400
 
     return render_template("detail_view.html", 
         user_id=session.get("user_login") or "me",
         repo_name=repo,
-        commit_sha=sha
+        commit_sha=sha,
+        branch_name=branch
     )
 
 # ---------- API ----------
@@ -409,14 +411,27 @@ def api_commit_diff():
 
 @app.get("/api/security_status")
 def api_security_status():
-    repo, ref = request.args.get("repo"), request.args.get("ref")
-    if not repo or not ref:
-        return jsonify({"error": "repo and ref required"}), 400
+    repo = request.args.get("repo")
+    commit_sha = request.args.get("commit") or request.args.get("ref") or request.args.get("sha")
+    branch = request.args.get("branch")
+    if not repo or not commit_sha:
+        return jsonify({"error": "repo and commit required"}), 400
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
+
+    branch_ref = None
+    if branch:
+        branch = branch.strip()
+        if branch:
+            branch_ref = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+
+    params = {"per_page": 100}
+    if branch_ref:
+        params["ref"] = branch_ref
+
     url = f"{GITHUB_URL_BASE}/repos/{repo}/code-scanning/alerts"
     try:
-        alerts, _ = _gh_get(url, params={"ref": ref, "per_page": 100})
+        alerts, _ = _gh_get(url, params=params)
         alerts = alerts or []
 
         enriched_alerts = []
@@ -429,7 +444,7 @@ def api_security_status():
             path_name = location.get('path') or ''
             start_line = location.get('start_line') or 0
             end_line = location.get('end_line') or start_line or 0
-            excerpt = _get_code_excerpt(repo, ref, path_name, start_line, end_line)
+            excerpt = _get_code_excerpt(repo, commit_sha, path_name, start_line, end_line)
             enriched_alerts.append({
                 'number': alert.get('number'),
                 'rule_id': rule.get('id'),
@@ -458,7 +473,7 @@ def api_security_status():
         }
 
         try:
-            bricks_features = _build_bricks_features_from_commit(repo, ref)
+            bricks_features = _build_bricks_features_from_commit(repo, commit_sha)
 
             if bricks_features:
                 anomaly_score = _invoke_databricks_model(bricks_features)
@@ -518,7 +533,7 @@ def api_security_status():
             })
         raise
     except Exception:
-        log.exception(f"Failed to get security status for {repo}@{ref}")
+        log.exception(f"Failed to get security status for {repo}@{commit_sha}")
         return jsonify(error="Failed to load security status"), 500
 
 
