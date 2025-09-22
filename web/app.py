@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import logging
 import random
@@ -913,6 +913,6 @@ def handle_exception(e):
     return jsonify(error="Internal server error"), 500
 
 if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
-    port = int(os.environ.get("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port, debug=debug_mode)
+debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+port = int(os.environ.get("PORT", "8000"))
+app.run(host="0.0.0.0", port=port, debug=debug_mode)
