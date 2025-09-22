@@ -362,7 +362,7 @@
     if (S.selCommit) {
       const { repo, sha, branch } = S.selCommit;
       const branchPart = branch ? `&branch=${encodeURIComponent(branch)}` : '';
-      window.open(`/details?repo=${repo}&sha=${sha}${branchPart}`, '_blank');
+      window.location.href = `/details?repo=${repo}&sha=${sha}${branchPart}`;
     }
   });
 

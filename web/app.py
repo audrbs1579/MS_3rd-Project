@@ -1,10 +1,11 @@
-﻿import os
+import os
 import json
 import logging
 import random
 import base64
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
+from threading import Lock
 
 import requests
 from flask import (
@@ -32,6 +33,15 @@ DATABRICKS_TOKEN = (
     or os.environ.get("DATABRICKS_BEARER_TOKEN")
 )
 DATABRICKS_TIMEOUT = float(os.environ.get("DATABRICKS_TIMEOUT", "15"))
+
+MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID")
+MS_CLIENT_SECRET = os.environ.get("MS_CLIENT_SECRET")
+MS_TENANT_ID = os.environ.get("MS_TENANT_ID")
+MS_GRAPH_SCOPE = os.environ.get("MS_GRAPH_SCOPE", "https://graph.microsoft.com/.default")
+MS_GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+_GRAPH_TOKEN_CACHE = {"access_token": None, "expires_at": None}
+_GRAPH_TOKEN_LOCK = Lock()
+
 SENSITIVE_KEYWORDS = (
     "secret",
     "password",
@@ -184,6 +194,8 @@ def _count_dependency_changes(files):
     return total
 
 
+
+
 def _build_bricks_features_from_commit(repo_full_name, commit_sha, commit_data=None, hint=None):
     if not repo_full_name or not commit_sha:
         return None
@@ -289,6 +301,320 @@ def _invoke_databricks_model(features):
         return None
 
     return _extract_anomaly_score(result_json)
+
+
+
+
+
+def _get_graph_token():
+    if not (MS_TENANT_ID and MS_CLIENT_ID and MS_CLIENT_SECRET):
+        raise RuntimeError("Microsoft Graph credentials are not configured.")
+    now = datetime.now(timezone.utc)
+    with _GRAPH_TOKEN_LOCK:
+        cached_token = _GRAPH_TOKEN_CACHE.get("access_token")
+        expires_at = _GRAPH_TOKEN_CACHE.get("expires_at")
+        if cached_token and expires_at and expires_at - now > timedelta(seconds=60):
+            return cached_token
+
+        token_url = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token"
+        payload = {
+            "client_id": MS_CLIENT_ID,
+            "client_secret": MS_CLIENT_SECRET,
+            "scope": MS_GRAPH_SCOPE,
+            "grant_type": "client_credentials",
+        }
+        try:
+            response = requests.post(token_url, data=payload, timeout=TIMEOUT)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            raise RuntimeError(f"Graph token request failed: {exc}") from exc
+
+        data = response.json()
+        token = data.get("access_token")
+        if not token:
+            raise RuntimeError("Graph token response missing access_token.")
+        try:
+            expires_in = int(data.get("expires_in") or 3600)
+        except (TypeError, ValueError):
+            expires_in = 3600
+
+        _GRAPH_TOKEN_CACHE["access_token"] = token
+        _GRAPH_TOKEN_CACHE["expires_at"] = now + timedelta(seconds=max(expires_in - 60, 60))
+        return token
+
+
+def _graph_get_json(path, params=None, headers=None):
+    token = _get_graph_token()
+    url = f"{MS_GRAPH_BASE_URL}{path}"
+    request_headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    if headers:
+        request_headers.update(headers)
+    try:
+        response = requests.get(url, headers=request_headers, params=params, timeout=TIMEOUT)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        if not response.content:
+            return None
+        return response.json()
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Graph request failed: {exc}") from exc
+
+
+def _sanitize_odata_literal(value):
+    return (value or "").replace("'", "''")
+
+
+def _format_graph_datetime(value):
+    if not value:
+        return "Unknown time"
+    dt = _safe_parse_iso8601(value)
+    if not dt:
+        return value
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=None):
+    metadata_lines = []
+    seen_meta = set()
+
+    def _push_meta(line):
+        if line and line not in seen_meta:
+            metadata_lines.append(line)
+            seen_meta.add(line)
+
+    commit_info = (commit_data or {}).get("commit") or {}
+    commit_author = commit_info.get("author") or {}
+    github_author = (commit_data or {}).get("author") or {}
+
+    commit_email = (commit_author.get("email") or "").strip()
+    commit_name = (commit_author.get("name") or "").strip()
+    commit_login = (github_author.get("login") or "").strip()
+
+    email = (author_email or commit_email or "").strip()
+    login = (author_login or commit_login or "").strip()
+
+    if email:
+        _push_meta(f"Commit email: {email}")
+    if commit_login or login:
+        _push_meta(f"GitHub login: {commit_login or login}")
+    if commit_name:
+        _push_meta(f"Author name: {commit_name}")
+
+    if not (MS_TENANT_ID and MS_CLIENT_ID and MS_CLIENT_SECRET):
+        details = metadata_lines or [
+            "Configure MS_CLIENT_ID, MS_CLIENT_SECRET, and MS_TENANT_ID to enable identity checks.",
+        ]
+        return {
+            'status': 'unknown',
+            'summary': 'Microsoft Graph credentials not configured.',
+            'details': details,
+        }
+
+    if not email and not login:
+        details = [
+            'Commit author metadata missing email/login; unable to query Microsoft Graph.',
+        ] + metadata_lines
+        return {
+            'status': 'unknown',
+            'summary': 'Commit author identity unavailable.',
+            'details': details,
+        }
+
+    queries = []
+    if email:
+        safe_email = _sanitize_odata_literal(email)
+        queries.append((
+            " or ".join([
+                f"mail eq '{safe_email}'",
+                f"userPrincipalName eq '{safe_email}'",
+                f"otherMails/any(c:c eq '{safe_email}')",
+            ]),
+            True,
+        ))
+    if login:
+        safe_login = _sanitize_odata_literal(login)
+        queries.append((
+            " or ".join([
+                f"userPrincipalName eq '{safe_login}'",
+                f"mailNickname eq '{safe_login}'",
+            ]),
+            True,
+        ))
+    if commit_name:
+        safe_name = _sanitize_odata_literal(commit_name)
+        queries.append((f"startsWith(displayName, '{safe_name}')", True))
+
+    graph_user = None
+    last_error = None
+    for filter_expr, require_eventual in queries or []:
+        headers = {"ConsistencyLevel": "eventual"} if require_eventual else None
+        params = {"$filter": filter_expr, "$top": 1}
+        try:
+            data = _graph_get_json("/users", params=params, headers=headers)
+        except RuntimeError as exc:
+            last_error = str(exc)
+            log.warning('Microsoft Graph user lookup failed: %s', exc)
+            continue
+        values = (data or {}).get('value') or []
+        if values:
+            graph_user = values[0]
+            break
+
+    if not graph_user:
+        details = metadata_lines.copy()
+        if last_error:
+            details.append(last_error)
+            summary = 'Failed to query Microsoft Graph.'
+        else:
+            summary = 'Microsoft Graph user not found for commit author.'
+        if not details:
+            details = ['Microsoft Graph user lookup returned no match.']
+        else:
+            details.insert(0, 'Microsoft Graph user lookup returned no match.')
+        return {
+            'status': 'unknown',
+            'summary': summary,
+            'details': details,
+        }
+
+    user_id = graph_user.get('id')
+    display_name = graph_user.get('displayName') or graph_user.get('userPrincipalName') or email or login
+    principal_name = graph_user.get('userPrincipalName')
+    mail = graph_user.get('mail')
+
+    context_lines = []
+    seen_context = set()
+
+    def _push_context(line):
+        if line and line not in seen_context:
+            context_lines.append(line)
+            seen_context.add(line)
+
+    _push_context(f"Resolved user: {display_name}")
+    if principal_name and principal_name != display_name:
+        _push_context(f"User principal: {principal_name}")
+    if mail and mail not in {display_name, principal_name}:
+        _push_context(f"Mail: {mail}")
+
+    risky_user = None
+    risk_error = None
+    try:
+        risky_user = _graph_get_json(f"/identityProtection/riskyUsers/{user_id}")
+    except RuntimeError as exc:
+        risk_error = str(exc)
+        log.warning('Microsoft Graph riskyUsers lookup failed for %s: %s', user_id, exc)
+
+    detections = []
+    detection_error = None
+    try:
+        detection_payload = _graph_get_json(
+            '/identityProtection/riskDetections',
+            params={
+                '$filter': f"userId eq '{user_id}'",
+                '$orderby': 'detectedDateTime desc',
+                '$top': 5,
+            },
+            headers={'ConsistencyLevel': 'eventual'},
+        )
+        detections = (detection_payload or {}).get('value') or []
+    except RuntimeError as exc:
+        detection_error = str(exc)
+        log.warning('Microsoft Graph riskDetections lookup failed for %s: %s', user_id, exc)
+
+    status = 'good'
+    summary = 'No active identity risk signals detected.'
+    risk_lines = []
+
+    def _risk_order(level):
+        return {'high': 3, 'medium': 2, 'low': 1, 'none': 0}.get((level or '').lower(), -1)
+
+    if risky_user:
+        risk_level = (risky_user.get('riskLevel') or 'none').lower()
+        risk_state = (risky_user.get('riskState') or 'unknown').lower()
+        risk_detail = risky_user.get('riskDetail')
+        last_updated = _format_graph_datetime(risky_user.get('riskLastUpdatedDateTime') or risky_user.get('lastUpdatedDateTime'))
+
+        if risk_level == 'high':
+            status = 'bad'
+        elif risk_level == 'medium':
+            status = 'warn'
+        elif risk_level == 'low':
+            status = 'warn' if risk_state not in {'dismissed', 'remediated'} else 'good'
+        elif risk_level == 'none':
+            status = 'good' if risk_state in {'dismissed', 'remediated', 'none'} else 'warn'
+        else:
+            status = 'unknown'
+
+        summary = f"Risk level {risk_level.title()} (state: {risk_state or 'unknown'})"
+        if risk_detail and risk_detail.lower() != 'none':
+            risk_lines.append(f"Risk detail: {risk_detail}")
+        if last_updated:
+            risk_lines.append(f"Last updated: {last_updated}")
+    elif detections:
+        worst_detection = max(detections, key=lambda item: _risk_order(item.get('riskLevel')))
+        worst_level = (worst_detection.get('riskLevel') or 'unknown').lower()
+        latest_time = _format_graph_datetime(worst_detection.get('detectedDateTime') or worst_detection.get('createdDateTime'))
+        summary = f"{len(detections)} risk detection(s); latest {worst_level.title()} signal on {latest_time}."
+        if worst_level == 'high':
+            status = 'bad'
+        elif worst_level in {'medium', 'low'}:
+            status = 'warn'
+        else:
+            status = 'unknown'
+    elif risk_error:
+        status = 'unknown'
+        summary = 'Failed to retrieve Microsoft Graph risk data.'
+
+    detection_lines = []
+    for detection in detections:
+        det_level = (detection.get('riskLevel') or 'unknown').title()
+        det_time = _format_graph_datetime(detection.get('detectedDateTime') or detection.get('createdDateTime'))
+        det_detail = detection.get('riskDetail') or detection.get('riskEventType') or detection.get('detectionType') or 'Risk event'
+        det_state = detection.get('state') or detection.get('riskState')
+        pieces = [f"[{det_time}] {det_level} risk", det_detail]
+        if det_state:
+            pieces.append(f"state: {det_state}")
+        source = detection.get('source')
+        if source:
+            pieces.append(f"source: {source}")
+        ip = detection.get('ipAddress')
+        if ip:
+            pieces.append(f"IP: {ip}")
+        location = ", ".join(filter(None, [detection.get('city'), detection.get('countryOrRegion')]))
+        if location:
+            pieces.append(f"location: {location}")
+        detection_lines.append(" - ".join(pieces))
+
+    detail_lines = []
+    detail_lines.extend(context_lines)
+    detail_lines.extend(risk_lines)
+
+    if detection_lines:
+        detail_lines.append('Suspicious signals:')
+        detail_lines.extend(detection_lines)
+    elif detection_error:
+        detail_lines.append('Could not load historical risk detections.')
+
+    if metadata_lines:
+        detail_lines.append('Commit metadata:')
+        detail_lines.extend(metadata_lines)
+
+    if risk_error and not risky_user:
+        detail_lines.append(f"Risk lookup error: {risk_error}")
+
+    if not detail_lines:
+        detail_lines = ['No identity risk context available.']
+
+    return {
+        'status': status,
+        'summary': summary,
+        'details': detail_lines,
+    }
+
 
 
 # ---------- 라우팅 ----------
@@ -416,6 +742,26 @@ def api_security_status():
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
 
+    commit_data = None
+    author_email = None
+    author_login = None
+    commit_url = f"{GITHUB_URL_REPO_COMMITS.format(repo=repo)}/{commit_sha}"
+    try:
+        commit_data_json, _ = _gh_get(commit_url)
+        if isinstance(commit_data_json, dict):
+            commit_data = commit_data_json
+    except requests.exceptions.RequestException as commit_err:
+        log.warning("Failed to fetch commit %s@%s for identity assessment: %s", repo, commit_sha, commit_err)
+        commit_data = None
+
+    if isinstance(commit_data, dict):
+        commit_info = (commit_data.get("commit") or {})
+        author_info = commit_info.get("author") or {}
+        author_email = (commit_data.get("author") or {}).get("email") or author_info.get("email")
+        author_login = (commit_data.get("author") or {}).get("login") or (commit_data.get("committer") or {}).get("login") or author_info.get("name")
+
+    identity_assessment = _evaluate_identity_risk(author_email, author_login, commit_data)
+
     branch_ref = None
     if branch:
         branch = branch.strip()
@@ -474,11 +820,7 @@ def api_security_status():
         defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
         defender_summary = f"CodeQL alerts: {len(commit_alerts)}"
 
-        sentinel = {
-            'status': 'good',
-            'summary': 'Sentinel score: 0.8',
-            'details': ['Sentinel score: 0.8'],
-        }
+        sentinel = identity_assessment
 
         bricks = {
             'status': 'unknown',
@@ -487,7 +829,7 @@ def api_security_status():
         }
 
         try:
-            bricks_features = _build_bricks_features_from_commit(repo, commit_sha)
+            bricks_features = _build_bricks_features_from_commit(repo, commit_sha, commit_data=commit_data)
 
             if bricks_features:
                 anomaly_score = _invoke_databricks_model(bricks_features)
@@ -548,13 +890,14 @@ def api_security_status():
         if e.response.status_code in [404, 403]:
             return jsonify({
                 'defender': {'status': 'unknown', 'summary': 'No results', 'alerts': []},
-                'sentinel': {'status': 'good', 'summary': 'Sentinel score: 0.8', 'details': ['Sentinel score: 0.8']},
+                'sentinel': identity_assessment,
                 'bricks': {'status': 'unknown', 'summary': 'No Databricks result', 'details': ['No Databricks result']},
             })
         raise
     except Exception:
         log.exception(f"Failed to get security status for {repo}@{commit_sha}")
         return jsonify(error="Failed to load security status"), 500
+
 @app.errorhandler(PermissionError)
 def _unauth(_):
     session.clear()

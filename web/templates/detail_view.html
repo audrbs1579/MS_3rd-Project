@@ -45,13 +45,13 @@
         </header>
         <main class="grid">
             <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><div class="spinner"></div></div></div>
-            <div id="sentinelCard" class="card status-unknown"><div class="card-header"><h2>Sentinel</h2></div><div class="card-body"><div class="spinner"></div></div></div>
+            <div id="sentinelCard" class="card status-unknown"><div class="card-header"><h2>Identity Risk (Graph)</h2></div><div class="card-body"><div class="spinner"></div></div></div>
             <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><div class="spinner"></div></div></div>
         </main>
 
         <section class="grid detail-grid">
             <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>Defender alerts</h2></div><div class="card-body"><p>Loading...</p></div></div>
-            <div id="sentinelDetails" class="card status-unknown"><div class="card-header"><h2>Sentinel details</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="sentinelDetails" class="card status-unknown"><div class="card-header"><h2>Identity risk details</h2></div><div class="card-body"><p>Loading...</p></div></div>
             <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS details</h2></div><div class="card-body"><p>Loading...</p></div></div>
         </section>
     </div>
@@ -132,7 +132,7 @@
         updateCard(bricksCard, securityStatus.bricks);
 
         renderDefenderDetails(securityStatus.defender);
-        renderListDetails(sentinelDetails, securityStatus.sentinel, ['Sentinel score: 0.8']);
+        renderListDetails(sentinelDetails, securityStatus.sentinel, ['Identity risk data unavailable.']);
         renderListDetails(bricksDetails, securityStatus.bricks, ['Anomaly score: 0.5']);
 
     })();
