@@ -525,7 +525,7 @@ def api_security_status():
 @app.errorhandler(PermissionError)
 def _unauth(_):
     session.clear()
-    # API 호출이면 JSON 401, 페이지 요청이면 리다이렉트
+    # If request is API, return JSON 401; otherwise redirect.
     if request.path.startswith("/api/"):
         return jsonify({"error": "unauthorized"}), 401
     return redirect(url_for("index"))
@@ -536,7 +536,6 @@ def handle_exception(e):
     log.exception("An unhandled exception occurred")
     return jsonify(error="Internal server error"), 500
 
-if __name__ == "__main__":
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
     port = int(os.environ.get("PORT", "8000"))
