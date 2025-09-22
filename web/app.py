@@ -434,8 +434,23 @@ def api_security_status():
         alerts, _ = _gh_get(url, params=params)
         alerts = alerts or []
 
+        def _matches_commit(alert):
+            if not commit_sha:
+                return True
+            target = commit_sha.lower()
+            candidates = []
+            candidates.append(alert.get('most_recent_instance') or {})
+            candidates.extend(alert.get('instances') or [])
+            for inst in candidates:
+                sha = (inst or {}).get('commit_sha')
+                if sha and sha.lower() == target:
+                    return True
+            return False
+
+        commit_alerts = [a for a in alerts if _matches_commit(a)]
+
         enriched_alerts = []
-        for alert in alerts[:10]:
+        for alert in commit_alerts[:10]:
             rule = alert.get('rule') or {}
             severity = (rule.get('severity') or '').lower()
             most_recent = alert.get('most_recent_instance') or {}
@@ -458,18 +473,20 @@ def api_security_status():
                 'code_excerpt': excerpt,
             })
 
-        high_alerts = [a for a in alerts if (a.get('rule') or {}).get('severity') in ['critical', 'high']]
-        defender_status = 'bad' if high_alerts else 'warn' if alerts else 'good'
-        defender_summary = f"CodeQL alerts: {len(alerts)}"
+        high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
+        defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
+        defender_summary = f"CodeQL alerts: {len(commit_alerts)}"
 
         sentinel = {
             'status': 'good',
             'summary': 'Sentinel score: 0.8',
+            'details': ['Sentinel score: 0.8'],
         }
 
         bricks = {
             'status': 'unknown',
             'summary': 'Awaiting Databricks anomaly score...',
+            'details': ['Awaiting Databricks anomaly score...'],
         }
 
         try:
@@ -485,35 +502,41 @@ def api_security_status():
                         'summary': score_text,
                         'score': anomaly_score,
                         'features': bricks_features,
+                        'details': [f"Anomaly score: {anomaly_score:.3f}"],
                     }
                 else:
                     bricks = {
                         'status': 'unknown',
                         'summary': 'Databricks response missing anomaly_score.',
                         'features': bricks_features,
+                        'details': ['Databricks response missing anomaly_score.'],
                     }
             else:
                 bricks = {
                     'status': 'unknown',
                     'summary': 'Failed to build features from commit data.',
+                    'details': ['Failed to build features from commit data.'],
                 }
         except RuntimeError as cfg_err:
             log.warning('Databricks configuration error: %s', cfg_err)
             bricks = {
                 'status': 'unknown',
                 'summary': 'Databricks configuration error.',
+                'details': ['Databricks configuration error.'],
             }
         except requests.exceptions.RequestException:
             log.exception('Databricks model invocation failed')
             bricks = {
                 'status': 'unknown',
                 'summary': 'Databricks model invocation failed.',
+                'details': ['Databricks model invocation failed.'],
             }
         except Exception:
             log.exception('Unexpected error while calling Databricks model')
             bricks = {
                 'status': 'unknown',
                 'summary': 'Unexpected Databricks model error.',
+                'details': ['Unexpected Databricks model error.'],
             }
         return jsonify({
             'defender': {
@@ -528,15 +551,13 @@ def api_security_status():
         if e.response.status_code in [404, 403]:
             return jsonify({
                 'defender': {'status': 'unknown', 'summary': 'No results', 'alerts': []},
-                'sentinel': {'status': 'good', 'summary': 'Sentinel score: 0.8'},
-                'bricks': {'status': 'unknown', 'summary': 'No Databricks result'},
+                'sentinel': {'status': 'good', 'summary': 'Sentinel score: 0.8', 'details': ['Sentinel score: 0.8']},
+                'bricks': {'status': 'unknown', 'summary': 'No Databricks result', 'details': ['No Databricks result']},
             })
         raise
     except Exception:
         log.exception(f"Failed to get security status for {repo}@{commit_sha}")
         return jsonify(error="Failed to load security status"), 500
-
-
 @app.errorhandler(PermissionError)
 def _unauth(_):
     session.clear()

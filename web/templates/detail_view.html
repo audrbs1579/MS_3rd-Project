@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8" />
-    <title>상세 분석 - {{ commit_sha[:7] }}</title>
+    <title>Detail Security Analysis - {{ commit_sha[:7] }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
         :root{
@@ -30,12 +30,17 @@
         .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
         .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
         .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
+        .detail-grid { margin-top: 24px; }
+        .alert-list { margin: 0; padding-left: 18px; }
+        .alert-list li { margin-bottom: 8px; }
+        .alert-list li:last-child { margin-bottom: 0; }
+        .alert-list .path { font-family: monospace; font-size: 12px; color: var(--text-muted); }
     </style>
 </head>
 <body>
     <div class="wrap">
         <header>
-            <h1>상세 보안 & 코드 분석</h1>
+            <h1>Detailed Security & Code Analysis</h1>
             <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
         </header>
         <main class="grid">
@@ -43,17 +48,35 @@
             <div id="sentinelCard" class="card status-unknown"><div class="card-header"><h2>Sentinel</h2></div><div class="card-body"><div class="spinner"></div></div></div>
             <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><div class="spinner"></div></div></div>
         </main>
+
+        <section class="grid detail-grid">
+            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>Defender alerts</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="sentinelDetails" class="card status-unknown"><div class="card-header"><h2>Sentinel details</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS details</h2></div><div class="card-body"><p>Loading...</p></div></div>
+        </section>
     </div>
 
-    <script>
+<script>
     (async () => {
         const repo = {{ repo_name|tojson }};
         const sha = {{ commit_sha|tojson }};
         const branch = {{ branch_name|tojson }};
-        
+
         const defenderCard = document.getElementById('defenderCard');
         const sentinelCard = document.getElementById('sentinelCard');
         const bricksCard = document.getElementById('bricksCard');
+        const defenderDetails = document.getElementById('defenderDetails');
+        const sentinelDetails = document.getElementById('sentinelDetails');
+        const bricksDetails = document.getElementById('bricksDetails');
+
+        function esc(value) {
+            return (value ?? '').toString()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
         async function api(path, params={}) {
             const qs = new URLSearchParams(params);
@@ -66,21 +89,54 @@
 
         function updateCard(cardEl, data) {
             cardEl.className = `card status-${data.status}`;
-            cardEl.querySelector('.card-body').innerHTML = `<p>${data.summary.replace(/\n/g, '<br>')}</p>`;
+            cardEl.querySelector('.card-body').innerHTML = `<p>${(data.summary || '').replace(/\n/g, '<br>')}</p>`;
         }
 
-        // Load security status data
+        function renderDefenderDetails(defender) {
+            const alerts = defender?.alerts || [];
+            const status = defender?.status || 'unknown';
+            defenderDetails.className = `card status-${status}`;
+            const body = defenderDetails.querySelector('.card-body');
+            if (!alerts.length) {
+                body.innerHTML = '<p>No CodeQL alerts for this commit.</p>';
+                return;
+            }
+            const items = alerts.map(alert => {
+                const ruleName = esc(alert.rule_name || alert.rule_id || 'Rule');
+                const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
+                const description = esc(alert.description || '');
+                const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
+                return `<li><strong>${ruleName}${severity ? ' [' + severity + ']' : ''}</strong><div>${description || 'No description provided.'}</div>${location ? `<div class="path">${location}</div>` : ''}</li>`;
+            }).join('');
+            body.innerHTML = `<ul class="alert-list">${items}</ul>`;
+        }
+
+        function renderListDetails(cardEl, data, fallbackLines) {
+            const status = data?.status || 'unknown';
+            const lines = (data?.details && data.details.length ? data.details : fallbackLines) || [];
+            cardEl.className = `card status-${status}`;
+            const body = cardEl.querySelector('.card-body');
+            if (!lines.length) {
+                body.innerHTML = '<p>No data.</p>';
+                return;
+            }
+            body.innerHTML = `<ul class="alert-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+        }
+
         const params = { repo, commit: sha };
         if (branch) { params.branch = branch; }
         const securityStatus = await api('/security_status', params);
 
-        // Update security cards
         updateCard(defenderCard, securityStatus.defender);
         updateCard(sentinelCard, securityStatus.sentinel);
         updateCard(bricksCard, securityStatus.bricks);
 
+        renderDefenderDetails(securityStatus.defender);
+        renderListDetails(sentinelDetails, securityStatus.sentinel, ['Sentinel score: 0.8']);
+        renderListDetails(bricksDetails, securityStatus.bricks, ['Anomaly score: 0.5']);
+
     })();
-    </script>
+</script>
+
 </body>
 </html>
-
