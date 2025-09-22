@@ -250,7 +250,7 @@
             commitEl.dataset.sha = c.sha;
             commitEl.dataset.branch = branch;
             commitEl.onclick = () => showCommit(repo, c.sha, branch);
-            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} 쨌 ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
+            commitEl.innerHTML = `<div class="commit-info"><div class="msg">${isRecent(c.date)?'<span class="status-indicator"></span>':''}${esc(c.message)}</div><div class="meta">${esc(c.author)} · ${ago(new Date(c.date))}</div></div><div class="monospace sha">${c.sha.slice(0,7)}</div>`;
             if (S.selCommit && S.selCommit.repo === repo && S.selCommit.sha === c.sha) { commitEl.classList.add('selected'); }
             frag.appendChild(commitEl);
         });

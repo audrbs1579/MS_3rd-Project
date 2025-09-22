@@ -412,7 +412,7 @@ def api_commit_diff():
 @app.get("/api/security_status")
 def api_security_status():
     repo = request.args.get("repo")
-    commit_sha = request.args.get("commit") or request.args.get("ref") or request.args.get("sha")
+    commit_sha = request.args.get("commit") or request.args.get("sha")
     branch = request.args.get("branch")
     if not repo or not commit_sha:
         return jsonify({"error": "repo and commit required"}), 400
