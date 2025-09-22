@@ -384,13 +384,13 @@ function createCommitEl(repo, branch, commit) {
 
   function openInVSCode({ repo, sha, path, line }) {
     if (!path) return;
-    const normalizedPath = path.replace(/^[/\]+/, '').replace(/\/g, '/');
+    const normalizedPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
     const fallbackPath = normalizedPath.split('/').map(encodeURIComponent).join('/');
     const fallbackUrl = `https://vscode.dev/github/${repo}/blob/${sha}/${fallbackPath}${line ? `?line=${line}` : ''}`;
     const base = (localStorage.getItem('vsCodeBasePath') || '').trim();
     if (base) {
-      const normalizedBase = base.replace(/[\/]+$/, '');
-      const fullPath = `${normalizedBase}/${normalizedPath}`.replace(/\/g, '/');
+      const normalizedBase = base.replace(/\\/g, '/').replace(/\/+$/, '');
+      const fullPath = `${normalizedBase}/${normalizedPath}`;
       const vsUrl = encodeURI(`vscode://file/${fullPath}${line ? ':' + line : ''}`);
       triggerProtocol(vsUrl);
       setTimeout(() => window.open(fallbackUrl, '_blank', 'noopener'), 400);
