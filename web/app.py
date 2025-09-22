@@ -19,7 +19,7 @@ db_connection_string = "Server=tcp:my-test-server.database.windows.net,1433;Init
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
-GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")9
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_OAUTH_SCOPE = "repo,security_events"
 TIMEOUT = 15
