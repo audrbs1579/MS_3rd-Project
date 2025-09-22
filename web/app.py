@@ -412,6 +412,7 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
             'status': 'unknown',
             'summary': 'Microsoft Graph credentials not configured.',
             'details': details,
+            'metadata': metadata_lines,
         }
 
     if not email and not login:
@@ -422,6 +423,7 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
             'status': 'bad',
             'summary': 'GitHub author identity is unknown.',
             'details': details,
+            'metadata': metadata_lines,
         }
 
     queries = []
@@ -447,7 +449,7 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
     for filter_expr, require_eventual in queries or []:
         extra_headers = {"ConsistencyLevel": "eventual"} if require_eventual else None
         try:
-            data = _graph_get_json("/users", params={'$filter': filter_expr, '$top': 1}, headers=extra_headers)
+            data = _graph_get_json('/users', params={'$filter': filter_expr, '$top': 1}, headers=extra_headers)
         except RuntimeError as exc:
             last_error = str(exc)
             log.warning('Microsoft Graph user lookup failed: %s', exc)
@@ -459,152 +461,49 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
 
     if not graph_user:
         details = metadata_lines.copy()
-        details.append('Microsoft Entra ID lookup returned no match for this commit author.')
         if last_error:
-            details.append(f"Graph lookup error: {last_error}")
-        details.append('Register this GitHub author in Microsoft Entra ID or align the commit email with an existing Entra user.')
+            details.append(f"Microsoft Graph lookup error: {last_error}")
+            return {
+                'status': 'unknown',
+                'summary': 'Unable to query Microsoft Entra ID.',
+                'details': details,
+                'metadata': metadata_lines,
+            }
+        details.append('Microsoft Entra ID lookup returned no match for this commit author.')
+        details.append('Invite or register this contributor in Microsoft Entra ID, or align the commit email with an Entra ID user.')
         return {
             'status': 'bad',
             'summary': 'GitHub author is not registered in Microsoft Entra ID.',
             'details': details,
+            'metadata': metadata_lines,
         }
 
-    user_id = graph_user.get('id')
     display_name = graph_user.get('displayName') or graph_user.get('userPrincipalName') or email or login
     principal_name = graph_user.get('userPrincipalName')
     mail = graph_user.get('mail')
+    user_type = graph_user.get('userType') or 'Unknown'
+    account_enabled = graph_user.get('accountEnabled')
+    created = graph_user.get('createdDateTime')
 
-    context_lines = []
-    seen_context = set()
+    details = []
+    details.append(f"Resolved user: {display_name}")
+    if principal_name:
+        details.append(f"User principal: {principal_name}")
+    if mail:
+        details.append(f"Mail: {mail}")
+    details.append(f"User type: {user_type}")
+    if account_enabled is not None:
+        details.append(f"Account enabled: {'Yes' if account_enabled else 'No'}")
+    if created:
+        details.append(f"Created: {created}")
 
-    def _push_context(line):
-        if line and line not in seen_context:
-            context_lines.append(line)
-            seen_context.add(line)
-
-    _push_context(f"Resolved user: {display_name}")
-    if principal_name and principal_name != display_name:
-        _push_context(f"User principal: {principal_name}")
-    if mail and mail not in {display_name, principal_name}:
-        _push_context(f"Mail: {mail}")
-
-    risky_user = None
-    risk_error = None
-    try:
-        risky_user = _graph_get_json(f"/identityProtection/riskyUsers/{user_id}")
-    except RuntimeError as exc:
-        risk_error = str(exc)
-        log.warning('Microsoft Graph riskyUsers lookup failed for %s: %s', user_id, exc)
-
-    detections = []
-    detection_error = None
-    try:
-        detection_payload = _graph_get_json(
-            '/identityProtection/riskDetections',
-            params={'$filter': f"userId eq '{user_id}'", '$orderby': 'detectedDateTime desc', '$top': 5},
-            headers={'ConsistencyLevel': 'eventual'},
-        )
-        detections = (detection_payload or {}).get('value') or []
-    except RuntimeError as exc:
-        detection_error = str(exc)
-        log.warning('Microsoft Graph riskDetections lookup failed for %s: %s', user_id, exc)
-
-    status = 'good'
     summary = f"{display_name} is registered in Microsoft Entra ID."
-    risk_lines = []
-
-    def _risk_order(level):
-        return {'high': 3, 'medium': 2, 'low': 1, 'none': 0}.get((level or '').lower(), -1)
-
-    if risky_user:
-        risk_level = (risky_user.get('riskLevel') or 'none').lower()
-        risk_state = (risky_user.get('riskState') or 'unknown').lower()
-        risk_detail = risky_user.get('riskDetail')
-        last_updated = _format_graph_datetime(risky_user.get('riskLastUpdatedDateTime') or risky_user.get('lastUpdatedDateTime'))
-
-        if risk_level == 'high':
-            status = 'bad'
-        elif risk_level == 'medium':
-            status = 'warn'
-        elif risk_level == 'low':
-            status = 'warn' if risk_state not in {'dismissed', 'remediated'} else 'good'
-        elif risk_level == 'none':
-            status = 'good' if risk_state in {'dismissed', 'remediated', 'none'} else 'warn'
-        else:
-            status = 'unknown'
-
-        summary = f"Risk level {risk_level.title()} (state: {risk_state or 'unknown'})"
-        if risk_detail and risk_detail.lower() != 'none':
-            risk_lines.append(f"Risk detail: {risk_detail}")
-        if last_updated:
-            risk_lines.append(f"Last updated: {last_updated}")
-    elif detections:
-        worst_detection = max(detections, key=lambda item: _risk_order(item.get('riskLevel')))
-        worst_level = (worst_detection.get('riskLevel') or 'unknown').lower()
-        latest_time = _format_graph_datetime(worst_detection.get('detectedDateTime') or worst_detection.get('createdDateTime'))
-        summary = f"{len(detections)} identity risk detection(s); latest {worst_level.title()} signal on {latest_time}."
-        if worst_level == 'high':
-            status = 'bad'
-        elif worst_level in {'medium', 'low'}:
-            status = 'warn'
-        else:
-            status = 'unknown'
-    elif not risk_error:
-        summary = f"{display_name} is registered in Microsoft Entra ID. No identity protection data available."
-
-    detection_lines = []
-    for detection in detections:
-        det_level = (detection.get('riskLevel') or 'unknown').title()
-        det_time = _format_graph_datetime(detection.get('detectedDateTime') or detection.get('createdDateTime'))
-        det_detail = detection.get('riskDetail') or detection.get('riskEventType') or detection.get('detectionType') or 'Risk event'
-        det_state = detection.get('state') or detection.get('riskState')
-        pieces = [f"[{det_time}] {det_level} risk", det_detail]
-        if det_state:
-            pieces.append(f"state: {det_state}")
-        source = detection.get('source')
-        if source:
-            pieces.append(f"source: {source}")
-        ip = detection.get('ipAddress')
-        if ip:
-            pieces.append(f"IP: {ip}")
-        location = ", ".join(filter(None, [detection.get('city'), detection.get('countryOrRegion')]))
-        if location:
-            pieces.append(f"location: {location}")
-        detection_lines.append(" - ".join(pieces))
-
-    detail_lines = []
-    if context_lines:
-        detail_lines.extend(context_lines)
-    if risk_lines:
-        detail_lines.extend(risk_lines)
-    if detection_lines:
-        detail_lines.append('Identity protection risk detections:')
-        detail_lines.extend(detection_lines)
-    elif detection_error:
-        detail_lines.append('Could not load historical risk detections.')
-        detail_lines.append(detection_error)
-
-    if risk_error:
-        if '403' in risk_error or 'Forbidden' in risk_error:
-            summary = 'Identity protection data requires Azure AD Premium P2 or additional permissions.'
-            status = 'good'
-            detail_lines.append('Identity protection data requires Azure AD Premium P2 (or appropriate permissions) for this tenant.')
-        else:
-            status = 'warn'
-            summary = 'Failed to retrieve Microsoft Graph risk data.'
-            detail_lines.append(f"Risk lookup error: {risk_error}")
-
-    if metadata_lines:
-        detail_lines.append('Commit metadata:')
-        detail_lines.extend(metadata_lines)
-
-    if not detail_lines:
-        detail_lines = ['No identity risk context available.']
 
     return {
-        'status': status,
+        'status': 'good',
         'summary': summary,
-        'details': detail_lines,
+        'details': details,
+        'metadata': metadata_lines,
     }
 
 

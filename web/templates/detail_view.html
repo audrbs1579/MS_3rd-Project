@@ -12,29 +12,44 @@
             --status-warn-bg: #fef9c3; --status-warn-text: #854d0e;
             --status-bad-bg: #fee2e2; --status-bad-text: #991b1b;
             --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
+            --code-bg: #0f172a; --code-text: #e2e8f0; --code-muted: #94a3b8;
         }
         body { margin: 0; background-color: var(--bg); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         .wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
         header { background-color: var(--panel); padding: 16px 24px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 24px; }
         header h1 { font-size: 20px; margin: 0 0 4px 0; }
         header p { margin: 0; color: var(--text-muted); font-family: monospace; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; }
+        .grid { display: grid; gap: 24px; }
+        .identity-grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); margin-bottom: 24px; }
+        .result-grid { grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); margin-bottom: 24px; }
+        .detail-grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
         .card { background-color: var(--panel); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
         .card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); }
         .card-header h2 { font-size: 16px; margin: 0; }
         .card-body { padding: 16px; font-size: 14px; line-height: 1.6; }
         .card-body p { margin: 0; }
-        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 20px auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
         .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
         .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
         .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
-        .detail-grid { margin-top: 24px; }
-        .alert-list { margin: 0; padding-left: 18px; }
-        .alert-list li { margin-bottom: 8px; }
-        .alert-list li:last-child { margin-bottom: 0; }
-        .alert-list .path { font-family: monospace; font-size: 12px; color: var(--text-muted); }
+        .info-list { margin: 0; padding-left: 18px; }
+        .info-list li { margin-bottom: 6px; }
+        .info-list li:last-child { margin-bottom: 0; }
+        .card-divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+        .section-title { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+        .alert-item { margin-bottom: 24px; }
+        .alert-item:last-child { margin-bottom: 0; }
+        .alert-item header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .alert-item header h3 { margin: 0; font-size: 15px; }
+        .alert-action { font-size: 12px; color: #1d4ed8; text-decoration: none; }
+        .alert-action:hover { text-decoration: underline; }
+        .alert-location { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: var(--text-muted); margin: 8px 0; }
+        .code-block { background: var(--code-bg); color: var(--code-text); padding: 12px; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; overflow: auto; }
+        .code-line { display: flex; gap: 12px; padding: 0 6px; border-radius: 6px; }
+        .code-line + .code-line { margin-top: 2px; }
+        .code-line-number { width: 36px; text-align: right; color: var(--code-muted); flex-shrink: 0; }
+        .code-line-text { flex: 1; white-space: pre-wrap; }
+        .code-line.highlight { background: rgba(248, 113, 113, 0.18); color: #b91c1c; }
     </style>
 </head>
 <body>
@@ -43,15 +58,25 @@
             <h1>Detailed Security & Code Analysis</h1>
             <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
         </header>
-        <main class="grid">
-            <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><div class="spinner"></div></div></div>
-            <div id="sentinelCard" class="card status-unknown"><div class="card-header"><h2>Identity Risk (Graph)</h2></div><div class="card-body"><div class="spinner"></div></div></div>
-            <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><div class="spinner"></div></div></div>
-        </main>
+
+        <section class="grid identity-grid">
+            <div id="identitySummaryCard" class="card status-unknown">
+                <div class="card-header"><h2>Identity verification</h2></div>
+                <div class="card-body"><p>Loading...</p></div>
+            </div>
+            <div id="identityDetailsCard" class="card status-unknown">
+                <div class="card-header"><h2>Identity details</h2></div>
+                <div class="card-body"><p>Loading...</p></div>
+            </div>
+        </section>
+
+        <section class="grid result-grid">
+            <div id="defenderCard" class="card status-unknown"><div class="card-header"><h2>Defender (CodeQL)</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="bricksCard" class="card status-unknown"><div class="card-header"><h2>BRICKS Model</h2></div><div class="card-body"><p>Loading...</p></div></div>
+        </section>
 
         <section class="grid detail-grid">
-            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>Defender alerts</h2></div><div class="card-body"><p>Loading...</p></div></div>
-            <div id="sentinelDetails" class="card status-unknown"><div class="card-header"><h2>Identity risk details</h2></div><div class="card-body"><p>Loading...</p></div></div>
+            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>CodeQL findings</h2></div><div class="card-body"><p>Loading...</p></div></div>
             <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS details</h2></div><div class="card-body"><p>Loading...</p></div></div>
         </section>
     </div>
@@ -62,11 +87,11 @@
         const sha = {{ commit_sha|tojson }};
         const branch = {{ branch_name|tojson }};
 
+        const identitySummaryCard = document.getElementById('identitySummaryCard');
+        const identityDetailsCard = document.getElementById('identityDetailsCard');
         const defenderCard = document.getElementById('defenderCard');
-        const sentinelCard = document.getElementById('sentinelCard');
         const bricksCard = document.getElementById('bricksCard');
         const defenderDetails = document.getElementById('defenderDetails');
-        const sentinelDetails = document.getElementById('sentinelDetails');
         const bricksDetails = document.getElementById('bricksDetails');
 
         function esc(value) {
@@ -78,62 +103,116 @@
                 .replace(/'/g, '&#39;');
         }
 
-        async function api(path, params={}) {
+        async function api(path, params = {}) {
             const qs = new URLSearchParams(params);
             const url = `/api${path}?${qs}`;
             const r = await fetch(url);
             if (!r.ok) throw new Error(`HTTP error ${r.status}`);
-            const contentType = r.headers.get("content-type");
-            return contentType?.includes("application/json") ? r.json() : r.text();
+            const contentType = r.headers.get('content-type');
+            return contentType?.includes('application/json') ? r.json() : r.text();
         }
 
-        function updateCard(cardEl, data) {
-            cardEl.className = `card status-${data.status}`;
-            cardEl.querySelector('.card-body').innerHTML = `<p>${(data.summary || '').replace(/\n/g, '<br>')}</p>`;
+        function setCardStatus(cardEl, status) {
+            cardEl.className = `card status-${status}`;
+        }
+
+        function renderIdentitySummary(data) {
+            const status = data?.status || 'unknown';
+            setCardStatus(identitySummaryCard, status);
+            const summary = esc(data?.summary || 'Identity information unavailable.').replace(/\n+/g, '<br>');
+            identitySummaryCard.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
+        }
+
+        function renderIdentityDetails(data) {
+            const status = data?.status || 'unknown';
+            setCardStatus(identityDetailsCard, status);
+            const detailLines = data?.details || [];
+            const metadataLines = data?.metadata || [];
+            const body = identityDetailsCard.querySelector('.card-body');
+
+            if (!detailLines.length && !metadataLines.length) {
+                body.innerHTML = '<p>No identity information available.</p>';
+                return;
+            }
+
+            let html = '';
+            if (detailLines.length) {
+                html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+            }
+            if (metadataLines.length) {
+                html += '<hr class="card-divider">';
+                html += '<p class="section-title">Commit metadata</p>';
+                html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+            }
+            body.innerHTML = html;
+        }
+
+        function updateSummaryCard(cardEl, data, fallback) {
+            const status = data?.status || 'unknown';
+            setCardStatus(cardEl, status);
+            const summary = esc((data?.summary || fallback || 'No data')).replace(/\r?\n/g, '<br>');
+            cardEl.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
         }
 
         function renderDefenderDetails(defender) {
             const alerts = defender?.alerts || [];
             const status = defender?.status || 'unknown';
-            defenderDetails.className = `card status-${status}`;
+            setCardStatus(defenderDetails, status);
             const body = defenderDetails.querySelector('.card-body');
             if (!alerts.length) {
                 body.innerHTML = '<p>No CodeQL alerts for this commit.</p>';
                 return;
             }
             const items = alerts.map(alert => {
-                const ruleName = esc(alert.rule_name || alert.rule_id || 'Rule');
+                const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL alert');
                 const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
-                const description = esc(alert.description || '');
+                const description = esc(alert.description || 'No description provided.');
                 const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
-                return `<li><strong>${ruleName}${severity ? ' [' + severity + ']' : ''}</strong><div>${description || 'No description provided.'}</div>${location ? `<div class="path">${location}</div>` : ''}</li>`;
+                const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
+                const link = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">View on GitHub</a>` : '';
+                const excerpt = (alert.code_excerpt || []).map(line => {
+                    const lineNo = line?.line ?? '';
+                    const text = esc(line?.content || '');
+                    const highlightClass = line?.highlight ? ' highlight' : '';
+                    return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
+                }).join('');
+                const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
+                const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
+                return `<article class="alert-item">
+                            <header>
+                                <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
+                                ${link}
+                            </header>
+                            <p>${description}</p>
+                            ${locationLine}
+                            ${excerptBlock}
+                        </article>`;
             }).join('');
-            body.innerHTML = `<ul class="alert-list">${items}</ul>`;
+            body.innerHTML = items;
         }
 
-        function renderListDetails(cardEl, data, fallbackLines) {
-            const status = data?.status || 'unknown';
-            const lines = (data?.details && data.details.length ? data.details : fallbackLines) || [];
-            cardEl.className = `card status-${status}`;
-            const body = cardEl.querySelector('.card-body');
+        function renderBricksDetails(bricks) {
+            const status = bricks?.status || 'unknown';
+            setCardStatus(bricksDetails, status);
+            const lines = bricks?.details || [];
+            const body = bricksDetails.querySelector('.card-body');
             if (!lines.length) {
-                body.innerHTML = '<p>No data.</p>';
+                body.innerHTML = '<p>No model details available.</p>';
                 return;
             }
-            body.innerHTML = `<ul class="alert-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+            body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
         }
 
         const params = { repo, commit: sha };
         if (branch) { params.branch = branch; }
         const securityStatus = await api('/security_status', params);
 
-        updateCard(defenderCard, securityStatus.defender);
-        updateCard(sentinelCard, securityStatus.sentinel);
-        updateCard(bricksCard, securityStatus.bricks);
-
+        renderIdentitySummary(securityStatus.sentinel || {});
+        renderIdentityDetails(securityStatus.sentinel || {});
+        updateSummaryCard(defenderCard, securityStatus.defender, 'No CodeQL data.');
+        updateSummaryCard(bricksCard, securityStatus.bricks, 'Awaiting Databricks anomaly score...');
         renderDefenderDetails(securityStatus.defender);
-        renderListDetails(sentinelDetails, securityStatus.sentinel, ['Identity risk data unavailable.']);
-        renderListDetails(bricksDetails, securityStatus.bricks, ['Anomaly score: 0.5']);
+        renderBricksDetails(securityStatus.bricks);
 
     })();
 </script>
