@@ -12,9 +12,6 @@ from flask import (
     url_for, jsonify, Response
 )
 
-# 이것은 실제 정보가 아닌, 탐지 테스트를 위한 가짜 연결 문자열입니다.
-db_connection_string = "Server=tcp:my-test-server.database.windows.net,1433;Initial Catalog=my-db;Persist Security Info=False;User ID=test-user;Password=S3cureP@ssws0rd!;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
-
 # ---------- 기본 설정 ----------
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
