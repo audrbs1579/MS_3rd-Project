@@ -406,7 +406,7 @@ function createCommitEl(repo, branch, commit) {
 
   function openInVSCode({ repo, sha, path, line }) {
     if (!path) return;
-    const normalizedPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
+    const normalizedPath = path.replace(/\\/g, '/').replace(/^\/*/, '');
     const fallbackPath = normalizedPath.split('/').map(encodeURIComponent).join('/');
     const fallbackUrl = `https://vscode.dev/github/${repo}/blob/${sha}/${fallbackPath}${line ? `?line=${line}` : ''}`;
     const base = (localStorage.getItem('vsCodeBasePath') || '').trim();
@@ -581,8 +581,7 @@ async function loadRepos() {
       const btn = branchEl.querySelector('button');
       const panel = branchEl.querySelector('.panel');
 
-      const toggle = (e) => {
-        if (e.target === btn) return; // Prevent double toggle
+      const toggle = () => {
         const willOpen = panel.classList.contains('is-hidden');
         if (willOpen) {
           S.opened.add(key);
@@ -599,7 +598,6 @@ async function loadRepos() {
       };
 
       head.addEventListener('click', toggle);
-      btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(e); });
 
       if (open) {
           panel.classList.remove('is-hidden');
@@ -735,3 +733,4 @@ async function loadRepos() {
 </script>
 </body>
 </html>
+
