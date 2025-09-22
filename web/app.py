@@ -5,6 +5,7 @@ import random
 import base64
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
+from pathlib import Path
 
 import requests
 from flask import (
@@ -19,10 +20,68 @@ db_connection_string = "Server=tcp:my-test-server.database.windows.net,1433;Init
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
-GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")9
+GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_OAUTH_SCOPE = "repo,security_events"
 TIMEOUT = 15
+
+DATABRICKS_ENDPOINT = os.environ.get(
+    "DATABRICKS_ENDPOINT",
+    "https://adb-1505442256189071.11.azuredatabricks.net/serving-endpoints/fake-model-api/invocations",
+)
+DATABRICKS_TOKEN = (
+    os.environ.get("DATABRICKS_TOKEN")
+    or os.environ.get("DATABRICKS_PAT")
+    or os.environ.get("DATABRICKS_API_TOKEN")
+    or os.environ.get("DATABRICKS_BEARER_TOKEN")
+)
+DATABRICKS_TIMEOUT = float(os.environ.get("DATABRICKS_TIMEOUT", "15"))
+SAMPLE_EVENT_PATH = Path(__file__).resolve().parent / "sample_data" / "gh_event_sample.json"
+
+SENSITIVE_KEYWORDS = (
+    "secret",
+    "password",
+    "credential",
+    "token",
+    "key",
+    "pem",
+    "pfx",
+    "vault",
+    "cert",
+    "config",
+)
+DEPENDENCY_FILE_MATCHES = (
+    "requirements.txt",
+    "requirements-dev.txt",
+    "pipfile",
+    "pipfile.lock",
+    "poetry.lock",
+    "pyproject.toml",
+    "environment.yml",
+    "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "composer.json",
+    "gemfile",
+    "gemfile.lock",
+    "cargo.toml",
+    "cargo.lock",
+    "go.mod",
+    "go.sum",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "build.sbt",
+    "makefile",
+)
+DEPENDENCY_FILE_SUFFIXES = (
+    ".csproj",
+    ".vbproj",
+    ".fsproj",
+    ".sln",
+    ".deps.json",
+)
 
 # GitHub API URL
 GITHUB_URL_BASE = "https://api.github.com"
@@ -97,6 +156,173 @@ def _get_code_excerpt(repo_full_name, ref, path, start_line, end_line):
             'highlight': start_line <= lineno <= end_line,
         })
     return excerpt
+
+# ---------- Databricks 모델 통합 ----------
+def _safe_parse_iso8601(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _count_sensitive_paths(files):
+    total = 0
+    for file_info in files or []:
+        name = (file_info.get("filename") or "").lower()
+        if any(keyword in name for keyword in SENSITIVE_KEYWORDS):
+            total += 1
+    return total
+
+
+def _count_dependency_changes(files):
+    total = 0
+    for file_info in files or []:
+        name = (file_info.get("filename") or "").lower()
+        if not name:
+            continue
+        if any(name.endswith(sfx) for sfx in DEPENDENCY_FILE_SUFFIXES):
+            total += 1
+            continue
+        if any(name == match or name.endswith(f"/{match}") for match in DEPENDENCY_FILE_MATCHES):
+            total += 1
+    return total
+
+
+def _build_bricks_features_from_commit(repo_full_name, commit_sha, commit_data=None, hint=None):
+    if not repo_full_name or not commit_sha:
+        return None
+
+    hint = hint or {}
+
+    try:
+        if commit_data is None:
+            commit_data, _ = _gh_get(f"{GITHUB_URL_REPO_COMMITS.format(repo=repo_full_name)}/{commit_sha}")
+    except Exception:
+        log.exception("Failed to fetch commit %s@%s for Databricks features", repo_full_name, commit_sha)
+        return None
+
+    commit_info = commit_data.get("commit") or {}
+    author_info = commit_info.get("author") or {}
+    commit_message = commit_info.get("message") or ""
+    commit_files = commit_data.get("files") or []
+
+    dt = _safe_parse_iso8601(author_info.get("date"))
+    hour_of_day = dt.hour if dt else 0
+    dow = dt.weekday() if dt else 0
+
+    message_lines = [line.strip() for line in commit_message.splitlines() if line.strip()]
+    if message_lines:
+        msg_len_avg = sum(len(line) for line in message_lines) / len(message_lines)
+    else:
+        msg_len_avg = float(len(commit_message))
+
+    features = {
+        "hour_of_day": int(hour_of_day),
+        "dow": int(dow),
+        "event_type": hint.get("event_type") or "PushEvent",
+        "action": hint.get("action") or "push",
+        "repo_name": repo_full_name,
+        "commit_count": int(hint.get("commit_count") or 1),
+        "msg_len_avg": float(msg_len_avg),
+        "touched_sensitive_paths": int(_count_sensitive_paths(commit_files)),
+        "force_push": bool(hint.get("force_push") or False),
+        "dep_change_cnt": int(_count_dependency_changes(commit_files)),
+    }
+
+    return features
+
+
+def _build_bricks_features_from_sample():
+    if not SAMPLE_EVENT_PATH.exists():
+        return None
+
+    try:
+        sample_event = json.loads(SAMPLE_EVENT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        log.exception("Failed to load sample GitHub event JSON for Databricks fallback")
+        return None
+
+    repo_name = (sample_event.get("repo") or {}).get("name")
+    payload = sample_event.get("payload") or {}
+    commits = payload.get("commits") or []
+    commit_sha = payload.get("head") or (commits[0].get("sha") if commits else None)
+
+    total_commits = payload.get("size")
+    distinct_commits = payload.get("distinct_size")
+
+    hint = {
+        "event_type": sample_event.get("type") or "PushEvent",
+        "action": "push",
+        "commit_count": total_commits or len(commits) or 1,
+        "force_push": bool(total_commits and distinct_commits and total_commits > distinct_commits),
+    }
+
+    return _build_bricks_features_from_commit(repo_name, commit_sha, hint=hint)
+
+
+def _extract_anomaly_score(response_json):
+    if isinstance(response_json, dict):
+        if "anomaly_score" in response_json and isinstance(response_json["anomaly_score"], (int, float)):
+            return float(response_json["anomaly_score"])
+
+        for key in ("predictions", "data", "result", "results", "output"):
+            value = response_json.get(key)
+            if isinstance(value, list) and value:
+                first = value[0]
+                if isinstance(first, dict) and "anomaly_score" in first:
+                    try:
+                        return float(first["anomaly_score"])
+                    except (TypeError, ValueError):
+                        continue
+
+            if isinstance(value, dict) and "anomaly_score" in value:
+                try:
+                    return float(value["anomaly_score"])
+                except (TypeError, ValueError):
+                    return None
+
+    if isinstance(response_json, list) and response_json:
+        first = response_json[0]
+        if isinstance(first, dict) and "anomaly_score" in first:
+            try:
+                return float(first["anomaly_score"])
+            except (TypeError, ValueError):
+                return None
+
+    return None
+
+
+def _invoke_databricks_model(features):
+    if not features:
+        return None
+    if not DATABRICKS_ENDPOINT:
+        raise RuntimeError("Databricks endpoint is not configured.")
+    if not DATABRICKS_TOKEN:
+        raise RuntimeError("Databricks token is not configured. Set DATABRICKS_TOKEN.")
+
+    headers = {
+        "Authorization": f"Bearer {DATABRICKS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {"dataframe_records": [features]}
+
+    response = requests.post(
+        DATABRICKS_ENDPOINT,
+        headers=headers,
+        json=payload,
+        timeout=DATABRICKS_TIMEOUT,
+    )
+    response.raise_for_status()
+    try:
+        result_json = response.json()
+    except ValueError:
+        log.error("Databricks response was not JSON")
+        return None
+
+    return _extract_anomaly_score(result_json)
+
 
 # ---------- 라우팅 ----------
 @app.route("/")
@@ -255,10 +481,60 @@ def api_security_status():
             'status': 'good',
             'summary': 'Sentinel 예측 점수: 0.8',
         }
+
         bricks = {
-            'status': 'good',
-            'summary': '모델 예측 점수: 0.8',
+            'status': 'unknown',
+            'summary': 'Databricks 모델 결과를 불러오는 중입니다.',
         }
+
+        try:
+            bricks_features = _build_bricks_features_from_commit(repo, ref)
+            if not bricks_features:
+                bricks_features = _build_bricks_features_from_sample()
+
+            if bricks_features:
+                anomaly_score = _invoke_databricks_model(bricks_features)
+                if anomaly_score is not None:
+                    risk_label = 'HIGH' if anomaly_score >= 0.8 else 'MEDIUM' if anomaly_score >= 0.5 else 'LOW'
+                    bricks_status = 'bad' if anomaly_score >= 0.8 else 'warn' if anomaly_score >= 0.5 else 'good'
+                    summary_lines = [
+                        f"Anomaly score: {anomaly_score:.3f} ({risk_label})",
+                        f"hour={bricks_features['hour_of_day']}, dow={bricks_features['dow']}, commits={bricks_features['commit_count']}, sensitive={bricks_features['touched_sensitive_paths']}, deps={bricks_features['dep_change_cnt']}",
+                    ]
+                    bricks = {
+                        'status': bricks_status,
+                        'summary': '\n'.join(summary_lines),
+                        'score': anomaly_score,
+                        'features': bricks_features,
+                    }
+                else:
+                    bricks = {
+                        'status': 'unknown',
+                        'summary': 'Databricks 응답에 anomaly_score가 없습니다.',
+                        'features': bricks_features,
+                    }
+            else:
+                bricks = {
+                    'status': 'unknown',
+                    'summary': '모델 입력 데이터를 구성하지 못했습니다.',
+                }
+        except RuntimeError as cfg_err:
+            bricks = {
+                'status': 'unknown',
+                'summary': str(cfg_err),
+            }
+        except requests.exceptions.RequestException:
+            log.exception('Databricks model invocation failed')
+            bricks = {
+                'status': 'unknown',
+                'summary': 'Databricks 모델 호출에 실패했습니다.',
+            }
+        except Exception:
+            log.exception('Unexpected error while calling Databricks model')
+            bricks = {
+                'status': 'unknown',
+                'summary': 'Databricks 모델 처리 중 오류가 발생했습니다.',
+            }
 
         return jsonify({
             'defender': {
@@ -274,7 +550,7 @@ def api_security_status():
             return jsonify({
                 'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []},
                 'sentinel': {'status': 'good', 'summary': 'Sentinel 예측 점수: 0.8'},
-                'bricks': {'status': 'good', 'summary': '모델 예측 점수: 0.8'},
+                'bricks': {'status': 'unknown', 'summary': 'Databricks 모델 결과 없음'},
             })
         raise
     except Exception:

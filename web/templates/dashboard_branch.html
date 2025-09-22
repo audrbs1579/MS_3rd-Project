@@ -322,7 +322,11 @@
         statusIcon.style.color = `var(--status-${overallStatus}-bg)`;
         
         summaryTitle.textContent = {good: 'Healthy', warn: 'Warning', bad: 'Critical'}[overallStatus];
-        summaryText.textContent = issues > 0 ? `${issues} issue(s) require attention` : 'All checks passed.';
+        const baseSummary = issues > 0 ? `${issues} issue(s) require attention` : 'All checks passed.';
+        const bricksSummary = ((data.bricks?.summary || '').split('\n')[0] || '').trim();
+        summaryText.textContent = bricksSummary
+            ? (issues > 0 ? `${baseSummary} • ${bricksSummary}` : bricksSummary)
+            : baseSummary;
         btnDetails.disabled = false;
     }
 
