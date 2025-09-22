@@ -5,7 +5,6 @@ import random
 import base64
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
-from pathlib import Path
 
 import requests
 from flask import (
@@ -36,8 +35,6 @@ DATABRICKS_TOKEN = (
     or os.environ.get("DATABRICKS_BEARER_TOKEN")
 )
 DATABRICKS_TIMEOUT = float(os.environ.get("DATABRICKS_TIMEOUT", "15"))
-SAMPLE_EVENT_PATH = Path(__file__).resolve().parent / "sample_data" / "gh_event_sample.json"
-
 SENSITIVE_KEYWORDS = (
     "secret",
     "password",
@@ -233,33 +230,6 @@ def _build_bricks_features_from_commit(repo_full_name, commit_sha, commit_data=N
 
     return features
 
-
-def _build_bricks_features_from_sample():
-    if not SAMPLE_EVENT_PATH.exists():
-        return None
-
-    try:
-        sample_event = json.loads(SAMPLE_EVENT_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        log.exception("Failed to load sample GitHub event JSON for Databricks fallback")
-        return None
-
-    repo_name = (sample_event.get("repo") or {}).get("name")
-    payload = sample_event.get("payload") or {}
-    commits = payload.get("commits") or []
-    commit_sha = payload.get("head") or (commits[0].get("sha") if commits else None)
-
-    total_commits = payload.get("size")
-    distinct_commits = payload.get("distinct_size")
-
-    hint = {
-        "event_type": sample_event.get("type") or "PushEvent",
-        "action": "push",
-        "commit_count": total_commits or len(commits) or 1,
-        "force_push": bool(total_commits and distinct_commits and total_commits > distinct_commits),
-    }
-
-    return _build_bricks_features_from_commit(repo_name, commit_sha, hint=hint)
 
 
 def _extract_anomaly_score(response_json):
@@ -475,67 +445,61 @@ def api_security_status():
 
         high_alerts = [a for a in alerts if (a.get('rule') or {}).get('severity') in ['critical', 'high']]
         defender_status = 'bad' if high_alerts else 'warn' if alerts else 'good'
-        defender_summary = f"CodeQL: {len(alerts)}개 경고"
+        defender_summary = f"CodeQL alerts: {len(alerts)}"
 
         sentinel = {
             'status': 'good',
-            'summary': 'Sentinel 예측 점수: 0.8',
+            'summary': 'Sentinel score: 0.8',
         }
 
         bricks = {
             'status': 'unknown',
-            'summary': 'Databricks 모델 결과를 불러오는 중입니다.',
+            'summary': 'Awaiting Databricks anomaly score...',
         }
 
         try:
             bricks_features = _build_bricks_features_from_commit(repo, ref)
-            if not bricks_features:
-                bricks_features = _build_bricks_features_from_sample()
 
             if bricks_features:
                 anomaly_score = _invoke_databricks_model(bricks_features)
                 if anomaly_score is not None:
-                    risk_label = 'HIGH' if anomaly_score >= 0.8 else 'MEDIUM' if anomaly_score >= 0.5 else 'LOW'
                     bricks_status = 'bad' if anomaly_score >= 0.8 else 'warn' if anomaly_score >= 0.5 else 'good'
-                    summary_lines = [
-                        f"Anomaly score: {anomaly_score:.3f} ({risk_label})",
-                        f"hour={bricks_features['hour_of_day']}, dow={bricks_features['dow']}, commits={bricks_features['commit_count']}, sensitive={bricks_features['touched_sensitive_paths']}, deps={bricks_features['dep_change_cnt']}",
-                    ]
+                    score_text = f"{anomaly_score:.1f}"
                     bricks = {
                         'status': bricks_status,
-                        'summary': '\n'.join(summary_lines),
+                        'summary': score_text,
                         'score': anomaly_score,
                         'features': bricks_features,
                     }
                 else:
                     bricks = {
                         'status': 'unknown',
-                        'summary': 'Databricks 응답에 anomaly_score가 없습니다.',
+                        'summary': 'Databricks response missing anomaly_score.',
                         'features': bricks_features,
                     }
             else:
                 bricks = {
                     'status': 'unknown',
-                    'summary': '모델 입력 데이터를 구성하지 못했습니다.',
+                    'summary': 'Failed to build features from commit data.',
                 }
         except RuntimeError as cfg_err:
+            log.warning('Databricks configuration error: %s', cfg_err)
             bricks = {
                 'status': 'unknown',
-                'summary': str(cfg_err),
+                'summary': 'Databricks configuration error.',
             }
         except requests.exceptions.RequestException:
             log.exception('Databricks model invocation failed')
             bricks = {
                 'status': 'unknown',
-                'summary': 'Databricks 모델 호출에 실패했습니다.',
+                'summary': 'Databricks model invocation failed.',
             }
         except Exception:
             log.exception('Unexpected error while calling Databricks model')
             bricks = {
                 'status': 'unknown',
-                'summary': 'Databricks 모델 처리 중 오류가 발생했습니다.',
+                'summary': 'Unexpected Databricks model error.',
             }
-
         return jsonify({
             'defender': {
                 'status': defender_status,
@@ -548,20 +512,20 @@ def api_security_status():
     except requests.exceptions.HTTPError as e:
         if e.response.status_code in [404, 403]:
             return jsonify({
-                'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []},
-                'sentinel': {'status': 'good', 'summary': 'Sentinel 예측 점수: 0.8'},
-                'bricks': {'status': 'unknown', 'summary': 'Databricks 모델 결과 없음'},
+                'defender': {'status': 'unknown', 'summary': 'No results', 'alerts': []},
+                'sentinel': {'status': 'good', 'summary': 'Sentinel score: 0.8'},
+                'bricks': {'status': 'unknown', 'summary': 'No Databricks result'},
             })
         raise
     except Exception:
         log.exception(f"Failed to get security status for {repo}@{ref}")
-        return jsonify(error="보안 상태 가져오기 중 오류 발생"), 500
+        return jsonify(error="Failed to load security status"), 500
 
 
 @app.errorhandler(PermissionError)
 def _unauth(_):
     session.clear()
-    # ✅ API 호출이면 JSON 401, 페이지 요청이면 리다이렉트
+    # API 호출이면 JSON 401, 페이지 요청이면 리다이렉트
     if request.path.startswith("/api/"):
         return jsonify({"error": "unauthorized"}), 401
     return redirect(url_for("index"))
@@ -573,4 +537,7 @@ def handle_exception(e):
     return jsonify(error="Internal server error"), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+if __name__ == "__main__":
+    debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    port = int(os.environ.get("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)

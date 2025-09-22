@@ -324,9 +324,7 @@
         summaryTitle.textContent = {good: 'Healthy', warn: 'Warning', bad: 'Critical'}[overallStatus];
         const baseSummary = issues > 0 ? `${issues} issue(s) require attention` : 'All checks passed.';
         const bricksSummary = ((data.bricks?.summary || '').split('\n')[0] || '').trim();
-        summaryText.textContent = bricksSummary
-            ? (issues > 0 ? `${baseSummary} • ${bricksSummary}` : bricksSummary)
-            : baseSummary;
+        summaryText.textContent = bricksSummary || baseSummary;
         btnDetails.disabled = false;
     }
 
