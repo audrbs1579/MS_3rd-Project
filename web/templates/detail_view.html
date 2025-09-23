@@ -13,6 +13,7 @@
             --status-bad-bg: #fee2e2; --status-bad-text: #991b1b;
             --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
             --code-bg: #0f172a; --code-text: #e2e8f0; --code-muted: #94a3b8;
+            --progress-bg: #e5e7eb; --progress-bar: #4f46e5;
         }
         body { margin: 0; background-color: var(--bg); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         .wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
@@ -25,7 +26,7 @@
             margin-bottom: 24px;
         }
         @media (min-width: 1200px) {
-           .summary-grid { grid-template-columns: repeat(4, 1fr); }
+           .summary-grid { grid-template-columns: repeat(3, 1fr); }
         }
         .detail-grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
         .card { background-color: var(--panel); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
@@ -55,7 +56,6 @@
         .code-line-number { width: 36px; text-align: right; color: var(--code-muted); flex-shrink: 0; }
         .code-line-text { flex: 1; white-space: pre-wrap; }
         .code-line.highlight { background: rgba(248, 113, 113, 0.18); color: #b91c1c; }
-
         .review-body { display: flex; flex-direction: column; gap: 18px; }
         .review-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 14px; }
         .review-meta .meta-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
@@ -90,6 +90,20 @@
         .identity-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .badge-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; }
         .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .progress-bar-container { position: relative; width: 100%; height: 16px; background-color: var(--progress-bg); border-radius: 8px; margin-top: 12px; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: var(--progress-bar); transition: width 0.3s; }
+        .progress-bar-label { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text-main); text-shadow: 0 0 2px rgba(255,255,255,0.7); }
+        .progress-bar-indicator { position: absolute; top: 0; height: 100%; width: 2px; background-color: #ef4444; transition: left 0.3s; }
+        .progress-bar-indicator::after {
+            content: "위험 임계값";
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: var(--status-bad-text);
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -100,27 +114,30 @@
         </header>
 
         <section class="grid summary-grid">
-            <div id="identitySummaryCard" class="card status-unknown">
-                <div class="card-header"><h2>계정 인증 상태</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
-            </div>
-            <div id="identityDetailsCard" class="card status-unknown">
-                <div class="card-header"><h2>계정 세부 정보</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
+            <div id="identityCard" class="card status-unknown">
+                <div class="card-header"><h2>계정 신원 검증</h2></div>
+                <div class="card-body">
+                    <div id="identitySummary"></div>
+                    <div class="card-divider"></div>
+                    <div id="identityDetails"></div>
+                </div>
             </div>
             <div id="defenderCard" class="card status-unknown">
-                <div class="card-header"><h2>Defender (CodeQL)</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
+                <div class="card-header"><h2>CodeQL 분석</h2></div>
+                <div class="card-body">
+                    <div id="defenderSummary"></div>
+                    <div class="card-divider"></div>
+                    <div id="defenderDetails"></div>
+                </div>
             </div>
             <div id="bricksCard" class="card status-unknown">
-                <div class="card-header"><h2>BRICKS 모델</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
+                <div class="card-header"><h2>BRICKS 이상 감지</h2></div>
+                <div class="card-body">
+                    <div id="bricksSummary"></div>
+                    <div class="card-divider"></div>
+                    <div id="bricksDetails"></div>
+                </div>
             </div>
-        </section>
-
-        <section class="grid detail-grid">
-            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>CodeQL 분석 결과</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
-            <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS 상세</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
         </section>
 
         <section id="commitReviewCard" class="card">
@@ -160,11 +177,14 @@
   const sha = {{ commit_sha|tojson }};
   const branch = {{ branch_name|tojson }};
 
-  const identitySummaryCard = document.getElementById('identitySummaryCard');
-  const identityDetailsCard = document.getElementById('identityDetailsCard');
+  const identityCard = document.getElementById('identityCard');
   const defenderCard = document.getElementById('defenderCard');
   const bricksCard = document.getElementById('bricksCard');
+  const identitySummary = document.getElementById('identitySummary');
+  const identityDetails = document.getElementById('identityDetails');
+  const defenderSummary = document.getElementById('defenderSummary');
   const defenderDetails = document.getElementById('defenderDetails');
+  const bricksSummary = document.getElementById('bricksSummary');
   const bricksDetails = document.getElementById('bricksDetails');
   const commitMetaEl = document.getElementById('commitMeta');
   const commitFilesEl = document.getElementById('commitFiles');
@@ -263,15 +283,14 @@
 
   function renderIdentitySummary(data) {
     const status = data?.status || 'unknown';
-    setCardStatus(identitySummaryCard, status);
+    setCardStatus(identityCard, status);
     const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.').replace(/\n+/g, '<br>');
     const chip = renderIdentityChip(data, { showLabel: true, showFallback: true });
-    identitySummaryCard.querySelector('.card-body').innerHTML = `${chip ? `<div>${chip}</div>` : ''}<p>${summary}</p>`;
+    identitySummary.innerHTML = `${chip ? `<div>${chip}</div>` : ''}<p>${summary}</p>`;
   }
 
   function renderIdentityDetails(data) {
     const status = data?.status || 'unknown';
-    setCardStatus(identityDetailsCard, status);
     const detailLines = data?.details || [];
     const metadataLines = data?.metadata || [];
     const badges = (data?.identity_badges || []).map(b => {
@@ -279,10 +298,9 @@
       const label = (b.label || '').toString();
       return `<span class="badge-pill">${icon ? `${esc(icon)} ` : ''}${esc(label)}</span>`;
     }).join('');
-    const body = identityDetailsCard.querySelector('.card-body');
 
     if (!detailLines.length && !metadataLines.length && !badges) {
-      body.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>';
+      identityDetails.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>';
       return;
     }
 
@@ -298,14 +316,88 @@
     if (badges) {
       html += `<div class="identity-badges">${badges}</div>`;
     }
-    body.innerHTML = html;
+    identityDetails.innerHTML = html;
   }
 
-  function updateSummaryCard(cardEl, data, fallback) {
+  function renderDefenderSummary(data) {
     const status = data?.status || 'unknown';
-    setCardStatus(cardEl, status);
-    const summary = esc((data?.summary || fallback || '데이터가 없습니다.')).replace(/\n/g, '<br>');
-    cardEl.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
+    setCardStatus(defenderCard, status);
+    const summary = esc((data?.summary || 'CodeQL 분석 결과가 없습니다.'));
+    defenderSummary.innerHTML = `<p>${summary}</p>`;
+  }
+
+  function renderDefenderDetails(defender) {
+    const alerts = defender?.alerts || [];
+    const status = defender?.status || 'unknown';
+    if (!alerts.length) {
+      defenderDetails.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
+      return;
+    }
+    defenderDetails.innerHTML = alerts.map(alert => {
+      const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
+      const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
+      const description = esc(alert.description || '설명이 없습니다.');
+      const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
+      const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
+      const excerpt = (alert.code_excerpt || []).map(line => {
+        const lineNo = line?.line ?? '';
+        const text = esc(line?.content || '');
+        const highlightClass = line?.highlight ? ' highlight' : '';
+        return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
+      }).join('');
+      const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
+      const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
+      const githubLink = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
+      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || alert.start_line || 1}">VS Code에서 열기</button>` : '';
+      return `<article class="alert-item">
+        <header>
+          <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
+          <div class="alert-actions">${githubLink} ${vsButton}</div>
+        </header>
+        <p>${description}</p>
+        ${locationLine}
+        ${excerptBlock}
+      </article>`;
+    }).join('');
+    defenderDetails.querySelectorAll('.btn-open-vscode').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
+      });
+    });
+  }
+
+  function renderBricksSummary(data) {
+    const status = data?.status || 'unknown';
+    setCardStatus(bricksCard, status);
+    const summary = esc(data?.summary || 'Databricks anomaly 정보를 기다리는 중입니다.');
+    bricksSummary.innerHTML = `<p>${summary}</p>`;
+  }
+
+  function renderBricksDetails(bricks) {
+      const score = bricks?.score;
+      const threshold = 0.6; // 임계값은 하드코딩된 값으로 가정합니다.
+      const status = bricks?.status || 'unknown';
+      let html = '';
+
+      if (score === null || score === undefined) {
+          html = '<p>모델 상세 정보가 없습니다.</p>';
+      } else {
+          const scorePercent = score * 100;
+          const thresholdPercent = threshold * 100;
+
+          html = `
+              <div class="progress-bar-container">
+                  <div class="progress-bar" style="width: ${scorePercent}%"></div>
+                  <div class="progress-bar-label">${score.toFixed(2)}</div>
+                  <div class="progress-bar-indicator" style="left: ${thresholdPercent}%"></div>
+              </div>
+              <ul class="info-list" style="margin-top: 24px;">
+                  <li><strong>이상치 점수:</strong> ${score.toFixed(2)}</li>
+                  <li><strong>이상 여부:</strong> ${bricks?.is_anomaly ? '이상치 (위험)' : '정상 범위'}</li>
+              </ul>
+          `;
+      }
+      bricksDetails.innerHTML = html;
   }
 
   function renderCommentsList(comments) {
@@ -403,60 +495,6 @@
     }
   }
 
-  function renderDefenderDetails(defender) {
-    const alerts = defender?.alerts || [];
-    const status = defender?.status || 'unknown';
-    setCardStatus(defenderDetails, status);
-    const body = defenderDetails.querySelector('.card-body');
-    if (!alerts.length) {
-      body.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
-      return;
-    }
-    body.innerHTML = alerts.map(alert => {
-      const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
-      const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
-      const description = esc(alert.description || '설명이 없습니다.');
-      const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
-      const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
-      const excerpt = (alert.code_excerpt || []).map(line => {
-        const lineNo = line?.line ?? '';
-        const text = esc(line?.content || '');
-        const highlightClass = line?.highlight ? ' highlight' : '';
-        return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
-      }).join('');
-      const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
-      const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
-      const githubLink = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
-      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || alert.start_line || 1}">VS Code에서 열기</button>` : '';
-      return `<article class="alert-item">
-        <header>
-          <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
-          <div class="alert-actions">${githubLink} ${vsButton}</div>
-        </header>
-        <p>${description}</p>
-        ${locationLine}
-        ${excerptBlock}
-      </article>`;
-    }).join('');
-    body.querySelectorAll('.btn-open-vscode').forEach(btn => {
-      btn.addEventListener('click', () => {
-        openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
-      });
-    });
-  }
-
-  function renderBricksDetails(bricks) {
-    const status = bricks?.status || 'unknown';
-    setCardStatus(bricksDetails, status);
-    const lines = bricks?.details || [];
-    const body = bricksDetails.querySelector('.card-body');
-    if (!lines.length) {
-      body.innerHTML = '<p>모델 상세 정보가 없습니다.</p>';
-      return;
-    }
-    body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-  }
-
   function openInVSCode({ path, line }) {
     if (!path) return;
     const normalizedPath = path.replace(/\\/g, '/').replace(/^\/*/, '');
@@ -503,20 +541,17 @@
 
       renderIdentitySummary(securityStatus.sentinel || {});
       renderIdentityDetails(securityStatus.sentinel || {});
-      updateSummaryCard(defenderCard, securityStatus.defender, 'CodeQL 분석 결과가 없습니다.');
-      updateSummaryCard(bricksCard, securityStatus.bricks, 'Databricks anomaly 정보를 기다리는 중입니다.');
+      renderDefenderSummary(securityStatus.defender);
       renderDefenderDetails(securityStatus.defender);
+      renderBricksSummary(securityStatus.bricks);
       renderBricksDetails(securityStatus.bricks);
       renderCommitReview(commitDetails || {}, cachedComments);
     } catch (error) {
       console.error('세부 정보를 불러오지 못했습니다:', error);
-      const allCards = [identitySummaryCard, identityDetailsCard, defenderCard, bricksCard, defenderDetails, bricksDetails];
+      const allCards = [identityCard, defenderCard, bricksCard];
       allCards.forEach(card => {
           setCardStatus(card, 'bad');
-          const body = card.querySelector('.card-body');
-          if (body) {
-              body.innerHTML = `<p>데이터를 불러오는 데 실패했습니다: ${esc(error.message)}</p>`;
-          }
+          card.querySelector('.card-body').innerHTML = `<p>데이터를 불러오는 데 실패했습니다: ${esc(error.message)}</p>`;
       });
     }
   }
