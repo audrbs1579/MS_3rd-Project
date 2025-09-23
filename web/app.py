@@ -258,6 +258,51 @@ def _extract_anomaly_details(response_json):
         if isinstance(v, str): return v.strip().lower() in {"1","true","t","yes","y"}
         return None
 
+def _bricks_postprocess(model_parsed: dict):
+    """
+    입력: {'score': float, 'is_anomaly': bool, 'threshold': float|None, 'percentile': float|None, 'model_version': str|None}
+    출력: bricks 표준 dict
+    """
+    score = float(model_parsed.get('score'))
+    is_anom = bool(model_parsed.get('is_anomaly'))
+    threshold = model_parsed.get('threshold')
+    if isinstance(threshold, (int, float)):
+        threshold = float(threshold)
+    else:
+        threshold = None
+    pct = model_parsed.get('percentile')
+    model_version = model_parsed.get('model_version')
+
+    proximity = None
+    if threshold is not None:
+        proximity = (score - threshold) / max(1e-9, threshold)
+
+    if is_anom:
+        status = 'bad'; severity = 'high'
+    elif (threshold is not None) and (score >= 0.9 * threshold):
+        status = 'warn'; severity = 'medium'
+    else:
+        status = 'good'; severity = 'low'
+
+    return {
+        'status': status,
+        'severity': severity,
+        'score': score,
+        'threshold': threshold,
+        'percentile': pct,
+        'is_anomaly': is_anom,
+        'proximity': proximity,
+        'model_version': model_version,
+        'summary': ('임계값 초과 (이상치)' if is_anom else ('임계값 근접 (주의)' if status=='warn' else '정상 범위')),
+        'details': [
+            f"_anomaly_score={score}",
+            ('threshold='+str(threshold) if threshold is not None else 'threshold=N/A'),
+            f"is_anomaly={is_anom}",
+            (f"threshold_percentile={pct}" if pct is not None else 'threshold_percentile=N/A'),
+        ],
+    }
+
+
     cand = response_json
 
     # 1) predictions/outputs/data 키 우선
@@ -324,7 +369,16 @@ def _invoke_databricks_model(features):
         log.error("Databricks response was not JSON")
         return None
 
-    return _extract_anomaly_details(result_json)
+    ext = _extract_anomaly_details(result_json)
+    if not ext:
+        return None
+    return {
+        'score': ext['score'],
+        'is_anomaly': ext['is_anomaly'],
+        'threshold': (result_json.get('threshold') if isinstance(result_json, dict) else None),
+        'percentile': (result_json.get('threshold_percentile') if isinstance(result_json, dict) else None),
+        'model_version': (result_json.get('model_version') if isinstance(result_json, dict) else None),
+    }
 
 # ---------- Microsoft Graph 통합 (이하 코드는 변경 없음) ----------
 def _get_graph_token():
@@ -694,25 +748,7 @@ def api_security_status():
                     anomaly_score = result['score']
                     bricks_status = 'bad' if is_anomaly_flag else 'good'
                     summary_text = f"이상치 탐지됨 (점수: {anomaly_score:.2f})" if is_anomaly_flag else f"정상 (점수: {anomaly_score:.2f})"
-                    bricks = {
-                        'status': bricks_status, 'summary': summary_text,
-                        'prediction': is_anomaly_flag, 'score': anomaly_score,
-                        'features': bricks_features,
-                        'details': [
-                            f"이상 탐지 점수: {anomaly_score:.4f}",
-                            f"판정 결과: {'이상치' if is_anomaly_flag else '정상'}",
-                            "(점수가 높을수록 이상치일 확률이 높습니다)"
-                        ],
-                    }
-                else:
-                    bricks = {'status': 'unknown', 'summary': '모델 응답 해석 불가.', 'features': bricks_features, 'details': ['모델 응답에서 점수와 판정 결과를 찾을 수 없습니다.', f'raw: {str(result)[:300]}']}
-            else:
-                bricks = {'status': 'unknown', 'summary': '모델 입력 생성 실패.', 'details': ['모델 피처를 생성하지 못했습니다.']}
-        except Exception as e:
-            log.exception('Databricks model processing failed')
-            bricks = {'status': 'unknown', 'summary': 'BRICKS 모델 처리 중 오류.', 'details': [str(e)]}
-        
-        return jsonify({'defender': {'status': defender_status, 'summary': defender_summary, 'alerts': enriched_alerts}, 'sentinel': identity_assessment, 'bricks': bricks})
+                    bricks = _bricks_postprocess(result), 'sentinel': identity_assessment, 'bricks': bricks})
     except requests.exceptions.HTTPError as e:
         if e.response.status_code in [404, 403]:
             return jsonify({'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []}, 'sentinel': identity_assessment, 'bricks': {'status': 'unknown', 'summary': '분석 결과 없음', 'details': []}})
