@@ -76,9 +76,7 @@
         .comment-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
         .review-form { display: flex; flex-direction: column; gap: 10px; }
         .review-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-        .review-form input,
-        .review-form select,
-        .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
+        .review-form input, .review-form select, .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
         .review-form textarea { min-height: 80px; resize: vertical; }
         .form-actions { display: flex; align-items: center; gap: 8px; }
         .form-status { font-size: 12px; color: var(--text-muted); }
@@ -90,6 +88,21 @@
         .identity-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .badge-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; }
         .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+        /* --- [추가] BRICKS 모델 결과 시각화 CSS --- */
+        .bricks-result { display: flex; flex-direction: column; gap: 16px; }
+        .bricks-status-header { text-align: center; }
+        .bricks-status-text { font-size: 20px; font-weight: 600; margin: 0 0 4px 0; }
+        .bricks-status-text.status-text-bad { color: var(--status-bad-text); }
+        .bricks-status-text.status-text-good { color: var(--status-good-text); }
+        .bricks-score-display { display: flex; align-items: center; gap: 12px; }
+        .bricks-score-bar-container { flex-grow: 1; height: 16px; background-color: #f3f4f6; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+        .bricks-score-bar { height: 100%; transition: width 0.5s ease-out; }
+        .bricks-score-bar.status-bar-bad { background-color: var(--status-bad-text); }
+        .bricks-score-bar.status-bar-good { background-color: var(--status-good-text); }
+        .bricks-score-value { font-size: 16px; font-weight: 600; font-family: monospace; }
+        .bricks-details-list { font-size: 13px; color: var(--text-muted); padding-left: 18px; margin: 0; }
+
     </style>
 </head>
 <body>
@@ -176,12 +189,9 @@
   let cachedComments = [];
 
   function esc(value) {
-      if (value === null || value === undefined) {
-          return '';
-      }
+      if (value === null || value === undefined) return '';
       const text = String(value);
-      let result = '';
-      let last = 0;
+      let result = ''; let last = 0;
       for (let i = 0; i < text.length; i++) {
           const char = text[i];
           let replacement = '';
@@ -190,15 +200,9 @@
           else if (char === '>') replacement = '&gt;';
           else if (char === '"') replacement = '&quot;';
           else if (char === "'") replacement = '&#39;';
-          
-          if (replacement) {
-              result += text.substring(last, i) + replacement;
-              last = i + 1;
-          }
+          if (replacement) { result += text.substring(last, i) + replacement; last = i + 1; }
       }
-      if (last < text.length) {
-          result += text.substring(last);
-      }
+      if (last < text.length) { result += text.substring(last); }
       return result;
   }
 
@@ -248,12 +252,7 @@
     if (!identity || !identity.identity_level) {
       return showFallback ? '<span class="identity-chip identity-unknown">❔</span>' : '';
     }
-    const map = {
-      internal: 'identity-internal',
-      external: 'identity-external',
-      unverified: 'identity-unverified',
-      unknown: 'identity-unknown',
-    };
+    const map = { internal: 'identity-internal', external: 'identity-external', unverified: 'identity-unverified', unknown: 'identity-unknown' };
     const className = map[identity.identity_level] || 'identity-unknown';
     const icon = identity.identity_icon || '❔';
     const label = identity.identity_label || '정보 부족';
@@ -274,30 +273,16 @@
     setCardStatus(identityDetailsCard, status);
     const detailLines = data?.details || [];
     const metadataLines = data?.metadata || [];
-    const badges = (data?.identity_badges || []).map(b => {
-      const icon = (b.icon || '').toString();
-      const label = (b.label || '').toString();
-      return `<span class="badge-pill">${icon ? `${esc(icon)} ` : ''}${esc(label)}</span>`;
-    }).join('');
+    const badges = (data?.identity_badges || []).map(b => `<span class="badge-pill">${b.icon ? `${esc(b.icon)} ` : ''}${esc(b.label)}</span>`).join('');
     const body = identityDetailsCard.querySelector('.card-body');
-
     if (!detailLines.length && !metadataLines.length && !badges) {
       body.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>';
       return;
     }
-
     let html = '';
-    if (detailLines.length) {
-      html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    if (metadataLines.length) {
-      html += '<hr class="card-divider">';
-      html += '<p class="section-title">커밋 메타데이터</p>';
-      html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    if (badges) {
-      html += `<div class="identity-badges">${badges}</div>`;
-    }
+    if (detailLines.length) { html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`; }
+    if (metadataLines.length) { html += '<hr class="card-divider"><p class="section-title">커밋 메타데이터</p>'; html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`; }
+    if (badges) { html += `<div class="identity-badges">${badges}</div>`; }
     body.innerHTML = html;
   }
 
@@ -309,9 +294,7 @@
   }
 
   function renderCommentsList(comments) {
-    if (!comments.length) {
-      return '<div class="empty-state">등록된 댓글이 없습니다.</div>';
-    }
+    if (!comments.length) { return '<div class="empty-state">등록된 댓글이 없습니다.</div>'; }
     return comments.map(comment => {
       const user = comment.user || {};
       const login = esc(user.login || '익명');
@@ -319,88 +302,34 @@
       const location = comment.path ? `${comment.path}${comment.line ? ':' + comment.line : ''}` : '커밋 전체';
       const bodyHtml = esc(comment.body || '').replace(/\n/g, '<br>');
       const link = comment.html_url ? `<a href="${esc(comment.html_url)}" target="_blank" rel="noopener">GitHub</a>` : '';
-      return `<article class="comment-card">
-        <header class="comment-header">
-          <div class="comment-author"><strong>${login}</strong></div>
-          <time>${when}</time>
-        </header>
-        <div class="comment-body">${bodyHtml}</div>
-        <footer class="comment-meta">${esc(location)}${link ? ' · ' + link : ''}</footer>
-      </article>`;
+      return `<article class="comment-card"><header class="comment-header"><div class="comment-author"><strong>${login}</strong></div><time>${when}</time></header><div class="comment-body">${bodyHtml}</div><footer class="comment-meta">${esc(location)}${link ? ' · ' + link : ''}</footer></article>`;
     }).join('');
   }
 
   function renderCommitReview(details, comments) {
     const files = details?.files || [];
     const stats = details?.stats || {};
-
     if (commitMetaEl) {
-      commitMetaEl.innerHTML = `
-        <div class="review-meta">
-          <div class="meta-item">
-            <div class="meta-label">커밋 메시지</div>
-            <div class="meta-value">${esc((details.message || '').split('\n')[0])}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">작성자</div>
-            <div class="meta-value">${esc(details.author || '알 수 없음')}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">추가/삭제</div>
-            <div class="meta-value">+${stats.additions || 0} / -${stats.deletions || 0}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">SHA</div>
-            <div class="meta-value monospace">${esc(sha)}</div>
-          </div>
-        </div>`;
+      commitMetaEl.innerHTML = `<div class="review-meta"><div class="meta-item"><div class="meta-label">커밋 메시지</div><div class="meta-value">${esc((details.message || '').split('\n')[0])}</div></div><div class="meta-item"><div class="meta-label">작성자</div><div class="meta-value">${esc(details.author || '알 수 없음')}</div></div><div class="meta-item"><div class="meta-label">추가/삭제</div><div class="meta-value">+${stats.additions || 0} / -${stats.deletions || 0}</div></div><div class="meta-item"><div class="meta-label">SHA</div><div class="meta-value monospace">${esc(sha)}</div></div></div>`;
     }
-
     if (commitFilesEl) {
-      if (!files.length) {
-        commitFilesEl.innerHTML = '<div class="empty-state">변경된 파일이 없습니다.</div>';
-      } else {
+      if (!files.length) { commitFilesEl.innerHTML = '<div class="empty-state">변경된 파일이 없습니다.</div>'; } 
+      else {
         commitFilesEl.innerHTML = files.map(file => {
           const path = file.filename || '';
-          const statsText = [
-            file.status ? file.status.toUpperCase() : null,
-            typeof file.additions === 'number' ? `+${file.additions}` : null,
-            typeof file.deletions === 'number' ? `-${file.deletions}` : null,
-          ].filter(Boolean).join(' · ') || '변경 없음';
+          const statsText = [file.status ? file.status.toUpperCase() : null, typeof file.additions === 'number' ? `+${file.additions}` : null, typeof file.deletions === 'number' ? `-${file.deletions}` : null].filter(Boolean).join(' · ') || '변경 없음';
           const githubUrl = file.blob_url || details.html_url;
-          return `<div class="review-file">
-            <div>
-              <div class="file-path">${esc(path)}</div>
-              <div class="file-stats">${esc(statsText)}</div>
-            </div>
-            <div class="file-actions">
-              ${githubUrl ? `<button type="button" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}
-              <button type="button" data-action="open-vscode" data-path="${esc(path)}" data-line="1">VS Code</button>
-            </div>
-          </div>`;
+          return `<div class="review-file"><div><div class="file-path">${esc(path)}</div><div class="file-stats">${esc(statsText)}</div></div><div class="file-actions">${githubUrl ? `<button type="button" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}<button type="button" data-action="open-vscode" data-path="${esc(path)}" data-line="1">VS Code</button></div></div>`;
         }).join('');
-        commitFilesEl.querySelectorAll('[data-action="open-vscode"]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
-          });
-        });
-        commitFilesEl.querySelectorAll('[data-action="open-github"]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const url = btn.dataset.url;
-            if (url) window.open(url, '_blank', 'noopener');
-          });
-        });
+        commitFilesEl.querySelectorAll('[data-action="open-vscode"]').forEach(btn => btn.addEventListener('click', () => openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 })));
+        commitFilesEl.querySelectorAll('[data-action="open-github"]').forEach(btn => btn.addEventListener('click', () => { const url = btn.dataset.url; if (url) window.open(url, '_blank', 'noopener'); }));
       }
     }
-
     if (commentFileSelect) {
       const options = ['<option value="">커밋 전체</option>'].concat(files.map(file => `<option value="${esc(file.filename)}">${esc(file.filename)}</option>`));
       commentFileSelect.innerHTML = options.join('');
     }
-
-    if (commentsListEl) {
-      commentsListEl.innerHTML = renderCommentsList(comments);
-    }
+    if (commentsListEl) { commentsListEl.innerHTML = renderCommentsList(comments); }
   }
 
   function renderDefenderDetails(defender) {
@@ -418,43 +347,59 @@
       const description = esc(alert.description || '설명이 없습니다.');
       const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
       const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
-      const excerpt = (alert.code_excerpt || []).map(line => {
-        const lineNo = line?.line ?? '';
-        const text = esc(line?.content || '');
-        const highlightClass = line?.highlight ? ' highlight' : '';
-        return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
-      }).join('');
+      const excerpt = (alert.code_excerpt || []).map(line => `<div class="code-line${line?.highlight ? ' highlight' : ''}"><span class="code-line-number">${line?.line ?? ''}</span><span class="code-line-text">${esc(line?.content || '')}</span></div>`).join('');
       const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
       const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
       const githubLink = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
-      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || alert.start_line || 1}">VS Code에서 열기</button>` : '';
-      return `<article class="alert-item">
-        <header>
-          <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
-          <div class="alert-actions">${githubLink} ${vsButton}</div>
-        </header>
-        <p>${description}</p>
-        ${locationLine}
-        ${excerptBlock}
-      </article>`;
+      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || 1}">VS Code에서 열기</button>` : '';
+      return `<article class="alert-item"><header><h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3><div class="alert-actions">${githubLink} ${vsButton}</div></header><p>${description}</p>${locationLine}${excerptBlock}</article>`;
     }).join('');
-    body.querySelectorAll('.btn-open-vscode').forEach(btn => {
-      btn.addEventListener('click', () => {
-        openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
-      });
-    });
+    body.querySelectorAll('.btn-open-vscode').forEach(btn => btn.addEventListener('click', () => openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 })));
   }
 
+  // --- [수정] BRICKS 모델 상세 정보 시각화 함수 ---
   function renderBricksDetails(bricks) {
     const status = bricks?.status || 'unknown';
     setCardStatus(bricksDetails, status);
-    const lines = bricks?.details || [];
     const body = bricksDetails.querySelector('.card-body');
-    if (!lines.length) {
-      body.innerHTML = '<p>모델 상세 정보가 없습니다.</p>';
-      return;
+
+    // 점수 데이터가 없거나, 상태가 'unknown'일 경우 기존처럼 메시지만 표시
+    if (status === 'unknown' || !bricks || typeof bricks.score !== 'number') {
+        const message = bricks?.summary || '모델 상세 정보가 없습니다.';
+        body.innerHTML = `<p>${esc(message)}</p>`;
+        return;
     }
-    body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+
+    const score = bricks.score;
+    const isAnomaly = bricks.prediction; // app.py에서 전달된 boolean 플래그
+
+    const statusText = isAnomaly ? '이상치 탐지됨' : '정상';
+    const statusClass = isAnomaly ? 'bad' : 'good';
+
+    // 점수를 막대 그래프 너비(%)로 변환합니다.
+    // 점수가 1.0일 때 100%로 채워지도록 시각적 기준을 설정합니다. (모델의 실제 임계값과는 무관)
+    const barPercent = Math.min(100, Math.max(0, score * 100));
+
+    const detailsHtml = (bricks.details || [])
+        .map(line => `<li>${esc(line)}</li>`)
+        .join('');
+
+    body.innerHTML = `
+        <div class="bricks-result">
+            <div class="bricks-status-header">
+                <h3 class="bricks-status-text status-text-${statusClass}">${esc(statusText)}</h3>
+            </div>
+            <div class="bricks-score-display">
+                <div class="bricks-score-bar-container">
+                    <div class="bricks-score-bar status-bar-${statusClass}" style="width: ${barPercent}%;"></div>
+                </div>
+                <span class="bricks-score-value">${score.toFixed(4)}</span>
+            </div>
+            <ul class="bricks-details-list">
+                ${detailsHtml}
+            </ul>
+        </div>
+    `;
   }
 
   function openInVSCode({ path, line }) {
@@ -506,7 +451,7 @@
       updateSummaryCard(defenderCard, securityStatus.defender, 'CodeQL 분석 결과가 없습니다.');
       updateSummaryCard(bricksCard, securityStatus.bricks, 'Databricks anomaly 정보를 기다리는 중입니다.');
       renderDefenderDetails(securityStatus.defender);
-      renderBricksDetails(securityStatus.bricks);
+      renderBricksDetails(securityStatus.bricks); // 수정된 함수가 여기서 호출됩니다.
       renderCommitReview(commitDetails || {}, cachedComments);
     } catch (error) {
       console.error('세부 정보를 불러오지 못했습니다:', error);
@@ -536,18 +481,14 @@
       if (pathValue) payload.path = pathValue;
       if (lineValue) {
         const parsed = parseInt(lineValue, 10);
-        if (!Number.isNaN(parsed)) {
-          payload.line = parsed;
-        }
+        if (!Number.isNaN(parsed)) { payload.line = parsed; }
       }
       commentFormStatus.textContent = '저장 중...';
       try {
         const res = await api('/commit_comments', { method: 'POST', body: payload });
         if (res?.comment) {
           cachedComments = [res.comment, ...cachedComments];
-          if (commentsListEl) {
-            commentsListEl.innerHTML = renderCommentsList(cachedComments);
-          }
+          if (commentsListEl) { commentsListEl.innerHTML = renderCommentsList(cachedComments); }
           commentForm.reset();
           commentFormStatus.textContent = '등록되었습니다.';
         } else {
@@ -563,7 +504,6 @@
   loadAll();
 })();
 </script>
-
 
 </body>
 </html>

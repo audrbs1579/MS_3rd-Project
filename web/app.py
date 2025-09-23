@@ -75,7 +75,6 @@ def _gh_headers():
     return h
 
 def _gh_get(url, params=None, accept_header=None):
-    # API 호출 시 GITHUB_URL_BASE가 이미 포함된 경우를 처리
     full_url = url if url.startswith('https://') else f"{GITHUB_URL_BASE}{url}"
     try:
         headers = _gh_headers()
@@ -243,13 +242,16 @@ def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=
         "actor_hour_ratio": event_stats.get("actor_hour_ratio", 0.0),
     }
 
-def _extract_iforest_prediction(response_json):
-    """iForest 모델 응답에서 이상치 예측 결과를 추출합니다. (0: 정상, 1: 이상)"""
+def _extract_anomaly_details(response_json):
+    """모델 응답에서 anomaly score와 is_anomaly 플래그를 추출합니다."""
     if isinstance(response_json, dict):
         predictions = response_json.get("predictions")
-        if isinstance(predictions, list) and len(predictions) > 0:
-            try: return int(predictions[0])
-            except (ValueError, TypeError): return None
+        if isinstance(predictions, list) and len(predictions) > 0 and isinstance(predictions[0], dict):
+            details = predictions[0]
+            score = details.get("_anomaly_score")
+            is_anomaly = details.get("_is_anomaly")
+            if isinstance(score, (int, float)) and isinstance(is_anomaly, bool):
+                return {"score": float(score), "is_anomaly": is_anomaly}
     return None
 
 def _invoke_databricks_model(features):
@@ -264,9 +266,9 @@ def _invoke_databricks_model(features):
     except ValueError:
         log.error("Databricks response was not JSON")
         return None
-    return _extract_iforest_prediction(result_json)
+    return _extract_anomaly_details(result_json)
 
-# ---------- Microsoft Graph 통합 ----------
+# ---------- Microsoft Graph 통합 (이하 코드는 변경 없음) ----------
 def _get_graph_token():
     if not (MS_TENANT_ID and MS_CLIENT_ID and MS_CLIENT_SECRET): raise RuntimeError("Microsoft Graph credentials are not configured.")
     now = datetime.now(timezone.utc)
@@ -442,11 +444,13 @@ def get_initial_data():
             pick = lambda c: {"sha": c.get("sha"), "message": (c.get("commit", {}).get("message") or "").split("\n")[0], "author": (c.get("commit", {}).get("author") or {}).get("name"), "date": (c.get("commit", {}).get("author") or {}).get("date")}
             commits_map[key] = [pick(c) for c in (commits_data or [])]
     return jsonify({"repos": repos_list, "branches": branches_map, "commits": commits_map, "timestamp": datetime.utcnow().isoformat()})
+
 @app.get("/api/my_repos")
 def api_my_repos():
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
     repos, _ = _gh_get("/user/repos", params={"per_page": 100, "sort": "pushed"})
     return jsonify({"repos": [{"full_name": r.get("full_name"), "name": r.get("name"), "pushed_at": r.get("pushed_at")} for r in (repos or [])]})
+
 @app.get("/api/branches")
 def api_branches():
     repo = request.args.get("repo")
@@ -463,6 +467,7 @@ def api_branches():
         except requests.exceptions.RequestException:
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
     return jsonify({"branches": out})
+
 @app.get("/api/commits")
 def api_commits():
     repo = request.args.get("repo"); branch = request.args.get("branch")
@@ -471,6 +476,7 @@ def api_commits():
     commits, _ = _gh_get(f"/repos/{repo}/commits", params={"sha": branch, "per_page": COMMITS_PER_BRANCH})
     pick = lambda c: {"sha": c.get("sha"), "message": (c.get("commit", {}).get("message") or "").split("\n")[0], "author": (c.get("commit", {}).get("author") or {}).get("name"), "date": (c.get("commit", {}).get("author") or {}).get("date")}
     return jsonify({"commits": [pick(c) for c in (commits or [])]})
+
 @app.get("/api/commit_detail")
 def api_commit_detail():
     repo, sha = (request.args.get("repo") or "").strip(), (request.args.get("sha") or "").strip()
@@ -481,6 +487,7 @@ def api_commit_detail():
     github_author = data.get("author") or {}; github_committer = data.get("committer") or {}
     files_payload = [{"filename": f.get("filename"), "status": f.get("status"), "additions": f.get("additions"), "deletions": f.get("deletions"), "changes": f.get("changes"), "patch": f.get("patch"), "blob_url": f.get("blob_url"), "raw_url": f.get("raw_url")} for f in data.get("files") or []]
     return jsonify({"message": commit.get("message"), "author": author_info.get("name"), "author_email": author_info.get("email"), "author_login": github_author.get("login") or github_committer.get("login"), "author_avatar": github_author.get("avatar_url") or github_committer.get("avatar_url"), "author_html_url": github_author.get("html_url") or github_committer.get("html_url"), "date": author_info.get("date"), "stats": {"total": stats.get("total"), "additions": stats.get("additions"), "deletions": stats.get("deletions")}, "files": files_payload, "html_url": data.get("html_url"), "verification": commit.get("verification")})
+
 @app.get("/api/commit_diff")
 def api_commit_diff():
     repo, sha = request.args.get("repo"), request.args.get("sha")
@@ -488,6 +495,7 @@ def api_commit_diff():
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
     diff_text, _ = _gh_get(f"/repos/{repo}/commits/{sha}", accept_header="application/vnd.github.diff")
     return Response(diff_text, mimetype='text/plain')
+
 @app.get("/api/commit_comments")
 def api_commit_comments():
     repo = (request.args.get("repo") or "").strip(); sha = (request.args.get("sha") or "").strip()
@@ -499,6 +507,7 @@ def api_commit_comments():
     except requests.exceptions.RequestException:
         return jsonify({"error": "failed to load comments"}), 502
     return jsonify({"comments": [_normalize_commit_comment(c) for c in (comments or [])]})
+
 @app.post("/api/commit_comments")
 def api_create_commit_comment():
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
@@ -525,6 +534,7 @@ def api_create_commit_comment():
     except requests.exceptions.RequestException:
         return jsonify({"error": "failed to create comment"}), 502
     return jsonify({"error": "unexpected response"}), 502
+
 @app.get("/api/repo_contributors")
 def api_repo_contributors():
     repo = (request.args.get("repo") or "").strip()
@@ -537,6 +547,7 @@ def api_repo_contributors():
         return jsonify({"error": "failed to load contributors"}), 502
     contributors = [{"login": item.get("login"), "contributions": item.get("contributions"), "avatar_url": item.get("avatar_url"), "html_url": item.get("html_url"), "type": item.get("type"), "site_admin": item.get("site_admin")} for item in data or [] if isinstance(item, dict)]
     return jsonify({"contributors": contributors})
+
 @app.get("/api/developer_activity")
 def api_developer_activity():
     repo = (request.args.get("repo") or "").strip(); login = (request.args.get("login") or "").strip()
@@ -585,21 +596,32 @@ def api_security_status():
     repo = request.args.get("repo"); commit_sha = request.args.get("commit") or request.args.get("sha"); branch = request.args.get("branch")
     if not repo or not commit_sha: return jsonify({"error": "repo and commit required"}), 400
     if "access_token" not in session: return jsonify({"error": "unauthorized"}), 401
+    
     commit_data = None
     try: commit_data, _ = _gh_get(f"/repos/{repo}/commits/{commit_sha}")
     except requests.exceptions.RequestException as e: log.warning(f"Failed to fetch commit {repo}@{commit_sha}: {e}")
+    
     author_email = (commit_data.get("author") or {}).get("email") or (commit_data.get("commit", {}).get("author") or {}).get("email")
     author_login = (commit_data.get("author") or {}).get("login") or (commit_data.get("committer") or {}).get("login")
     identity_assessment = _evaluate_identity_risk(author_email, author_login, commit_data, repo_full_name=repo, current_commit_sha=commit_sha)
+    
     params = {"per_page": 100}
     if branch: params["ref"] = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+    
     try:
-        alerts = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)[0] or []
+        alerts, _ = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)
+        alerts = alerts or []
         commit_alerts = [a for a in alerts if (a.get('most_recent_instance') or {}).get('commit_sha') == commit_sha]
         enriched_alerts = []
         for alert in commit_alerts[:10]:
             rule = alert.get('rule') or {}; most_recent = alert.get('most_recent_instance') or {}; location = most_recent.get('location') or {}
-            enriched_alerts.append({'number': alert.get('number'), 'rule_id': rule.get('id'), 'rule_name': rule.get('name'), 'severity': rule.get('severity'), 'description': (most_recent.get('message') or {}).get('text'), 'path': location.get('path'), 'start_line': location.get('start_line'), 'end_line': location.get('end_line'), 'html_url': alert.get('html_url'), 'code_excerpt': _get_code_excerpt(repo, commit_sha, location.get('path'), location.get('start_line'), location.get('end_line'))})
+            enriched_alerts.append({
+                'number': alert.get('number'), 'rule_id': rule.get('id'), 'rule_name': rule.get('name'), 
+                'severity': rule.get('severity'), 'description': (most_recent.get('message') or {}).get('text'), 
+                'path': location.get('path'), 'start_line': location.get('start_line'), 
+                'end_line': location.get('end_line'), 'html_url': alert.get('html_url'), 
+                'code_excerpt': _get_code_excerpt(repo, commit_sha, location.get('path'), location.get('start_line'), location.get('end_line'))
+            })
         high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
         defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
         defender_summary = f"CodeQL 경고: {len(commit_alerts)}"
@@ -608,13 +630,26 @@ def api_security_status():
         try:
             bricks_features = _build_iforest_features_from_commit(repo, commit_sha, branch_name=branch, commit_data=commit_data)
             if bricks_features:
-                prediction = _invoke_databricks_model(bricks_features)
-                if prediction is not None:
-                    bricks = {'status': 'bad' if prediction == 1 else 'good', 'summary': "이상치 탐지됨" if prediction == 1 else "정상", 'prediction': prediction, 'features': bricks_features, 'details': [f"모델 예측: {'이상치' if prediction == 1 else '정상'} ({prediction})"]}
+                result = _invoke_databricks_model(bricks_features)
+                if result is not None:
+                    is_anomaly_flag = result['is_anomaly']
+                    anomaly_score = result['score']
+                    bricks_status = 'bad' if is_anomaly_flag else 'good'
+                    summary_text = f"이상치 탐지됨 (점수: {anomaly_score:.2f})" if is_anomaly_flag else f"정상 (점수: {anomaly_score:.2f})"
+                    bricks = {
+                        'status': bricks_status, 'summary': summary_text,
+                        'prediction': is_anomaly_flag, 'score': anomaly_score,
+                        'features': bricks_features,
+                        'details': [
+                            f"이상 탐지 점수: {anomaly_score:.4f}",
+                            f"판정 결과: {'이상치' if is_anomaly_flag else '정상'}",
+                            "(점수가 높을수록 이상치일 확률이 높습니다)"
+                        ],
+                    }
                 else:
-                    bricks = {'status': 'unknown', 'summary': '모델 응답 해석 불가.', 'details': []}
+                    bricks = {'status': 'unknown', 'summary': '모델 응답 해석 불가.', 'features': bricks_features, 'details': ['모델 응답에서 점수와 판정 결과를 찾을 수 없습니다.']}
             else:
-                bricks = {'status': 'unknown', 'summary': '모델 입력 생성 실패.', 'details': []}
+                bricks = {'status': 'unknown', 'summary': '모델 입력 생성 실패.', 'details': ['모델 피처를 생성하지 못했습니다.']}
         except Exception as e:
             log.exception('Databricks model processing failed')
             bricks = {'status': 'unknown', 'summary': 'BRICKS 모델 처리 중 오류.', 'details': [str(e)]}
@@ -634,11 +669,13 @@ def _unauth(_):
     session.clear()
     if request.path.startswith("/api/"): return jsonify({"error": "unauthorized"}), 401
     return redirect(url_for("index"))
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     if hasattr(e, 'code') and isinstance(e.code, int) and 400 <= e.code < 600: return e
     log.exception("An unhandled exception occurred")
     return jsonify(error="Internal server error"), 500
+
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
     port = int(os.environ.get("PORT", "8000"))
