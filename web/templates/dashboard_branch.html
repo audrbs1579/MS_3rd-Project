@@ -1,72 +1,764 @@
-<!doctype html><html><head><meta charset='utf-8'><title>Branch</title>
-<style>
-.badge { padding: 4px 10px; border-radius: 999px; font-weight: 600; }
-.badge.good { background:#e8f5e9; color:#1b5e20; }
-.badge.warn { background:#fff8e1; color:#8d6e00; }
-.badge.bad  { background:#ffebee; color:#b71c1c; }
-.meter-wrap { position:relative; height:14px; background:#f1f1f1; border-radius:7px; overflow:hidden; }
-.meter-bar  { position:absolute; left:0; top:0; bottom:0; width:0%; background:#66bb6a; }
-.meter-thr  { position:absolute; top:0; bottom:0; width:2px; background:#263238; opacity:0.8; }
-.meter-legend { display:flex; gap:12px; margin-top:6px; font-size:12px; color:#555; }
-</style>
-</head><body><h2>Branch View</h2>
-<div style="display:flex;align-items:center;gap:12px">
-  <span class="badge" id="bricks-badge">GOOD</span>
-  <span id="summary" style="font-weight:600"></span>
-</div>
-<div class="meter-wrap" style="margin-top:8px;">
-  <div class="meter-bar" id="score-bar"></div>
-  <div class="meter-thr" id="thr-marker" title="threshold"></div>
-</div>
-<div class="meter-legend">
-  <span id="score-text"></span>
-  <span id="thr-text" style="margin-left:auto;"></span>
-</div>
-<div id="explain"></div>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+    <style>
+      .commit {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .commit-extra {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-shrink: 0;
+      }
+      .commit-indicators {
+        display: flex;
+        gap: 5px;
+        padding: 0 8px;
+      }
+      .indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #e5e7eb; /* default/loading gray */
+        transition: background-color 0.3s;
+        box-shadow: inset 0 0 2px rgba(0,0,0,0.1);
+      }
+      .indicator.status-good { background-color: #22c55e; }
+      .indicator.status-warn { background-color: #f59e0b; }
+      .indicator.status-bad { background-color: #ef4444; }
+      .indicator.status-unknown { background-color: #9ca3af; }
+    </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+      <input id="repoFilter" class="input" placeholder="저장소 검색..." />
+      <div class="toolbar-actions">
+        <button id="btnVsConfig" type="button">VS Code 경로</button>
+        <button id="btnSync" type="button">새로고침</button>
+        <span>Signed in as <b>{{ user_id }}</b></span>
+        <a href="/logout"><button type="button">로그아웃</button></a>
+      </div>
+    </div>
+    <div class="main-grid">
+      <section class="card">
+        <h2>내 저장소</h2>
+        <div class="body repo-list" id="repoList"></div>
+        <div id="repoStamp" class="stamp"></div>
+      </section>
+
+      <div class="grid-row-mid">
+        <section class="card">
+          <h2>브랜치와 커밋</h2>
+          <div id="branches-container" class="body">계속하려면 저장소를 선택하세요.</div>
+        </section>
+        <section class="card">
+          <h2>커밋 상세 정보</h2>
+          <div id="detail-container" class="body detail"></div>
+        </section>
+      </div>
+      
+      <section id="security-summary-card" class="card status-unknown">
+        <div class="security-summary-body">
+          <div class="security-status">
+            <div id="status-icon-container" class="status-icon"></div>
+            <div class="status-text">
+              <h3 id="security-summary-title">보안 요약</h3>
+              <p id="security-summary-text">분석할 커밋을 선택하세요.</p>
+            </div>
+          </div>
+          <button id="btn-view-details" disabled>상세 보기</button>
+        </div>
+      </section>
+    </div>
+  </div>
 
 <script>
-function setBricksBadge(status){
-  const el = document.getElementById('bricks-badge');
-  if(!el) return;
-  el.classList.remove('good','warn','bad');
-  el.classList.add(status || 'good');
-  el.textContent = (status||'good').toUpperCase();
-}
-function renderBricksMeter(score, threshold, status){
-  const bar = document.getElementById('score-bar');
-  const thr = document.getElementById('thr-marker');
-  const sTxt = document.getElementById('score-text');
-  const tTxt = document.getElementById('thr-text');
-  if(bar){
-    const max = Math.max(score||0, threshold||0, 1)*1.2;
-    bar.style.width = Math.min(100,(score/max)*100)+'%';
-    bar.style.background = (status==='bad')?'#ef5350':(status==='warn')?'#ffb74d':'#66bb6a';
-    if(thr){
-      if(typeof threshold==='number'){
-        thr.style.left = Math.min(100,(threshold/max)*100)+'%';
-        thr.style.display='block';
-      } else { thr.style.display='none'; }
+(()=>{
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => el.querySelectorAll(s);
+
+  // --- State Management ---
+  const S = {
+    repo: null,
+    selCommit: null,
+    repos: [],
+    branches: {},
+    commits: {},
+    opened: new Set(),
+    identityByCommit: {},
+    securityByCommit: {},
+    commentsByCommit: {},
+  };
+  
+  // --- Constants ---
+  const RECENT_THRESHOLD_MS = 5 * 60 * 1000;
+  const ICONS = {
+    good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+    warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
+    bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
+    unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
+  };
+  const IDENTITY_LEVELS = {
+    internal: { icon: 'IN', label: 'Internal Staff', className: 'identity-internal' },
+    external: { icon: 'EXT', label: 'External Partner', className: 'identity-external' },
+    unverified: { icon: 'UNVER', label: 'Unverified Contributor', className: 'identity-unverified' },
+    unknown: { icon: '?', label: 'Unknown', className: 'identity-unknown' },
+  };
+
+  // --- DOM Elements ---
+  const repoFilter = $('#repoFilter'), repoList = $('#repoList'), repoStamp = $('#repoStamp');
+  const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
+  const branchesBox = $('#branches-container'), detailBox = $('#detail-container');
+  const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
+  const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
+
+  // --- Cache Management ---
+  const CACHE_KEY = 'dashboardCache';
+  
+  function loadCache() {
+    try {
+      const cachedData = sessionStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        const data = JSON.parse(cachedData);
+        S.repos = data.repos || [];
+        S.branches = data.branches || {};
+        S.commits = data.commits || {};
+        repoStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
+        return true;
+      }
+    } catch (e) {
+      console.error("Failed to load from cache", e);
+      sessionStorage.removeItem(CACHE_KEY);
+    }
+    return false;
+  }
+
+  // --- API & Data Loading ---
+  async function api(path, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const query = options.query || (method === 'GET' ? (options.params || {}) : {});
+    const qs = new URLSearchParams(query);
+    const url = `/api${path}${qs.toString() ? `?${qs.toString()}` : ''}`;
+    const init = {
+      method,
+      headers: Object.assign({ 'Accept': 'application/json' }, options.headers || {}),
+    };
+    if (method !== 'GET') {
+      const body = options.body !== undefined ? options.body : options.params;
+      if (body !== undefined && body !== null) {
+        init.body = typeof body === 'string' ? body : JSON.stringify(body);
+        if (!init.headers['Content-Type']) {
+          init.headers['Content-Type'] = 'application/json';
+        }
+      }
+    }
+    if (options.signal) {
+      init.signal = options.signal;
+    }
+    const res = await fetch(url, init);
+    if (res.status === 401) { location.href = '/'; throw new Error('Unauthorized'); }
+    if (res.status === 204) { return null; }
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errData.error || `HTTP error ${res.status}`);
+    }
+    return res.json();
+  }
+
+  function createCommitEl(repo, branch, commit) {
+      const el = document.createElement('div');
+      el.className = 'commit';
+      el.dataset.repo = repo;
+      el.dataset.sha = commit.sha;
+      el.addEventListener('click', () => showCommit(repo, commit.sha, branch));
+      el.innerHTML = `
+        <div class="commit-info">
+          <div class="msg">${isRecent(commit.date) ? '<span class="status-indicator"></span>' : ''}${esc(commit.message)}</div>
+          <div class="meta">
+            <span class="identity-chip" data-role="identity-pill">${renderIdentityChip(S.identityByCommit[commit.sha])}</span>
+            <span>${esc(commit.author)} · ${ago(commit.date)}</span>
+          </div>
+        </div>
+        <div class="commit-extra">
+          <div class="commit-indicators" data-role="indicators" title="CodeQL / 계정 / BRICKS">
+            <span class="indicator"></span>
+            <span class="indicator"></span>
+            <span class="indicator"></span>
+          </div>
+          <div class="monospace sha">${esc(commit.sha.slice(0, 7))}</div>
+        </div>
+      `;
+      if (S.identityByCommit[commit.sha]?.first_contribution) {
+        el.classList.add('commit-first');
+      }
+      return el;
+  }
+
+  function renderIdentityChip(identity, options = {}) {
+    const showLabel = Boolean(options.showLabel);
+    const showFallback = Boolean(options.showFallback);
+    if (!identity || !identity.identity_level) {
+      return showFallback ? '<span class="identity-chip-inner identity-unknown">❔</span>' : '';
+    }
+    const meta = IDENTITY_LEVELS[identity.identity_level] || IDENTITY_LEVELS.unknown;
+    const icon = identity.identity_icon || meta.icon;
+    const label = identity.identity_label || meta.label;
+    const labelHtml = showLabel ? `<span class="identity-chip-label">${esc(label)}</span>` : '';
+    return `<span class="identity-chip-inner ${meta.className}">${icon}${labelHtml}</span>`;
+  }
+
+  function updateCommitIdentityBadge(sha, identity) {
+    const commitEl = document.querySelector(`.commit[data-sha="${sha}"]`);
+    if (!commitEl) return;
+    const pill = commitEl.querySelector('[data-role="identity-pill"]');
+    if (pill) {
+      pill.innerHTML = renderIdentityChip(identity);
+    }
+    if (identity && identity.first_contribution) {
+      commitEl.classList.add('commit-first');
+    } else {
+      commitEl.classList.remove('commit-first');
     }
   }
-  if(sTxt) sTxt.textContent = 'score: ' + (Number(score).toFixed(3));
-  if(tTxt) tTxt.textContent = 'threshold: ' + (typeof threshold==='number'? Number(threshold).toFixed(3):'N/A');
-}
-function renderBricksExplain(isAnom, proximity, percentile){
-  const el = document.getElementById('explain');
-  if(!el) return;
-  let msg = isAnom ? `임계값을 ${(proximity*100).toFixed(1)}% 초과했습니다.`
-                   : (proximity!=null && proximity>=-0.1)
-                      ? `임계값에 근접(여유 ${(Math.abs(proximity)*100).toFixed(1)}%).`
-                      : `임계값 대비 충분한 여유.`;
-  if(typeof percentile==='number') msg += ` (threshold=상위 ${(percentile*100).toFixed(0)}%)`;
-  el.textContent = msg;
-}
-function bindBricks(bricks){
-  setBricksBadge(bricks.status);
-  renderBricksMeter(bricks.score, bricks.threshold, bricks.status);
-  renderBricksExplain(bricks.is_anomaly, bricks.proximity, bricks.percentile);
-  const sum = document.getElementById('summary');
-  if(sum && bricks.summary) sum.textContent = bricks.summary;
-}
+  
+  function updateCommitIndicators(sha, status) {
+      const commitEl = $(`.commit[data-sha="${sha}"]`);
+      if (!commitEl) return;
+      const indicators = $$('.indicator', commitEl);
+      if (indicators.length !== 3) return;
+
+      const defenderStatus = status?.defender?.status || 'unknown';
+      const sentinelStatus = status?.sentinel?.status || 'unknown';
+      const bricksStatus = status?.bricks?.status || 'unknown';
+
+      indicators[0].className = `indicator status-${defenderStatus}`;
+      indicators[1].className = `indicator status-${sentinelStatus}`;
+      indicators[2].className = `indicator status-${bricksStatus}`;
+  }
+
+
+  function associationToLevel(association = '') {
+    const key = association.toUpperCase();
+    if (['OWNER', 'MEMBER'].includes(key)) return 'internal';
+    if (['COLLABORATOR', 'CONTRIBUTOR', 'FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'AUTHOR'].includes(key)) return 'external';
+    if (['NONE', 'MANNEQUIN'].includes(key)) return 'unverified';
+    return 'unknown';
+  }
+
+  function renderCommentAssociation(association) {
+    if (!association) return '';
+    const meta = IDENTITY_LEVELS[associationToLevel(association)] || IDENTITY_LEVELS.unknown;
+    const label = association.replace(/_/g, ' ');
+    return `<span class="identity-chip-inner ${meta.className}">${meta.icon}<span class="identity-chip-label">${esc(label)}</span></span>`;
+  }
+
+  function renderCommentsList(comments) {
+    if (!comments || !comments.length) {
+      return '<div class="empty-state">등록된 댓글이 없습니다.</div>';
+    }
+    return comments.map(comment => {
+      const user = comment.user || {};
+      const avatarUrl = user.avatar_url ? esc(user.avatar_url) : '';
+      const login = esc(user.login || '익명');
+      const association = renderCommentAssociation(comment.author_association);
+      const when = comment.created_at ? esc(ago(comment.created_at)) : '';
+      const locationRaw = comment.path ? `${comment.path}${comment.line ? ':' + comment.line : ''}` : '커밋 전체';
+      const location = esc(locationRaw);
+      const bodyHtml = esc(comment.body || '').replace(/\n/g, '<br>');
+      const link = comment.html_url ? `<a href="${esc(comment.html_url)}" target="_blank" rel="noopener">GitHub</a>` : '';
+      const avatarImg = avatarUrl ? `<img src="${avatarUrl}" alt="${login}">` : '';
+      const footer = [location, link].filter(Boolean).join(' · ');
+      return `<article class="comment-card">
+        <header class="comment-header">
+          <div class="comment-author">
+            ${avatarImg}
+            <strong>${login}</strong>
+            ${association}
+          </div>
+          <time>${when}</time>
+        </header>
+        <div class="comment-body">${bodyHtml}</div>
+        <footer class="comment-meta">${footer}</footer>
+      </article>`;
+    }).join('');
+  }
+
+  function renderIdentityBadge(identity) {
+    if (!identity || !identity.identity_level) {
+      return `
+        <div class="identity-badge identity-unknown">
+          <div class="identity-icon">❔</div>
+          <div class="identity-content">
+            <div class="identity-title">정보 부족</div>
+            <div class="identity-summary">신원 정보를 불러오지 못했습니다.</div>
+          </div>
+        </div>`;
+    }
+    const meta = IDENTITY_LEVELS[identity.identity_level] || IDENTITY_LEVELS.unknown;
+    const icon = identity.identity_icon || meta.icon;
+    const label = identity.identity_label || meta.label;
+    const summary = identity.summary ? `<div class="identity-summary">${esc(identity.summary)}</div>` : '';
+    const loginLine = identity.login ? `<div class="identity-sub">${esc(identity.login)}${identity.email ? ` · ${esc(identity.email)}` : ''}</div>` : '';
+    const badges = (identity.identity_badges || []).map(b => {
+      const iconText = (b.icon || '').toString();
+      const labelText = (b.label || '').toString();
+      return `<span class="badge-pill">${iconText ? `${esc(iconText)} ` : ''}${esc(labelText)}</span>`;
+    }).join('');
+    return `
+      <div class="identity-badge ${meta.className}">
+        <div class="identity-icon">${icon}</div>
+        <div class="identity-content">
+          <div class="identity-title">${esc(label)}</div>
+          ${summary}
+          ${loginLine}
+          ${badges ? `<div class="identity-badges">${badges}</div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function renderCommitDetails({ repo, sha, branch, details, security, comments }) {
+    const identity = security?.sentinel || {};
+    const files = details.files || [];
+    const basePath = (localStorage.getItem('vsCodeBasePath') || '').trim();
+    const vsHint = basePath ? `VS Code에서 열기: ${esc(basePath)} 기준` : 'VS Code 경로가 설정되지 않아 웹 버전(vscode.dev)으로 열립니다.';
+
+    const fileList = files.length ? files.map(file => {
+      const filePath = file.filename || '';
+      const stats = [
+        file.status ? file.status.toUpperCase() : null,
+        typeof file.additions === 'number' ? `+${file.additions}` : null,
+        typeof file.deletions === 'number' ? `-${file.deletions}` : null,
+      ].filter(Boolean).join(' · ') || '변경 없음';
+      const githubUrl = file.blob_url || details.html_url;
+      return `<li class="file-item">
+        <div>
+          <div class="file-path">${esc(filePath)}</div>
+          <div class="file-stats">${esc(stats)}</div>
+        </div>
+        <div class="file-actions">
+          ${githubUrl ? `<button type="button" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}
+          <button type="button" data-action="open-vscode" data-path="${esc(filePath)}" data-line="1">VS Code</button>
+        </div>
+      </li>`;
+    }).join('') : '<li class="file-item">변경된 파일이 없습니다.</li>';
+
+    const fileOptions = ['<option value="">커밋 전체</option>'].concat(
+      files.map(file => `<option value="${esc(file.filename)}">${esc(file.filename)}</option>`)
+    ).join('');
+
+    const commentsHtml = renderCommentsList(comments);
+
+    detailBox.innerHTML = `
+      <section class="detail-section">
+        ${renderIdentityBadge(identity)}
+        <div class="detail-metadata">
+          <div class="field"><h3>커밋 메시지</h3><div class="val">${esc((details.message || '').split('\n')[0])}</div></div>
+          <div class="field"><h3>작성자</h3><div class="val">${esc(details.author || identity.display_name || '알 수 없음')}</div></div>
+          <div class="field"><h3>SHA</h3><div class="val monospace">${esc(sha)}</div></div>
+          <div class="field"><h3>추가/삭제</h3><div class="val">+${details.stats?.additions || 0} / -${details.stats?.deletions || 0}</div></div>
+        </div>
+      </section>
+      <section class="detail-section">
+        <div class="section-head">
+          <h3>변경 파일</h3>
+          <span class="file-hint">${vsHint}</span>
+        </div>
+        <ul class="file-list">${fileList}</ul>
+      </section>
+      <section class="detail-section code-review-panel">
+        <div class="section-head"><h3>대화형 코드 리뷰</h3></div>
+        <div class="comments-list" data-role="comments-list">${commentsHtml}</div>
+        <form class="review-form" data-role="comment-form">
+          <div class="field">
+            <label>파일 선택</label>
+            <select name="path">${fileOptions}</select>
+          </div>
+          <div class="field">
+            <label>라인 번호 (선택)</label>
+            <input type="number" name="line" min="1" placeholder="라인 번호" />
+          </div>
+          <div class="field">
+            <label>댓글 내용</label>
+            <textarea name="body" placeholder="보안 피드백 또는 리뷰 의견을 입력하세요" required></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit">댓글 추가</button>
+            <span class="form-status" data-role="form-status"></span>
+          </div>
+        </form>
+      </section>
+    `;
+
+    detailBox.querySelectorAll('[data-action="open-vscode"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openInVSCode({
+          repo,
+          sha,
+          path: btn.dataset.path,
+          line: parseInt(btn.dataset.line || '1', 10) || 1,
+        });
+      });
+    });
+    detailBox.querySelectorAll('[data-action="open-github"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const url = btn.dataset.url;
+        if (url) window.open(url, '_blank', 'noopener');
+      });
+    });
+
+    const commentForm = detailBox.querySelector('[data-role="comment-form"]');
+    if (commentForm) {
+      const statusEl = commentForm.querySelector('[data-role="form-status"]');
+      commentForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const formData = new FormData(commentForm);
+        const body = (formData.get('body') || '').toString().trim();
+        const pathValue = (formData.get('path') || '').toString().trim();
+        const lineValue = (formData.get('line') || '').toString().trim();
+        if (!body) {
+          statusEl.textContent = '내용을 입력해주세요.';
+          return;
+        }
+        statusEl.textContent = '저장 중...';
+        const payload = { repo, sha, body };
+        if (pathValue) payload.path = pathValue;
+        if (lineValue) {
+          const parsedLine = parseInt(lineValue, 10);
+          if (!Number.isNaN(parsedLine)) {
+            payload.line = parsedLine;
+          }
+        }
+        try {
+          const res = await api('/commit_comments', { method: 'POST', body: payload });
+          if (res?.comment) {
+            S.commentsByCommit[sha] = [res.comment, ...(S.commentsByCommit[sha] || [])];
+            const listEl = detailBox.querySelector('[data-role="comments-list"]');
+            if (listEl) {
+              listEl.innerHTML = renderCommentsList(S.commentsByCommit[sha]);
+            }
+            commentForm.reset();
+            statusEl.textContent = '등록되었습니다.';
+          } else {
+            statusEl.textContent = '댓글 등록 결과를 확인할 수 없습니다.';
+          }
+        } catch (error) {
+          console.error('댓글 등록 실패:', error);
+          statusEl.textContent = `등록 실패: ${error.message}`;
+        }
+      });
+    }
+  }
+
+  function openInVSCode({ repo, sha, path, line }) {
+    if (!path) return;
+    const normalizedPath = path.replace(/\\/g, '/').replace(/^\/*/, '');
+    const fallbackPath = normalizedPath.split('/').map(encodeURIComponent).join('/');
+    const fallbackUrl = `https://vscode.dev/github/${repo}/blob/${sha}/${fallbackPath}${line ? `?line=${line}` : ''}`;
+    const base = (localStorage.getItem('vsCodeBasePath') || '').trim();
+    if (base) {
+      const normalizedBase = base.replace(/\\/g, '/').replace(/\/+$/, '');
+      const fullPath = `${normalizedBase}/${normalizedPath}`;
+      const vsUrl = encodeURI(`vscode://file/${fullPath}${line ? ':' + line : ''}`);
+      triggerProtocol(vsUrl);
+      setTimeout(() => window.open(fallbackUrl, '_blank', 'noopener'), 400);
+    } else {
+      window.open(fallbackUrl, '_blank', 'noopener');
+    }
+  }
+
+  function triggerProtocol(url) {
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function refreshVsConfigLabel() {
+    if (!btnVsConfig) return;
+    const base = (localStorage.getItem('vsCodeBasePath') || '').trim();
+    btnVsConfig.textContent = base ? 'VS Code 경로 ✓' : 'VS Code 경로';
+    btnVsConfig.title = base ? `현재 경로: ${base}` : '로컬 VS Code 경로를 설정하세요.';
+  }
+
+  function renderRepos() {
+    const q = repoFilter.value.toLowerCase();
+    const frag = document.createDocumentFragment();
+    S.repos
+      .filter(r => (r.full_name || '').toLowerCase().includes(q))
+      .forEach(r => {
+        const b = document.createElement('button');
+        b.className = 'repo-item';
+        b.onclick = () => selectRepo(r.full_name);
+        b.innerHTML = `
+          <span class="repo-name">${isRecent(r.pushed_at) ? '<span class="status-indicator"></span>' : ''}${esc(r.full_name)}</span>
+          <span class="repo-meta">${r.pushed_at ? ('pushed ' + ago(new Date(r.pushed_at))) : ''}</span>`;
+        frag.appendChild(b);
+      });
+    repoList.innerHTML = '';
+    repoList.appendChild(frag);
+    highlightSelection();
+  }
+
+  function renderBranches(repo) {
+    const list = S.branches[repo] || [];
+    if (!list.length) {
+      branchesBox.textContent = '브랜치를 찾을 수 없습니다.';
+      return;
+    }
+    branchesBox.innerHTML = '';
+    list.forEach(b => {
+      const key = `${repo}|${b.name}`;
+      const open = S.opened.has(key);
+      const branchEl = document.createElement('div');
+      branchEl.className = 'branch';
+      branchEl.innerHTML = `
+        <div class="branch-head">
+          <b class="monospace">${isRecent(b.last_commit_date) ? '<span class="status-indicator"></span>' : ''}${esc(b.name)}</b>
+          <span class="sha-tag">${esc((b.sha || '').slice(0, 7))}</span>
+          <button class="branch-toggle">${open ? 'Hide' : 'Show'}</button>
+        </div>
+        <div class="panel is-hidden"></div>`;
+        
+      const head = branchEl.querySelector('.branch-head');
+      const btn = branchEl.querySelector('button');
+      const panel = branchEl.querySelector('.panel');
+
+      const toggle = () => {
+        const willOpen = panel.classList.contains('is-hidden');
+        if (willOpen) {
+          S.opened.add(key);
+          btn.textContent = 'Hide';
+          panel.classList.remove('is-hidden');
+          if (panel.innerHTML === '') {
+            loadCommits(key, panel);
+          }
+        } else {
+          S.opened.delete(key);
+          btn.textContent = 'Show';
+          panel.classList.add('is-hidden');
+        }
+      };
+
+      head.addEventListener('click', toggle);
+
+      if (open) {
+          panel.classList.remove('is-hidden');
+          loadCommits(key, panel);
+      }
+      branchesBox.appendChild(branchEl);
+    });
+  }
+  
+  async function fetchAndRenderCommitStatus(repo, branch, sha) {
+      if (S.securityByCommit[sha]) {
+          updateCommitIndicators(sha, S.securityByCommit[sha]);
+          return;
+      }
+      try {
+          const securityParams = { repo, commit: sha, branch };
+          const securityStatus = await api('/security_status', { query: securityParams });
+          S.securityByCommit[sha] = securityStatus;
+          updateCommitIndicators(sha, securityStatus);
+          
+          // Update identity cache as well
+          if(securityStatus.sentinel) {
+            S.identityByCommit[sha] = securityStatus.sentinel;
+            updateCommitIdentityBadge(sha, securityStatus.sentinel);
+          }
+
+      } catch (e) {
+          console.error(`Failed to fetch security status for ${sha}`, e);
+          const failureStatus = { 
+              defender: { status: 'unknown' }, 
+              sentinel: { status: 'unknown' }, 
+              bricks: { status: 'unknown' } 
+          };
+          S.securityByCommit[sha] = failureStatus;
+          updateCommitIndicators(sha, failureStatus);
+      }
+  }
+
+  function loadCommits(key, panel) {
+    const [repo, branch] = key.split('|');
+    const commits = S.commits[key] || [];
+    panel.innerHTML = '';
+    
+    if (!commits.length) {
+        panel.textContent = '최근 커밋이 없습니다.';
+        return;
+    }
+    
+    commits.forEach(c => {
+        const commitEl = createCommitEl(repo, branch, c);
+        panel.appendChild(commitEl);
+        updateCommitIndicators(c.sha, S.securityByCommit[c.sha]);
+        fetchAndRenderCommitStatus(repo, branch, c.sha);
+    });
+
+    highlightSelection();
+  }
+
+  async function showCommit(repo, sha, branch) {
+    S.selCommit = { repo, sha, branch };
+    highlightSelection();
+    detailBox.innerHTML = '<div class="detail-loading">커밋 정보를 불러오는 중...</div>';
+    updateSecuritySummary('loading');
+
+    try {
+      const security = S.securityByCommit[sha] || await api('/security_status', { query: { repo, commit: sha, branch } });
+      S.securityByCommit[sha] = security;
+
+      const [details, commentData] = await Promise.all([
+        api('/commit_detail', { query: { repo, sha } }),
+        api('/commit_comments', { query: { repo, sha } }).catch(err => {
+          console.warn('댓글을 불러오지 못했습니다:', err);
+          return { comments: [] };
+        })
+      ]);
+      const comments = commentData?.comments || [];
+      
+      const identity = security?.sentinel || {};
+      S.identityByCommit[sha] = identity;
+      S.commentsByCommit[sha] = comments;
+
+      renderCommitDetails({ repo, sha, branch, details, security, comments });
+      updateCommitIdentityBadge(sha, identity);
+      updateCommitIndicators(sha, security);
+      updateSecuritySummary(security);
+    } catch (e) {
+      console.error('커밋 상세/보안 정보를 불러오지 못했습니다:', e);
+      detailBox.innerHTML = `<div class="detail-error">상세 정보를 불러오지 못했습니다: ${esc(e.message)}</div>`;
+      updateSecuritySummary('unknown');
+    }
+  }
+
+  function highlightSelection() {
+    $$('.repo-item.selected').forEach(el => el.classList.remove('selected'));
+    if (S.repo) {
+      const repoEl = Array.from($$('.repo-item')).find(el => el.textContent.trim().startsWith(S.repo));
+      if (repoEl) repoEl.classList.add('selected');
+    }
+    
+    $$('.commit.selected').forEach(el => el.classList.remove('selected'));
+    if (S.selCommit) {
+      const commitEl = $(`.commit[data-sha="${S.selCommit.sha}"]`);
+      if (commitEl) commitEl.classList.add('selected');
+    }
+  }
+  
+  function updateSecuritySummary(data) {
+    btnDetails.disabled = true;
+    const isLoading = data === 'loading';
+    const isUnknown = data === 'unknown' || !data || !data.defender;
+
+    if (isLoading || isUnknown) {
+      securityCard.className = 'card status-unknown';
+      statusIcon.innerHTML = ICONS.unknown;
+      summaryTitle.textContent = isLoading ? 'Analyzing...' : 'Security Summary';
+      summaryText.innerHTML = isLoading ? '잠시만 기다려 주세요.' : '분석할 커밋을 선택하세요.';
+      return;
+    }
+
+    const identity = data.sentinel;
+    const statuses = [data.defender?.status, identity?.status, data.bricks?.status].filter(Boolean);
+    const overallStatus = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
+    const issues = statuses.filter(status => status === 'bad' || status === 'warn').length;
+
+    securityCard.className = `card status-${overallStatus}`;
+    statusIcon.innerHTML = ICONS[overallStatus];
+    summaryTitle.textContent = { good: '안전', warn: '주의', bad: '위험' }[overallStatus];
+
+    const lines = [];
+    if (identity) {
+      const chip = renderIdentityChip(identity, { showLabel: true, showFallback: true });
+      if (chip) {
+        lines.push(`<div>${chip}</div>`);
+      }
+      if (identity.first_contribution) {
+        lines.push('<div class="badge-pill">🆕 첫 기여자</div>');
+      }
+    }
+    lines.push(`<div>${esc(issues > 0 ? `${issues}건의 위험/경고 감지` : '모든 점검을 통과했습니다.')}</div>`);
+    summaryText.innerHTML = `<div class="summary-lines">${lines.join('')}</div>`;
+    btnDetails.disabled = false;
+  }
+  
+  function selectRepo(repo) {
+    S.repo = repo;
+    S.selCommit = null;
+    branchesBox.textContent = '브랜치를 불러오는 중...';
+    detailBox.innerHTML = '<div class="empty-state">커밋을 선택하면 상세 정보가 표시됩니다.</div>';
+    updateSecuritySummary('unknown');
+    highlightSelection();
+    renderBranches(repo);
+  }
+
+  // --- Main Execution & Event Listeners ---
+  function refreshAll() {
+    btnSync.disabled = true;
+    sessionStorage.removeItem(CACHE_KEY);
+    window.location.href = '/loading';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    refreshVsConfigLabel();
+    if (loadCache()) {
+        console.log('Loaded data from cache.');
+        renderRepos();
+    } else {
+        window.location.href = '/loading';
+    }
+  });
+
+  repoFilter.addEventListener('input', renderRepos);
+  btnSync.addEventListener('click', refreshAll);
+
+  if (btnVsConfig) {
+    btnVsConfig.addEventListener('click', () => {
+      const current = localStorage.getItem('vsCodeBasePath') || '';
+      const next = prompt('VS Code에서 열 파일의 로컬 루트 경로를 입력하세요 (예: C:/workspace/project)', current);
+      if (next === null) return;
+      const value = next.trim();
+      if (value) {
+        localStorage.setItem('vsCodeBasePath', value);
+      } else {
+        localStorage.removeItem('vsCodeBasePath');
+      }
+      refreshVsConfigLabel();
+    });
+  }
+  btnDetails.addEventListener('click', () => {
+    if (S.selCommit) {
+      const { repo, sha, branch } = S.selCommit;
+      const branchPart = branch ? `&branch=${encodeURIComponent(branch)}` : '';
+      window.location.href = `/details?repo=${repo}&sha=${sha}${branchPart}`;
+    }
+  });
+
+  // --- Helpers ---
+  function esc(s) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return (s || '').toString().replace(/[&<>"']/g, (c) => map[c] || c);
+  }
+  function isRecent(d) { return d && (Date.now() - new Date(d).getTime()) < RECENT_THRESHOLD_MS; }
+  function ago(d) {
+        const seconds = (Date.now() - new Date(d).getTime()) / 1000;
+        if (seconds < 60) return '방금 전';
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+        return `${Math.floor(seconds / 86400)}일 전`;
+  }
+})();
 </script>
-</body></html>
+</body>
+</html>

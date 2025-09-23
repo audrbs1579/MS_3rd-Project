@@ -1,1 +1,106 @@
-<!doctype html><html><head><meta charset='utf-8'><title>Loading</title></head><body>Loading...</body></html>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>데이터 로딩 중...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#f9fafb;
+      --card:#ffffff;
+      --text:#111827;
+      --muted:#6b7280;
+      --border:#e5e7eb;
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      --primary: #4f46e5;
+    }
+    *{box-sizing:border-box}
+    html,body{
+      margin:0; padding:0; background:var(--bg); color:var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex; align-items: center; justify-content: center; height: 100vh;
+    }
+    .wrap{max-width:560px; width: 100%; padding:0 20px; text-align: center;}
+    .card{
+      background:var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:32px 40px; box-shadow: var(--shadow);
+    }
+    h1{margin:0 0 16px 0; font-size:24px; color:var(--text);}
+    p#statusText{margin:0 0 24px 0; color:var(--muted); font-size: 16px; min-height: 24px; transition: color 0.3s;}
+    .progress-bar-container{
+      width: 100%;
+      height: 12px;
+      background-color: var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .progress-bar{
+      width: 0%;
+      height: 100%;
+      background-color: var(--primary);
+      border-radius: 6px;
+      transition: width 0.3s ease-in-out, background-color 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>데이터를 준비하는 중입니다</h1>
+      <p id="statusText">초기화 중...</p>
+      <div class="progress-bar-container">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+    </div>
+  </div>
+<script>
+(async () => {
+    const statusText = document.getElementById('statusText');
+    const progressBar = document.getElementById('progressBar');
+
+    function updateProgress(percentage, text) {
+        const p = Math.max(0, Math.min(100, percentage));
+        progressBar.style.width = `${p}%`;
+        statusText.textContent = text;
+    }
+
+    try {
+        updateProgress(10, '초기 데이터 로딩을 시작합니다...');
+
+        // API 호출 중 진행률 시뮬레이션
+        setTimeout(() => updateProgress(40, '저장소, 브랜치, 커밋 정보를 한번에 가져오는 중... (시간이 걸릴 수 있습니다)'), 500);
+
+        const response = await fetch('/api/get_initial_data', {
+            headers: { 'Accept': 'application/json' },
+        });
+
+        if (response.status === 401) {
+            window.location.href = '/';
+            throw new Error('Unauthorized');
+        }
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({ error: response.statusText }));
+            throw new Error(errData.error || `HTTP error ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        updateProgress(95, '가져온 데이터를 캐시에 저장하는 중...');
+        sessionStorage.setItem('dashboardCache', JSON.stringify(data));
+
+        updateProgress(100, '데이터 로딩 완료! 대시보드로 이동합니다.');
+        
+        setTimeout(() => {
+            window.location.href = '/dashboard';
+        }, 500);
+
+    } catch (error) {
+        console.error('초기 데이터 로딩 실패:', error);
+        updateProgress(100, `오류 발생: ${error.message}`);
+        progressBar.style.backgroundColor = '#ef4444'; // 빨간색으로 변경
+        statusText.style.color = '#991b1b';
+    }
+})();
+</script>
+</body>
+</html>

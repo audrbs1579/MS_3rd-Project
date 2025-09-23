@@ -1,72 +1,49 @@
-<!doctype html><html><head><meta charset='utf-8'><title>Index</title>
-<style>
-.badge { padding: 4px 10px; border-radius: 999px; font-weight: 600; }
-.badge.good { background:#e8f5e9; color:#1b5e20; }
-.badge.warn { background:#fff8e1; color:#8d6e00; }
-.badge.bad  { background:#ffebee; color:#b71c1c; }
-.meter-wrap { position:relative; height:14px; background:#f1f1f1; border-radius:7px; overflow:hidden; }
-.meter-bar  { position:absolute; left:0; top:0; bottom:0; width:0%; background:#66bb6a; }
-.meter-thr  { position:absolute; top:0; bottom:0; width:2px; background:#263238; opacity:0.8; }
-.meter-legend { display:flex; gap:12px; margin-top:6px; font-size:12px; color:#555; }
-</style>
-</head><body><h2>Dashboard</h2>
-<div style="display:flex;align-items:center;gap:12px">
-  <span class="badge" id="bricks-badge">GOOD</span>
-  <span id="summary" style="font-weight:600"></span>
-</div>
-<div class="meter-wrap" style="margin-top:8px;">
-  <div class="meter-bar" id="score-bar"></div>
-  <div class="meter-thr" id="thr-marker" title="threshold"></div>
-</div>
-<div class="meter-legend">
-  <span id="score-text"></span>
-  <span id="thr-text" style="margin-left:auto;"></span>
-</div>
-<div id="explain"></div>
-
-<script>
-function setBricksBadge(status){
-  const el = document.getElementById('bricks-badge');
-  if(!el) return;
-  el.classList.remove('good','warn','bad');
-  el.classList.add(status || 'good');
-  el.textContent = (status||'good').toUpperCase();
-}
-function renderBricksMeter(score, threshold, status){
-  const bar = document.getElementById('score-bar');
-  const thr = document.getElementById('thr-marker');
-  const sTxt = document.getElementById('score-text');
-  const tTxt = document.getElementById('thr-text');
-  if(bar){
-    const max = Math.max(score||0, threshold||0, 1)*1.2;
-    bar.style.width = Math.min(100,(score/max)*100)+'%';
-    bar.style.background = (status==='bad')?'#ef5350':(status==='warn')?'#ffb74d':'#66bb6a';
-    if(thr){
-      if(typeof threshold==='number'){
-        thr.style.left = Math.min(100,(threshold/max)*100)+'%';
-        thr.style.display='block';
-      } else { thr.style.display='none'; }
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>로그인 – 대시보드</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* --- 라이트 모드 색상으로 변경 --- */
+    :root{
+      --bg:#f9fafb;
+      --card:#ffffff;
+      --text:#111827;
+      --muted:#6b7280;
+      --border:#e5e7eb;
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
     }
-  }
-  if(sTxt) sTxt.textContent = 'score: ' + (Number(score).toFixed(3));
-  if(tTxt) tTxt.textContent = 'threshold: ' + (typeof threshold==='number'? Number(threshold).toFixed(3):'N/A');
-}
-function renderBricksExplain(isAnom, proximity, percentile){
-  const el = document.getElementById('explain');
-  if(!el) return;
-  let msg = isAnom ? `임계값을 ${(proximity*100).toFixed(1)}% 초과했습니다.`
-                   : (proximity!=null && proximity>=-0.1)
-                      ? `임계값에 근접(여유 ${(Math.abs(proximity)*100).toFixed(1)}%).`
-                      : `임계값 대비 충분한 여유.`;
-  if(typeof percentile==='number') msg += ` (threshold=상위 ${(percentile*100).toFixed(0)}%)`;
-  el.textContent = msg;
-}
-function bindBricks(bricks){
-  setBricksBadge(bricks.status);
-  renderBricksMeter(bricks.score, bricks.threshold, bricks.status);
-  renderBricksExplain(bricks.is_anomaly, bricks.proximity, bricks.percentile);
-  const sum = document.getElementById('summary');
-  if(sum && bricks.summary) sum.textContent = bricks.summary;
-}
-</script>
-</body></html>
+    *{box-sizing:border-box}
+    html,body{
+      margin:0; padding:0; background:var(--bg); color:var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    }
+    .wrap{max-width:560px; margin:128px auto; padding:0 20px}
+    .card{
+      background:var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:32px 40px; box-shadow: var(--shadow);
+    }
+    h1{margin:0 0 10px 0; font-size:24px; color:var(--text);}
+    p{margin:0 0 24px 0; color:var(--muted); font-size: 16px;}
+    
+    /* --- 버튼 스타일 수정 --- */
+    a.btn{
+      display:inline-block; padding:12px 20px; border:1px solid var(--border);
+      border-radius:8px; color:var(--text); text-decoration:none;
+      font-size: 16px; font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    a.btn:hover{background:#f3f4f6;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Branch Activity 대시보드</h1>
+      <p>GitHub로 로그인하여 리포지토리 브랜치/커밋을 확인하세요.</p>
+      <a class="btn" href="{{ url_for('login') }}">GitHub로 로그인</a>
+    </div>
+  </div>
+</body>
+</html>
