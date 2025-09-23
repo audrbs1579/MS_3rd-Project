@@ -243,15 +243,64 @@ def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=
     }
 
 def _extract_anomaly_details(response_json):
-    """모델 응답에서 anomaly score와 is_anomaly 플래그를 추출합니다."""
-    if isinstance(response_json, dict):
-        predictions = response_json.get("predictions")
-        if isinstance(predictions, list) and len(predictions) > 0 and isinstance(predictions[0], dict):
-            details = predictions[0]
-            score = details.get("_anomaly_score")
-            is_anomaly = details.get("_is_anomaly")
-            if isinstance(score, (int, float)) and isinstance(is_anomaly, bool):
-                return {"score": float(score), "is_anomaly": is_anomaly}
+    """
+    Databricks/MLflow 서빙 응답에서 anomaly score와 is_anomaly를 최대한 관대하게 추출.
+    지원 형태 예:
+      - {"predictions": [{"_anomaly_score": 0.73, "_is_anomaly": true}]}
+      - {"predictions": [{"anomaly_score": 0.73, "is_anomaly": true}]}
+      - {"predictions": [0.73]}  # 점수만
+      - {"outputs": [{"score": 0.73, "is_outlier": true}]}
+      - {"score": 0.73, "is_anomaly": true}
+    """
+    def _coerce_bool(v):
+        if isinstance(v, bool): return v
+        if isinstance(v, (int, float)): return v != 0
+        if isinstance(v, str): return v.strip().lower() in {"1","true","t","yes","y"}
+        return None
+
+    cand = response_json
+
+    # 1) predictions/outputs/data 키 우선
+    if isinstance(cand, dict):
+        for key in ("predictions", "outputs", "data"):
+            if key in cand:
+                arr = cand.get(key)
+                if isinstance(arr, list) and arr:
+                    cand = arr[0]
+                else:
+                    cand = arr
+                break
+
+    score = None
+    is_anom = None
+
+    # 2) cand가 숫자면 점수로 간주
+    if isinstance(cand, (int, float)):
+        score = float(cand)
+    elif isinstance(cand, dict):
+        # 점수 후보 키
+        for k in ("_anomaly_score","anomaly_score","score","outlier_score","anomalyScore"):
+            if k in cand and isinstance(cand[k], (int,float)):
+                score = float(cand[k]); break
+        # 이진 판정 후보 키
+        for k in ("_is_anomaly","is_anomaly","is_outlier","prediction","label","isAnomaly"):
+            if k in cand:
+                is_anom = _coerce_bool(cand[k]); break
+
+    if score is None and isinstance(response_json, (int, float)):
+        score = float(response_json)
+
+    # 점수만 있고 판정이 없으면 임계값으로 판정 (기본 0.6, 환경변수로 조절)
+    if score is not None and is_anom is None:
+        thr = 0.6
+        try:
+            thr = float(os.environ.get("DATABRICKS_ANOMALY_THRESHOLD", thr))
+        except Exception:
+            pass
+        is_anom = bool(score >= thr)
+
+    if score is not None and is_anom is not None:
+        return {"score": float(score), "is_anomaly": bool(is_anom)}
     return None
 
 def _invoke_databricks_model(features):
@@ -656,7 +705,7 @@ def api_security_status():
                         ],
                     }
                 else:
-                    bricks = {'status': 'unknown', 'summary': '모델 응답 해석 불가.', 'features': bricks_features, 'details': ['모델 응답에서 점수와 판정 결과를 찾을 수 없습니다.']}
+                    bricks = {'status': 'unknown', 'summary': '모델 응답 해석 불가.', 'features': bricks_features, 'details': ['모델 응답에서 점수와 판정 결과를 찾을 수 없습니다.', f'raw: {str(result)[:300]}']}
             else:
                 bricks = {'status': 'unknown', 'summary': '모델 입력 생성 실패.', 'details': ['모델 피처를 생성하지 못했습니다.']}
         except Exception as e:
