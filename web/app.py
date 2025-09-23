@@ -260,12 +260,21 @@ def _invoke_databricks_model(features):
     if not DATABRICKS_TOKEN: raise RuntimeError("Databricks token is not configured.")
     headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}", "Content-Type": "application/json"}
     payload = {"dataframe_records": [features]}
-    response = requests.post(DATABRICKS_ENDPOINT, headers=headers, json=payload, timeout=DATABRICKS_TIMEOUT)
+    response = requests.post(
+        DATABRICKS_ENDPOINT,
+        headers=headers,
+        json=payload,
+        timeout=DATABRICKS_TIMEOUT,
+    )
     response.raise_for_status()
-    try: result_json = response.json()
+    try:
+        result_json = response.json()
+        # [추가] Databricks로부터 받은 실제 JSON 응답을 터미널에 출력
+        print(f"✅ Databricks 실제 응답: {result_json}")
     except ValueError:
         log.error("Databricks response was not JSON")
         return None
+
     return _extract_anomaly_details(result_json)
 
 # ---------- Microsoft Graph 통합 (이하 코드는 변경 없음) ----------
