@@ -1,569 +1,156 @@
 <!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="utf-8" />
-    <title>Detail Security Analysis - {{ commit_sha[:7] }}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-        :root{
-            --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-            --text-main: #111827; --text-muted: #6b7280;
-            --status-good-bg: #dcfce7; --status-good-text: #166534;
-            --status-warn-bg: #fef9c3; --status-warn-text: #854d0e;
-            --status-bad-bg: #fee2e2; --status-bad-text: #991b1b;
-            --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
-            --code-bg: #0f172a; --code-text: #e2e8f0; --code-muted: #94a3b8;
-        }
-        body { margin: 0; background-color: var(--bg); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
-        header { background-color: var(--panel); padding: 16px 24px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 24px; }
-        header h1 { font-size: 20px; margin: 0 0 4px 0; }
-        header p { margin: 0; color: var(--text-muted); font-family: monospace; }
-        .grid { display: grid; gap: 24px; }
-        .summary-grid {
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            margin-bottom: 24px;
-        }
-        @media (min-width: 1200px) {
-           .summary-grid { grid-template-columns: repeat(4, 1fr); }
-        }
-        .detail-grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
-        .card { background-color: var(--panel); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
-        .card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-        .card-header h2 { font-size: 16px; margin: 0; }
-        .card-body { padding: 16px; font-size: 14px; line-height: 1.6; }
-        .card-body p { margin: 0; }
-        .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
-        .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
-        .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
-        .status-unknown { background-color: var(--status-unknown-bg); color: var(--status-unknown-text); }
-        .info-list { margin: 0; padding-left: 18px; }
-        .info-list li { margin-bottom: 6px; }
-        .info-list li:last-child { margin-bottom: 0; }
-        .card-divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
-        .section-title { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
-        .alert-item { margin-bottom: 24px; }
-        .alert-item:last-child { margin-bottom: 0; }
-        .alert-item header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
-        .alert-item header h3 { margin: 0; font-size: 15px; }
-        .alert-action { font-size: 12px; color: #1d4ed8; text-decoration: none; }
-        .alert-action:hover { text-decoration: underline; }
-        .alert-location { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: var(--text-muted); margin: 8px 0; }
-        .code-block { background: var(--code-bg); color: var(--code-text); padding: 12px; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; overflow: auto; }
-        .code-line { display: flex; gap: 12px; padding: 0 6px; border-radius: 6px; }
-        .code-line + .code-line { margin-top: 2px; }
-        .code-line-number { width: 36px; text-align: right; color: var(--code-muted); flex-shrink: 0; }
-        .code-line-text { flex: 1; white-space: pre-wrap; }
-        .code-line.highlight { background: rgba(248, 113, 113, 0.18); color: #b91c1c; }
-
-        .review-body { display: flex; flex-direction: column; gap: 18px; }
-        .review-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 14px; }
-        .review-meta .meta-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-        .review-meta .meta-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
-        .review-meta .meta-value { margin-top: 4px; font-weight: 600; }
-        .review-files { display: flex; flex-direction: column; gap: 10px; }
-        .review-file { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f9fafb; }
-        .review-file .file-path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; }
-        .review-file .file-stats { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-        .review-file .file-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .review-panel { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
-        .comments-list { display: flex; flex-direction: column; gap: 10px; max-height: 260px; overflow: auto; padding-right: 4px; }
-        .comment-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
-        .comment-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-        .comment-author { display: flex; align-items: center; gap: 8px; }
-        .comment-author strong { font-size: 13px; }
-        .comment-body { font-size: 13px; line-height: 1.5; }
-        .comment-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
-        .review-form { display: flex; flex-direction: column; gap: 10px; }
-        .review-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-        .review-form input,
-        .review-form select,
-        .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
-        .review-form textarea { min-height: 80px; resize: vertical; }
-        .form-actions { display: flex; align-items: center; gap: 8px; }
-        .form-status { font-size: 12px; color: var(--text-muted); }
-        .identity-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e5e7eb; color: #374151; }
-        .identity-chip.identity-internal { background: #dcfce7; color: #166534; }
-        .identity-chip.identity-external { background: #fef9c3; color: #854d0e; }
-        .identity-chip.identity-unverified { background: #fee2e2; color: #991b1b; }
-        .identity-chip.identity-unknown { background: #e5e7eb; color: #374151; }
-        .identity-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-        .badge-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; }
-        .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Commit Detail • Project Guardian</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif; margin:0; padding:24px; background:#f7faf9;}
+    .card { background:#fff; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.06); padding:20px; margin-bottom:16px;}
+    .title { font-size:20px; font-weight:700; margin:0 0 12px;}
+    .muted { color:#687076; font-size:13px;}
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .kv { margin:6px 0; }
+    .kv b { display:inline-block; width:160px; color:#1f2937; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700;}
+    .pill.good { background:#ecfdf5; color:#065f46;}
+    .pill.warn { background:#fff7ed; color:#9a3412;}
+    .pill.bad  { background:#fef2f2; color:#991b1b;}
+    .list { margin:0; padding-left:20px; }
+    .green { background:#ecfff4; }
+    .spacer { height:8px; }
+    canvas { max-width: 520px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
-    <div class="wrap">
-        <header>
-            <h1>보안 및 코드 상세 분석</h1>
-            <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
-        </header>
+  <div class="card">
+    <h2 class="title">Commit 상세</h2>
+    <div id="meta" class="muted">로딩 중…</div>
+  </div>
 
-        <section class="grid summary-grid">
-            <div id="identitySummaryCard" class="card status-unknown">
-                <div class="card-header"><h2>계정 인증 상태</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
-            </div>
-            <div id="identityDetailsCard" class="card status-unknown">
-                <div class="card-header"><h2>계정 세부 정보</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
-            </div>
-            <div id="defenderCard" class="card status-unknown">
-                <div class="card-header"><h2>Defender (CodeQL)</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
-            </div>
-            <div id="bricksCard" class="card status-unknown">
-                <div class="card-header"><h2>BRICKS 모델</h2></div>
-                <div class="card-body"><p>불러오는 중...</p></div>
-            </div>
-        </section>
-
-        <section class="grid detail-grid">
-            <div id="defenderDetails" class="card status-unknown"><div class="card-header"><h2>CodeQL 분석 결과</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
-            <div id="bricksDetails" class="card status-unknown"><div class="card-header"><h2>BRICKS 상세</h2></div><div class="card-body"><p>불러오는 중...</p></div></div>
-        </section>
-
-        <section id="commitReviewCard" class="card">
-            <div class="card-header"><h2>커밋 상세 & 코드 리뷰</h2></div>
-            <div class="card-body review-body">
-                <div id="commitMeta" class="review-meta"></div>
-                <div id="commitFiles" class="review-files"></div>
-                <div class="review-panel">
-                    <h3>대화형 코드 리뷰</h3>
-                    <div id="commentsList" class="comments-list"></div>
-                    <form id="commentForm" class="review-form">
-                        <div class="field">
-                            <label>파일 선택</label>
-                            <select name="path" id="commentFileSelect"><option value="">커밋 전체</option></select>
-                        </div>
-                        <div class="field">
-                            <label>라인 번호 (선택)</label>
-                            <input type="number" name="line" min="1" placeholder="라인 번호" />
-                        </div>
-                        <div class="field">
-                            <label>댓글 내용</label>
-                            <textarea name="body" placeholder="보안 피드백 또는 리뷰 의견을 입력하세요" required></textarea>
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit">댓글 추가</button>
-                            <span class="form-status" id="commentFormStatus"></span>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </section>
+  <div class="grid">
+    <div class="card">
+      <h3 class="title">BRICKS 요약</h3>
+      <div id="bricks-badge"></div>
+      <div class="kv"><b>anomaly_score</b> <span id="v-score">N/A</span></div>
+      <div class="kv"><b>threshold_used</b> <span id="v-thr">N/A</span></div>
+      <div class="kv"><b>is_anomaly</b> <span id="v-flag">N/A</span></div>
     </div>
 
-<script>
-(() => {
-  const repo = {{ repo_name|tojson }};
-  const sha = {{ commit_sha|tojson }};
-  const branch = {{ branch_name|tojson }};
+    <div class="card">
+      <h3 class="title">BRICKS 차트</h3>
+      <p class="muted">anomaly_score와 threshold_used를 막대 그래프로 비교합니다.</p>
+      <canvas id="scoreChart" height="180"></canvas>
+    </div>
+  </div>
 
-  const identitySummaryCard = document.getElementById('identitySummaryCard');
-  const identityDetailsCard = document.getElementById('identityDetailsCard');
-  const defenderCard = document.getElementById('defenderCard');
-  const bricksCard = document.getElementById('bricksCard');
-  const defenderDetails = document.getElementById('defenderDetails');
-  const bricksDetails = document.getElementById('bricksDetails');
-  const commitMetaEl = document.getElementById('commitMeta');
-  const commitFilesEl = document.getElementById('commitFiles');
-  const commentsListEl = document.getElementById('commentsList');
-  const commentForm = document.getElementById('commentForm');
-  const commentFileSelect = document.getElementById('commentFileSelect');
-  const commentFormStatus = document.getElementById('commentFormStatus');
+  <div class="card green">
+    <h3 class="title">BRICKS 상세</h3>
+    <ul class="list" id="bricks-detail">
+      <!-- 3개만 표시 (score / threshold_used / is_anomaly). 값 없으면 숨김 -->
+    </ul>
+  </div>
 
-  let cachedComments = [];
+  <div class="spacer"></div>
 
-  function esc(value) {
-      if (value === null || value === undefined) {
-          return '';
-      }
-      const text = String(value);
-      let result = '';
-      let last = 0;
-      for (let i = 0; i < text.length; i++) {
-          const char = text[i];
-          let replacement = '';
-          if (char === '&') replacement = '&amp;';
-          else if (char === '<') replacement = '&lt;';
-          else if (char === '>') replacement = '&gt;';
-          else if (char === '"') replacement = '&quot;';
-          else if (char === "'") replacement = '&#39;';
-          
-          if (replacement) {
-              result += text.substring(last, i) + replacement;
-              last = i + 1;
-          }
-      }
-      if (last < text.length) {
-          result += text.substring(last);
-      }
-      return result;
-  }
-
-  function ago(value) {
-    const reference = value instanceof Date ? value : new Date(value);
-    const seconds = (Date.now() - reference.getTime()) / 1000;
-    if (seconds < 60) return '방금 전';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
-    return `${Math.floor(seconds / 86400)}일 전`;
-  }
-
-  async function api(path, options = {}) {
-    const method = (options.method || 'GET').toUpperCase();
-    const query = options.query || (method === 'GET' ? (options.params || {}) : {});
-    const qs = new URLSearchParams(query);
-    const url = `/api${path}${qs.toString() ? `?${qs.toString()}` : ''}`;
-    const init = {
-      method,
-      headers: Object.assign({ 'Accept': 'application/json' }, options.headers || {}),
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    // 간단한 상태 저장소
+    const S = {
+      repo: new URLSearchParams(location.search).get('repo') || '',
+      sha:  new URLSearchParams(location.search).get('sha')  || '',
+      branch: new URLSearchParams(location.search).get('branch') || '',
+      commentsByCommit: {},
     };
-    if (method !== 'GET') {
-      const body = options.body !== undefined ? options.body : options.params;
-      if (body !== undefined && body !== null) {
-        init.body = typeof body === 'string' ? body : JSON.stringify(body);
-        if (!init.headers['Content-Type']) {
-          init.headers['Content-Type'] = 'application/json';
+
+    function badge(score, thr, flag){
+      if (flag === true)  return '<span class="pill bad">Anomaly</span>';
+      if (typeof score === 'number' && typeof thr === 'number' && score >= 0.9*thr) return '<span class="pill warn">Near threshold</span>';
+      if (typeof flag === 'boolean') return '<span class="pill good">Normal</span>';
+      return '<span class="pill">—</span>';
+    }
+
+    async function loadSecurity(){
+      const q = new URLSearchParams({ repo: S.repo, sha: S.sha, branch: S.branch });
+      const r = await fetch(`/api/security_status?${q.toString()}`);
+      if (!r.ok) throw new Error(`security_status ${r.status}`);
+      const j = await r.json();
+
+      const b = (j.bricks || {});
+      const score = b.anomaly_score;
+      const thr   = b.threshold_used;
+      const flag  = b.is_anomaly;
+
+      document.getElementById('meta').textContent = `${j.repo} @ ${j.sha?.slice(0,7)}`;
+      document.getElementById('bricks-badge').innerHTML = badge(score, thr, flag);
+
+      const fmt = (v) => (typeof v === 'number') ? v.toFixed(6) : (v===true?'True':(v===false?'False':'N/A'));
+      document.getElementById('v-score').textContent = fmt(score);
+      document.getElementById('v-thr').textContent   = fmt(thr);
+      document.getElementById('v-flag').textContent  = fmt(flag);
+
+      // 상세 3개만 렌더 (값 없으면 생략)
+      const ul = document.getElementById('bricks-detail');
+      ul.innerHTML = '';
+      const rows = [
+        ['anomaly_score', score],
+        ['threshold_used', thr],
+        ['is_anomaly', flag],
+      ].filter(([k,v]) => v !== null && v !== undefined);
+      for (const [k,v] of rows){
+        const li = document.createElement('li');
+        li.textContent = `${k}=${fmt(v)}`;
+        ul.appendChild(li);
+      }
+
+      drawChart(score, thr);
+    }
+
+    let chart;
+    function drawChart(score, thr){
+      const ctx = document.getElementById('scoreChart');
+      if (chart) { chart.destroy(); }
+      const data = {
+        labels: ['anomaly_score', 'threshold_used'],
+        datasets: [{
+          data: [
+            typeof score === 'number' ? score : 0,
+            typeof thr   === 'number' ? thr   : 0
+          ]
+        }]
+      };
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data,
+        options: {
+          responsive: true,
+          plugins: { legend: { display:false }, tooltip: { enabled: true } },
+          scales: {
+            y: { beginAtZero: true }
+          }
         }
-      }
-    }
-    const res = await fetch(url, init);
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errData.error || `HTTP error ${res.status}`);
-    }
-    const contentType = res.headers.get('content-type');
-    return contentType?.includes('application/json') ? res.json() : res.text();
-  }
-
-  function setCardStatus(cardEl, status) {
-    cardEl.className = `card status-${status}`;
-  }
-
-  function renderIdentityChip(identity, options = {}) {
-    const showLabel = Boolean(options.showLabel);
-    const showFallback = Boolean(options.showFallback);
-    if (!identity || !identity.identity_level) {
-      return showFallback ? '<span class="identity-chip identity-unknown">❔</span>' : '';
-    }
-    const map = {
-      internal: 'identity-internal',
-      external: 'identity-external',
-      unverified: 'identity-unverified',
-      unknown: 'identity-unknown',
-    };
-    const className = map[identity.identity_level] || 'identity-unknown';
-    const icon = identity.identity_icon || '❔';
-    const label = identity.identity_label || '정보 부족';
-    const labelHtml = showLabel ? `<span class="identity-chip-label">${esc(label)}</span>` : '';
-    return `<span class="identity-chip ${className}">${icon}${labelHtml}</span>`;
-  }
-
-  function renderIdentitySummary(data) {
-    const status = data?.status || 'unknown';
-    setCardStatus(identitySummaryCard, status);
-    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.').replace(/\n+/g, '<br>');
-    const chip = renderIdentityChip(data, { showLabel: true, showFallback: true });
-    identitySummaryCard.querySelector('.card-body').innerHTML = `${chip ? `<div>${chip}</div>` : ''}<p>${summary}</p>`;
-  }
-
-  function renderIdentityDetails(data) {
-    const status = data?.status || 'unknown';
-    setCardStatus(identityDetailsCard, status);
-    const detailLines = data?.details || [];
-    const metadataLines = data?.metadata || [];
-    const badges = (data?.identity_badges || []).map(b => {
-      const icon = (b.icon || '').toString();
-      const label = (b.label || '').toString();
-      return `<span class="badge-pill">${icon ? `${esc(icon)} ` : ''}${esc(label)}</span>`;
-    }).join('');
-    const body = identityDetailsCard.querySelector('.card-body');
-
-    if (!detailLines.length && !metadataLines.length && !badges) {
-      body.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>';
-      return;
-    }
-
-    let html = '';
-    if (detailLines.length) {
-      html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    if (metadataLines.length) {
-      html += '<hr class="card-divider">';
-      html += '<p class="section-title">커밋 메타데이터</p>';
-      html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    if (badges) {
-      html += `<div class="identity-badges">${badges}</div>`;
-    }
-    body.innerHTML = html;
-  }
-
-  function updateSummaryCard(cardEl, data, fallback) {
-    const status = data?.status || 'unknown';
-    setCardStatus(cardEl, status);
-    const summary = esc((data?.summary || fallback || '데이터가 없습니다.')).replace(/\n/g, '<br>');
-    cardEl.querySelector('.card-body').innerHTML = `<p>${summary}</p>`;
-  }
-
-  function renderCommentsList(comments) {
-    if (!comments.length) {
-      return '<div class="empty-state">등록된 댓글이 없습니다.</div>';
-    }
-    return comments.map(comment => {
-      const user = comment.user || {};
-      const login = esc(user.login || '익명');
-      const when = comment.created_at ? esc(ago(comment.created_at)) : '';
-      const location = comment.path ? `${comment.path}${comment.line ? ':' + comment.line : ''}` : '커밋 전체';
-      const bodyHtml = esc(comment.body || '').replace(/\n/g, '<br>');
-      const link = comment.html_url ? `<a href="${esc(comment.html_url)}" target="_blank" rel="noopener">GitHub</a>` : '';
-      return `<article class="comment-card">
-        <header class="comment-header">
-          <div class="comment-author"><strong>${login}</strong></div>
-          <time>${when}</time>
-        </header>
-        <div class="comment-body">${bodyHtml}</div>
-        <footer class="comment-meta">${esc(location)}${link ? ' · ' + link : ''}</footer>
-      </article>`;
-    }).join('');
-  }
-
-  function renderCommitReview(details, comments) {
-    const files = details?.files || [];
-    const stats = details?.stats || {};
-
-    if (commitMetaEl) {
-      commitMetaEl.innerHTML = `
-        <div class="review-meta">
-          <div class="meta-item">
-            <div class="meta-label">커밋 메시지</div>
-            <div class="meta-value">${esc((details.message || '').split('\n')[0])}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">작성자</div>
-            <div class="meta-value">${esc(details.author || '알 수 없음')}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">추가/삭제</div>
-            <div class="meta-value">+${stats.additions || 0} / -${stats.deletions || 0}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">SHA</div>
-            <div class="meta-value monospace">${esc(sha)}</div>
-          </div>
-        </div>`;
-    }
-
-    if (commitFilesEl) {
-      if (!files.length) {
-        commitFilesEl.innerHTML = '<div class="empty-state">변경된 파일이 없습니다.</div>';
-      } else {
-        commitFilesEl.innerHTML = files.map(file => {
-          const path = file.filename || '';
-          const statsText = [
-            file.status ? file.status.toUpperCase() : null,
-            typeof file.additions === 'number' ? `+${file.additions}` : null,
-            typeof file.deletions === 'number' ? `-${file.deletions}` : null,
-          ].filter(Boolean).join(' · ') || '변경 없음';
-          const githubUrl = file.blob_url || details.html_url;
-          return `<div class="review-file">
-            <div>
-              <div class="file-path">${esc(path)}</div>
-              <div class="file-stats">${esc(statsText)}</div>
-            </div>
-            <div class="file-actions">
-              ${githubUrl ? `<button type="button" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}
-              <button type="button" data-action="open-vscode" data-path="${esc(path)}" data-line="1">VS Code</button>
-            </div>
-          </div>`;
-        }).join('');
-        commitFilesEl.querySelectorAll('[data-action="open-vscode"]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
-          });
-        });
-        commitFilesEl.querySelectorAll('[data-action="open-github"]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const url = btn.dataset.url;
-            if (url) window.open(url, '_blank', 'noopener');
-          });
-        });
-      }
-    }
-
-    if (commentFileSelect) {
-      const options = ['<option value="">커밋 전체</option>'].concat(files.map(file => `<option value="${esc(file.filename)}">${esc(file.filename)}</option>`));
-      commentFileSelect.innerHTML = options.join('');
-    }
-
-    if (commentsListEl) {
-      commentsListEl.innerHTML = renderCommentsList(comments);
-    }
-  }
-
-  function renderDefenderDetails(defender) {
-    const alerts = defender?.alerts || [];
-    const status = defender?.status || 'unknown';
-    setCardStatus(defenderDetails, status);
-    const body = defenderDetails.querySelector('.card-body');
-    if (!alerts.length) {
-      body.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
-      return;
-    }
-    body.innerHTML = alerts.map(alert => {
-      const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
-      const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
-      const description = esc(alert.description || '설명이 없습니다.');
-      const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
-      const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
-      const excerpt = (alert.code_excerpt || []).map(line => {
-        const lineNo = line?.line ?? '';
-        const text = esc(line?.content || '');
-        const highlightClass = line?.highlight ? ' highlight' : '';
-        return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
-      }).join('');
-      const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
-      const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
-      const githubLink = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
-      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || alert.start_line || 1}">VS Code에서 열기</button>` : '';
-      return `<article class="alert-item">
-        <header>
-          <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
-          <div class="alert-actions">${githubLink} ${vsButton}</div>
-        </header>
-        <p>${description}</p>
-        ${locationLine}
-        ${excerptBlock}
-      </article>`;
-    }).join('');
-    body.querySelectorAll('.btn-open-vscode').forEach(btn => {
-      btn.addEventListener('click', () => {
-        openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
-      });
-    });
-  }
-
-  function renderBricksDetails(bricks) {
-    const status = bricks?.status || 'unknown';
-    setCardStatus(bricksDetails, status);
-    const lines = bricks?.details || [];
-    const body = bricksDetails.querySelector('.card-body');
-    if (!lines.length) {
-      body.innerHTML = '<p>모델 상세 정보가 없습니다.</p>';
-      return;
-    }
-    body.innerHTML = `<ul class="info-list">${lines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-  }
-
-  function openInVSCode({ path, line }) {
-    if (!path) return;
-    const normalizedPath = path.replace(/\\/g, '/').replace(/^\/*/, '');
-    const fallbackPath = normalizedPath.split('/').map(encodeURIComponent).join('/');
-    const fallbackUrl = `https://vscode.dev/github/${repo}/blob/${sha}/${fallbackPath}${line ? `?line=${line}` : ''}`;
-    const base = (localStorage.getItem('vsCodeBasePath') || '').trim();
-    if (base) {
-      const normalizedBase = base.replace(/\\/g, '/').replace(/\/+$/, '');
-      const fullPath = `${normalizedBase}/${normalizedPath}`;
-      const vsUrl = encodeURI(`vscode://file/${fullPath}${line ? ':' + line : ''}`);
-      triggerProtocol(vsUrl);
-      setTimeout(() => window.open(fallbackUrl, '_blank', 'noopener'), 400);
-    } else {
-      window.open(fallbackUrl, '_blank', 'noopener');
-    }
-  }
-
-  function triggerProtocol(url) {
-    const link = document.createElement('a');
-    link.style.display = 'none';
-    link.href = url;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  async function loadAll() {
-    try {
-      const securityParams = { repo, commit: sha };
-      if (branch) { securityParams.branch = branch; }
-      
-      const [securityStatus, commitDetails] = await Promise.all([
-        api('/security_status', { query: securityParams }),
-        api('/commit_detail', { query: { repo, sha } })
-      ]);
-
-      try {
-        const commentData = await api('/commit_comments', { query: { repo, sha } });
-        cachedComments = commentData?.comments || [];
-      } catch (error) {
-        console.warn('댓글을 불러오지 못했습니다:', error);
-        cachedComments = [];
-      }
-
-      renderIdentitySummary(securityStatus.sentinel || {});
-      renderIdentityDetails(securityStatus.sentinel || {});
-      updateSummaryCard(defenderCard, securityStatus.defender, 'CodeQL 분석 결과가 없습니다.');
-      updateSummaryCard(bricksCard, securityStatus.bricks, 'Databricks anomaly 정보를 기다리는 중입니다.');
-      renderDefenderDetails(securityStatus.defender);
-      renderBricksDetails(securityStatus.bricks);
-      renderCommitReview(commitDetails || {}, cachedComments);
-    } catch (error) {
-      console.error('세부 정보를 불러오지 못했습니다:', error);
-      const allCards = [identitySummaryCard, identityDetailsCard, defenderCard, bricksCard, defenderDetails, bricksDetails];
-      allCards.forEach(card => {
-          setCardStatus(card, 'bad');
-          const body = card.querySelector('.card-body');
-          if (body) {
-              body.innerHTML = `<p>데이터를 불러오는 데 실패했습니다: ${esc(error.message)}</p>`;
-          }
       });
     }
-  }
 
-  if (commentForm) {
-    commentForm.addEventListener('submit', async event => {
-      event.preventDefault();
-      const formData = new FormData(commentForm);
-      const body = (formData.get('body') || '').toString().trim();
-      if (!body) {
-        commentFormStatus.textContent = '내용을 입력해주세요.';
-        return;
-      }
-      const pathValue = (formData.get('path') || '').toString().trim();
-      const lineValue = (formData.get('line') || '').toString().trim();
-      const payload = { repo, sha, body };
-      if (pathValue) payload.path = pathValue;
-      if (lineValue) {
-        const parsed = parseInt(lineValue, 10);
-        if (!Number.isNaN(parsed)) {
-          payload.line = parsed;
-        }
-      }
-      commentFormStatus.textContent = '저장 중...';
+    // (문법오류 수정) 코멘트 스프레드 오타 방지 예시
+    function addCommentLocal(sha, newComment){
+      const prev = S.commentsByCommit[sha] || [];
+      S.commentsByCommit[sha] = [newComment, ...prev];
+    }
+
+    (async () => {
       try {
-        const res = await api('/commit_comments', { method: 'POST', body: payload });
-        if (res?.comment) {
-          cachedComments = [res.comment, ...cachedComments];
-          if (commentsListEl) {
-            commentsListEl.innerHTML = renderCommentsList(cachedComments);
-          }
-          commentForm.reset();
-          commentFormStatus.textContent = '등록되었습니다.';
-        } else {
-          commentFormStatus.textContent = '댓글 등록 결과를 확인할 수 없습니다.';
+        if (!S.repo || !S.sha){
+          document.getElementById('meta').textContent = '쿼리 파라미터가 부족합니다 (?repo=..&sha=..)';
+          return;
         }
-      } catch (error) {
-        console.error('댓글 등록 실패:', error);
-        commentFormStatus.textContent = `등록 실패: ${error.message}`;
+        await loadSecurity();
+      } catch (e){
+        document.getElementById('meta').textContent = `에러: ${e}`;
       }
-    });
-  }
-
-  loadAll();
-})();
-</script>
-
-
+    })();
+  </script>
 </body>
 </html>
