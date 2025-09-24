@@ -721,6 +721,80 @@ def details():
 def healthz():
     return jsonify({"ok": True, "time": datetime.utcnow().isoformat() + "Z"})
 
+--- NEW: GitHub 데이터를 Cosmos DB에 동기화하는 핵심 헬퍼 함수 ---
+def _sync_github_to_cosmos(user_login, full_sync=False):
+    """
+    GitHub 데이터를 Cosmos DB에 동기화합니다.
+    - full_sync=True: 사용자의 모든 저장소를 동기화 (최초 로그인 시)
+    - full_sync=False: 최근 push된 저장소만 업데이트 (재로그인 시)
+    """
+    log.info(f"Starting GitHub sync for {user_login}. Full sync: {full_sync}")
+    
+    # 1. GitHub에서 저장소 목록 가져오기
+    # full_sync가 아니면 최근 20개만 확인하여 부하를 줄임
+    params = {"per_page": 100 if full_sync else 20, "sort": "pushed"}
+    repos_from_gh, _ = _gh_get("/user/repos", params=params)
+    
+    for repo_info in (repos_from_gh or []):
+        repo_full_name = repo_info.get("full_name")
+        if not repo_full_name:
+            continue
+            
+        # 재로그인 시, DB 데이터와 비교하여 변경이 없으면 건너뛰기
+        if not full_sync:
+            try:
+                repo_doc_db = repos_container.read_item(item=repo_full_name, partition_key=user_login)
+                if repo_doc_db.get('pushed_at') == repo_info.get('pushed_at'):
+                    log.info(f"Repo {repo_full_name} is up to date. Skipping.")
+                    continue
+            except exceptions.CosmosResourceNotFoundError:
+                log.info(f"New repo {repo_full_name} found on re-login. Syncing.")
+            except Exception:
+                pass # DB 읽기 실패 시 그냥 동기화 진행
+
+        log.info(f"Syncing repo: {repo_full_name}")
+        
+        # 2. 브랜치 및 커밋 정보 가져오기
+        try:
+            branches_data, _ = _gh_get(f"/repos/{repo_full_name}/branches", params={"per_page": 100})
+            branches_list = []
+            for b in (branches_data or []):
+                branch_name = b.get("name")
+                sha = (b.get("commit") or {}).get("sha")
+                if not branch_name or not sha:
+                    continue
+                
+                branches_list.append({"name": branch_name, "sha": sha})
+                
+                # 3. 각 브랜치의 최신 커밋 5개 저장
+                commits_data, _ = _gh_get(f"/repos/{repo_full_name}/commits", params={"sha": branch_name, "per_page": COMMITS_PER_BRANCH})
+                for c in (commits_data or []):
+                    commit_sha = c.get("sha")
+                    commit_info = c.get("commit", {})
+                    author_info = commit_info.get("author", {})
+                    commit_doc = {
+                        'id': commit_sha, 'sha': commit_sha, 'repoFullName': repo_full_name,
+                        'branch': branch_name, 'message': (commit_info.get("message") or "").split("\n")[0],
+                        'author': author_info.get("name"), 'date': author_info.get("date"),
+                        'securityStatus': None
+                    }
+                    commits_container.upsert_item(commit_doc)
+
+            # 4. 저장소 정보 최종 업데이트
+            repo_doc = {
+                'id': repo_full_name, 'userId': user_login,
+                'repoName': repo_info.get('name'), 'pushed_at': repo_info.get('pushed_at'),
+                'branches': branches_list
+            }
+            repos_container.upsert_item(repo_doc)
+            log.info(f"Successfully synced repo: {repo_full_name}")
+
+        except Exception as e:
+            log.error(f"Failed to sync repo {repo_full_name}: {e}")
+
+    log.info(f"GitHub sync finished for {user_login}.")
+
+# --- MODIFIED: 자동 동기화 로직이 포함된 get_initial_data ---
 @app.get("/api/get_initial_data")
 def get_initial_data():
     if "access_token" not in session:
@@ -730,62 +804,48 @@ def get_initial_data():
     if not user_login:
         return jsonify({"error": "user not found in session"}), 401
 
-    log.info(f"Fetching initial data for {user_login} from Cosmos DB")
+    log.info(f"Requesting initial data for {user_login}")
     try:
-        # 1. Cosmos DB에서 해당 유저의 모든 저장소 정보 조회
+        # 1. DB에 이 사용자의 데이터가 있는지 확인
+        query = "SELECT TOP 1 c.id FROM c WHERE c.userId = @userId"
+        params = [{"name": "@userId", "value": user_login}]
+        results = list(repos_container.query_items(query=query, parameters=params))
+        
+        is_first_login = len(results) == 0
+
+        # 2. 최초 로그인이면 전체 동기화, 재로그인이면 부분 동기화 실행
+        if is_first_login:
+            log.info(f"First login detected for {user_login}. Performing full sync.")
+            _sync_github_to_cosmos(user_login, full_sync=True)
+        else:
+            log.info(f"Re-login detected for {user_login}. Performing delta sync.")
+            _sync_github_to_cosmos(user_login, full_sync=False)
+
+        # 3. 동기화가 완료된 DB에서 데이터를 읽어와 반환 (기존 로직과 유사)
+        log.info(f"Fetching synced data from Cosmos DB for {user_login}")
         repo_query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.pushed_at DESC"
-        repo_params = [{"name": "@userId", "value": user_login}]
+        repos_list_cosmos = list(repos_container.query_items(query=repo_query, parameters=params))
         
-        repos_list_cosmos = list(repos_container.query_items(
-            query=repo_query, parameters=repo_params, enable_cross_partition_query=False
-        ))
-        
-        repos_list = [
-            {"full_name": r.get("id"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")}
-            for r in repos_list_cosmos
-        ]
-        
+        repos_list = [{"full_name": r.get("id"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")} for r in repos_list_cosmos]
         branches_map = {r["id"]: r.get("branches", []) for r in repos_list_cosmos}
         
-        # 2. 각 브랜치의 최신 커밋 5개를 Cosmos DB에서 조회
         commits_map = {}
-        for repo_name, branches in branches_map.items():
-            for branch in branches:
+        for r in repos_list_cosmos:
+            repo_name = r.get("id")
+            for branch in r.get("branches", []):
                 branch_name = branch.get("name")
                 commit_query = "SELECT TOP @limit * FROM c WHERE c.repoFullName = @repo AND c.branch = @branch ORDER BY c.date DESC"
-                commit_params = [
-                    {"name": "@limit", "value": COMMITS_PER_BRANCH},
-                    {"name": "@repo", "value": repo_name},
-                    {"name": "@branch", "value": branch_name}
-                ]
+                commit_params = [{"name": "@limit", "value": COMMITS_PER_BRANCH}, {"name": "@repo", "value": repo_name}, {"name": "@branch", "value": branch_name}]
                 
-                branch_commits = list(commits_container.query_items(
-                    query=commit_query, parameters=commit_params, enable_cross_partition_query=False
-                ))
-                
+                branch_commits = list(commits_container.query_items(query=commit_query, parameters=commit_params))
                 key = f"{repo_name}|{branch_name}"
-                commits_map[key] = [
-                    {
-                        "sha": c.get("sha"),
-                        "message": c.get("message"),
-                        "author": c.get("author"),
-                        "date": c.get("date")
-                    } for c in branch_commits
-                ]
+                commits_map[key] = [{"sha": c.get("sha"), "message": c.get("message"), "author": c.get("author"), "date": c.get("date")} for c in branch_commits]
 
-        return jsonify({
-            "repos": repos_list,
-            "branches": branches_map,
-            "commits": commits_map,
-            "timestamp": datetime.utcnow().isoformat()
-        })
+        return jsonify({"repos": repos_list, "branches": branches_map, "commits": commits_map, "timestamp": datetime.utcnow().isoformat()})
         
-    except exceptions.CosmosResourceNotFoundError:
-        log.warning(f"Cosmos DB container not found for user {user_login}")
-        return jsonify({"repos": [], "branches": {}, "commits": {}, "timestamp": datetime.utcnow().isoformat()})
     except Exception as e:
-        log.exception(f"Failed to get initial data from Cosmos DB for {user_login}")
-        return jsonify({"error": f"Failed to fetch data from Cosmos DB: {str(e)}"}), 500
+        log.exception(f"Failed to get initial data for {user_login}")
+        return jsonify({"error": f"Failed to process initial data: {str(e)}"}), 500
 
 
 
