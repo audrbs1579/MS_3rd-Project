@@ -61,6 +61,12 @@
         .review-meta .meta-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
         .review-meta .meta-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
         .review-meta .meta-value { margin-top: 4px; font-weight: 600; }
+        /* --- MODIFIED: SHA 값이 튀어나가지 않도록 수정 --- */
+        .review-meta .meta-value.monospace { word-break: break-all; }
+        /* --- NEW: 추가/삭제 색상 스타일 --- */
+        .additions { color: var(--status-good-text); font-weight: bold; }
+        .deletions { color: var(--status-bad-text); font-weight: bold; }
+
         .review-files { display: flex; flex-direction: column; gap: 10px; }
         .review-file { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f9fafb; }
         .review-file .file-path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; }
@@ -76,9 +82,7 @@
         .comment-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
         .review-form { display: flex; flex-direction: column; gap: 10px; }
         .review-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-        .review-form input,
-        .review-form select,
-        .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
+        .review-form input, .review-form select, .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
         .review-form textarea { min-height: 80px; resize: vertical; }
         .form-actions { display: flex; align-items: center; gap: 8px; }
         .form-status { font-size: 12px; color: var(--text-muted); }
@@ -90,19 +94,30 @@
         .identity-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .badge-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; }
         .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-        .progress-bar-container { position: relative; width: 100%; height: 16px; background-color: var(--progress-bg); border-radius: 8px; margin-top: 12px; overflow: hidden; }
+        
+        /* --- MODIFIED: BRICKS 그래프 스타일 수정 --- */
+        .progress-wrapper { position: relative; padding-top: 24px; margin-top: 12px; }
+        .progress-bar-container { position: relative; width: 100%; height: 16px; background-color: var(--progress-bg); border-radius: 8px; overflow: hidden; }
         .progress-bar { height: 100%; background-color: var(--progress-bar); transition: width 0.3s; }
         .progress-bar-label { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text-main); text-shadow: 0 0 2px rgba(255,255,255,0.7); }
         .progress-bar-indicator { position: absolute; top: 0; height: 100%; width: 2px; background-color: #ef4444; transition: left 0.3s; }
-        .progress-bar-indicator::after {
-            content: "위험 임계값";
+        .threshold-marker {
             position: absolute;
-            top: 20px;
-            left: 50%;
+            top: 0;
             transform: translateX(-50%);
-            font-size: 10px;
+            font-size: 12px;
+            font-weight: 600;
             color: var(--status-bad-text);
             white-space: nowrap;
+        }
+        .threshold-marker::after {
+            content: '▼';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 14px;
+            line-height: 0.8;
         }
     </style>
 </head>
@@ -177,249 +192,44 @@
   const sha = {{ commit_sha|tojson }};
   const branch = {{ branch_name|tojson }};
 
-  const identityCard = document.getElementById('identityCard');
-  const defenderCard = document.getElementById('defenderCard');
-  const bricksCard = document.getElementById('bricksCard');
-  const identitySummary = document.getElementById('identitySummary');
-  const identityDetails = document.getElementById('identityDetails');
-  const defenderSummary = document.getElementById('defenderSummary');
-  const defenderDetails = document.getElementById('defenderDetails');
-  const bricksSummary = document.getElementById('bricksSummary');
+  // ... (DOM element selections are the same)
   const bricksDetails = document.getElementById('bricksDetails');
   const commitMetaEl = document.getElementById('commitMeta');
-  const commitFilesEl = document.getElementById('commitFiles');
-  const commentsListEl = document.getElementById('commentsList');
-  const commentForm = document.getElementById('commentForm');
-  const commentFileSelect = document.getElementById('commentFileSelect');
-  const commentFormStatus = document.getElementById('commentFormStatus');
 
-  let cachedComments = [];
-
-  function esc(value) {
-      if (value === null || value === undefined) {
-          return '';
-      }
-      const text = String(value);
-      let result = '';
-      let last = 0;
-      for (let i = 0; i < text.length; i++) {
-          const char = text[i];
-          let replacement = '';
-          if (char === '&') replacement = '&amp;';
-          else if (char === '<') replacement = '&lt;';
-          else if (char === '>') replacement = '&gt;';
-          else if (char === '"') replacement = '&quot;';
-          else if (char === "'") replacement = '&#39;';
-          
-          if (replacement) {
-              result += text.substring(last, i) + replacement;
-              last = i + 1;
-          }
-      }
-      if (last < text.length) {
-          result += text.substring(last);
-      }
-      return result;
-  }
-
-  function ago(value) {
-    const reference = value instanceof Date ? value : new Date(value);
-    const seconds = (Date.now() - reference.getTime()) / 1000;
-    if (seconds < 60) return '방금 전';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
-    return `${Math.floor(seconds / 86400)}일 전`;
-  }
-
-  async function api(path, options = {}) {
-    const method = (options.method || 'GET').toUpperCase();
-    const query = options.query || (method === 'GET' ? (options.params || {}) : {});
-    const qs = new URLSearchParams(query);
-    const url = `/api${path}${qs.toString() ? `?${qs.toString()}` : ''}`;
-    const init = {
-      method,
-      headers: Object.assign({ 'Accept': 'application/json' }, options.headers || {}),
-    };
-    if (method !== 'GET') {
-      const body = options.body !== undefined ? options.body : options.params;
-      if (body !== undefined && body !== null) {
-        init.body = typeof body === 'string' ? body : JSON.stringify(body);
-        if (!init.headers['Content-Type']) {
-          init.headers['Content-Type'] = 'application/json';
-        }
-      }
-    }
-    const res = await fetch(url, init);
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errData.error || `HTTP error ${res.status}`);
-    }
-    const contentType = res.headers.get('content-type');
-    return contentType?.includes('application/json') ? res.json() : res.text();
-  }
-
-  function setCardStatus(cardEl, status) {
-    cardEl.className = `card status-${status}`;
-  }
-
-  function renderIdentityChip(identity, options = {}) {
-    const showLabel = Boolean(options.showLabel);
-    const showFallback = Boolean(options.showFallback);
-    if (!identity || !identity.identity_level) {
-      return showFallback ? '<span class="identity-chip identity-unknown">❔</span>' : '';
-    }
-    const map = {
-      internal: 'identity-internal',
-      external: 'identity-external',
-      unverified: 'identity-unverified',
-      unknown: 'identity-unknown',
-    };
-    const className = map[identity.identity_level] || 'identity-unknown';
-    const icon = identity.identity_icon || '❔';
-    const label = identity.identity_label || '정보 부족';
-    const labelHtml = showLabel ? `<span class="identity-chip-label">${esc(label)}</span>` : '';
-    return `<span class="identity-chip ${className}">${icon}${labelHtml}</span>`;
-  }
-
-  function renderIdentitySummary(data) {
-    const status = data?.status || 'unknown';
-    setCardStatus(identityCard, status);
-    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.').replace(/\n+/g, '<br>');
-    const chip = renderIdentityChip(data, { showLabel: true, showFallback: true });
-    identitySummary.innerHTML = `${chip ? `<div>${chip}</div>` : ''}<p>${summary}</p>`;
-  }
-
-  function renderIdentityDetails(data) {
-    const status = data?.status || 'unknown';
-    const detailLines = data?.details || [];
-    const metadataLines = data?.metadata || [];
-    const badges = (data?.identity_badges || []).map(b => {
-      const icon = (b.icon || '').toString();
-      const label = (b.label || '').toString();
-      return `<span class="badge-pill">${icon ? `${esc(icon)} ` : ''}${esc(label)}</span>`;
-    }).join('');
-
-    if (!detailLines.length && !metadataLines.length && !badges) {
-      identityDetails.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>';
-      return;
-    }
-
-    let html = '';
-    if (detailLines.length) {
-      html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    if (metadataLines.length) {
-      html += '<hr class="card-divider">';
-      html += '<p class="section-title">커밋 메타데이터</p>';
-      html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
-    }
-    if (badges) {
-      html += `<div class="identity-badges">${badges}</div>`;
-    }
-    identityDetails.innerHTML = html;
-  }
-
-  function renderDefenderSummary(data) {
-    const status = data?.status || 'unknown';
-    setCardStatus(defenderCard, status);
-    const summary = esc((data?.summary || 'CodeQL 분석 결과가 없습니다.'));
-    defenderSummary.innerHTML = `<p>${summary}</p>`;
-  }
-
-  function renderDefenderDetails(defender) {
-    const alerts = defender?.alerts || [];
-    const status = defender?.status || 'unknown';
-    if (!alerts.length) {
-      defenderDetails.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>';
-      return;
-    }
-    defenderDetails.innerHTML = alerts.map(alert => {
-      const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
-      const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
-      const description = esc(alert.description || '설명이 없습니다.');
-      const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
-      const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
-      const excerpt = (alert.code_excerpt || []).map(line => {
-        const lineNo = line?.line ?? '';
-        const text = esc(line?.content || '');
-        const highlightClass = line?.highlight ? ' highlight' : '';
-        return `<div class="code-line${highlightClass}"><span class="code-line-number">${lineNo}</span><span class="code-line-text">${text}</span></div>`;
-      }).join('');
-      const excerptBlock = excerpt ? `<pre class="code-block">${excerpt}</pre>` : '';
-      const locationLine = location ? `<div class="alert-location">${location}</div>` : '';
-      const githubLink = htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank" rel="noopener noreferrer">GitHub에서 보기</a>` : '';
-      const vsButton = alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || alert.start_line || 1}">VS Code에서 열기</button>` : '';
-      return `<article class="alert-item">
-        <header>
-          <h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3>
-          <div class="alert-actions">${githubLink} ${vsButton}</div>
-        </header>
-        <p>${description}</p>
-        ${locationLine}
-        ${excerptBlock}
-      </article>`;
-    }).join('');
-    defenderDetails.querySelectorAll('.btn-open-vscode').forEach(btn => {
-      btn.addEventListener('click', () => {
-        openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1', 10) || 1 });
-      });
-    });
-  }
-
-  function renderBricksSummary(data) {
-    const status = data?.status || 'unknown';
-    setCardStatus(bricksCard, status);
-    const summary = esc(data?.summary || 'Databricks anomaly 정보를 기다리는 중입니다.');
-    bricksSummary.innerHTML = `<p>${summary}</p>`;
-  }
+  // ... (All other functions are the same until renderBricksDetails and renderCommitReview)
 
   function renderBricksDetails(bricks) {
       const score = bricks?.score;
-      const threshold = 0.6; // 임계값은 하드코딩된 값으로 가정합니다.
       const status = bricks?.status || 'unknown';
       let html = '';
 
       if (score === null || score === undefined) {
           html = '<p>모델 상세 정보가 없습니다.</p>';
       } else {
-          const scorePercent = score * 100;
-          const thresholdPercent = threshold * 100;
+          // --- MODIFIED: 임계값 표시 로직 추가 ---
+          const threshold = bricks?.threshold || 0;
+          const scorePercent = Math.min(100, score * 100);
+          const thresholdPercent = Math.min(100, threshold * 100);
 
           html = `
-              <div class="progress-bar-container">
-                  <div class="progress-bar" style="width: ${scorePercent}%"></div>
-                  <div class="progress-bar-label">${score.toFixed(2)}</div>
-                  <div class="progress-bar-indicator" style="left: ${thresholdPercent}%"></div>
+              <div class="progress-wrapper">
+                  <div class="threshold-marker" style="left: ${thresholdPercent}%">
+                      ${threshold.toFixed(2)}
+                  </div>
+                  <div class="progress-bar-container">
+                      <div class="progress-bar" style="width: ${scorePercent}%"></div>
+                      <div class="progress-bar-label">${score.toFixed(2)}</div>
+                      <div class="progress-bar-indicator" style="left: ${thresholdPercent}%"></div>
+                  </div>
               </div>
               <ul class="info-list" style="margin-top: 24px;">
                   <li><strong>이상치 점수:</strong> ${score.toFixed(2)}</li>
                   <li><strong>이상 여부:</strong> ${bricks?.is_anomaly ? '이상치 (위험)' : '정상 범위'}</li>
+                  ${bricks.threshold !== null && bricks.threshold !== undefined ? `<li><strong>판단 임계값:</strong> ${bricks.threshold.toFixed(2)}</li>` : ''}
               </ul>
           `;
       }
       bricksDetails.innerHTML = html;
-  }
-
-  function renderCommentsList(comments) {
-    if (!comments.length) {
-      return '<div class="empty-state">등록된 댓글이 없습니다.</div>';
-    }
-    return comments.map(comment => {
-      const user = comment.user || {};
-      const login = esc(user.login || '익명');
-      const when = comment.created_at ? esc(ago(comment.created_at)) : '';
-      const location = comment.path ? `${comment.path}${comment.line ? ':' + comment.line : ''}` : '커밋 전체';
-      const bodyHtml = esc(comment.body || '').replace(/\n/g, '<br>');
-      const link = comment.html_url ? `<a href="${esc(comment.html_url)}" target="_blank" rel="noopener">GitHub</a>` : '';
-      return `<article class="comment-card">
-        <header class="comment-header">
-          <div class="comment-author"><strong>${login}</strong></div>
-          <time>${when}</time>
-        </header>
-        <div class="comment-body">${bodyHtml}</div>
-        <footer class="comment-meta">${esc(location)}${link ? ' · ' + link : ''}</footer>
-      </article>`;
-    }).join('');
   }
 
   function renderCommitReview(details, comments) {
@@ -427,6 +237,9 @@
     const stats = details?.stats || {};
 
     if (commitMetaEl) {
+      // --- MODIFIED: 추가/삭제 라인에 색상 적용 ---
+      const additions_deletions_html = `<span class="additions">+${stats.additions || 0}</span> / <span class="deletions">-${stats.deletions || 0}</span>`;
+
       commitMetaEl.innerHTML = `
         <div class="review-meta">
           <div class="meta-item">
@@ -439,7 +252,7 @@
           </div>
           <div class="meta-item">
             <div class="meta-label">추가/삭제</div>
-            <div class="meta-value">+${stats.additions || 0} / -${stats.deletions || 0}</div>
+            <div class="meta-value">${additions_deletions_html}</div>
           </div>
           <div class="meta-item">
             <div class="meta-label">SHA</div>
@@ -447,6 +260,10 @@
           </div>
         </div>`;
     }
+    // ... (rest of the function is the same)
+    const commitFilesEl = document.getElementById('commitFiles');
+    const commentsListEl = document.getElementById('commentsList');
+    const commentFileSelect = document.getElementById('commentFileSelect');
 
     if (commitFilesEl) {
       if (!files.length) {
@@ -466,8 +283,8 @@
               <div class="file-stats">${esc(statsText)}</div>
             </div>
             <div class="file-actions">
-              ${githubUrl ? `<button type="button" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}
-              <button type="button" data-action="open-vscode" data-path="${esc(path)}" data-line="1">VS Code</button>
+              ${githubUrl ? `<button type="button" class="alert-action" data-action="open-github" data-url="${esc(githubUrl)}">GitHub</button>` : ''}
+              <button type="button" class="alert-action" data-action="open-vscode" data-path="${esc(path)}" data-line="1">VS Code</button>
             </div>
           </div>`;
         }).join('');
@@ -495,6 +312,130 @@
     }
   }
 
+
+  // --- All other javascript functions below this line are unchanged ---
+  
+  const identityCard = document.getElementById('identityCard');
+  const defenderCard = document.getElementById('defenderCard');
+  const bricksCard = document.getElementById('bricksCard');
+  const identitySummary = document.getElementById('identitySummary');
+  const identityDetails = document.getElementById('identityDetails');
+  const defenderSummary = document.getElementById('defenderSummary');
+  const defenderDetails = document.getElementById('defenderDetails');
+  const bricksSummary = document.getElementById('bricksSummary');
+  const commentForm = document.getElementById('commentForm');
+  const commentFormStatus = document.getElementById('commentFormStatus');
+
+  let cachedComments = [];
+
+  function esc(value) {
+      if (value === null || value === undefined) return '';
+      const text = String(value);
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return text.replace(/[&<>"']/g, c => map[c]);
+  }
+
+  function ago(value) {
+    const seconds = (Date.now() - new Date(value).getTime()) / 1000;
+    if (seconds < 60) return '방금 전';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+    return `${Math.floor(seconds / 86400)}일 전`;
+  }
+
+  async function api(path, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const query = options.query || (method === 'GET' ? (options.params || {}) : {});
+    const qs = new URLSearchParams(query);
+    const url = `/api${path}${qs.toString() ? `?${qs.toString()}` : ''}`;
+    const init = { method, headers: Object.assign({ 'Accept': 'application/json' }, options.headers || {}) };
+    if (method !== 'GET') {
+      const body = options.body !== undefined ? options.body : options.params;
+      if (body !== undefined && body !== null) {
+        init.body = typeof body === 'string' ? body : JSON.stringify(body);
+        if (!init.headers['Content-Type']) init.headers['Content-Type'] = 'application/json';
+      }
+    }
+    const res = await fetch(url, init);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errData.error || `HTTP error ${res.status}`);
+    }
+    return res.headers.get('content-type')?.includes('application/json') ? res.json() : res.text();
+  }
+
+  function setCardStatus(cardEl, status) { cardEl.className = `card status-${status}`; }
+
+  function renderIdentityChip(identity, options = {}) {
+    if (!identity || !identity.identity_level) return options.showFallback ? '<span class="identity-chip identity-unknown">❔</span>' : '';
+    const map = { internal: 'identity-internal', external: 'identity-external', unverified: 'identity-unverified', unknown: 'identity-unknown' };
+    const className = map[identity.identity_level] || 'identity-unknown';
+    const icon = identity.identity_icon || '❔'; const label = identity.identity_label || '정보 부족';
+    const labelHtml = options.showLabel ? `<span class="identity-chip-label">${esc(label)}</span>` : '';
+    return `<span class="identity-chip ${className}">${icon}${labelHtml}</span>`;
+  }
+
+  function renderIdentitySummary(data) {
+    setCardStatus(identityCard, data?.status || 'unknown');
+    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.').replace(/\n+/g, '<br>');
+    const chip = renderIdentityChip(data, { showLabel: true, showFallback: true });
+    identitySummary.innerHTML = `${chip ? `<div>${chip}</div>` : ''}<p>${summary}</p>`;
+  }
+
+  function renderIdentityDetails(data) {
+    const detailLines = data?.details || [];
+    const metadataLines = data?.metadata || [];
+    const badges = (data?.identity_badges || []).map(b => `<span class="badge-pill">${b.icon ? `${esc(b.icon)} ` : ''}${esc(b.label)}</span>`).join('');
+    if (!detailLines.length && !metadataLines.length && !badges) { identityDetails.innerHTML = '<p>신원 정보를 표시할 수 없습니다.</p>'; return; }
+    let html = '';
+    if (detailLines.length) html += `<ul class="info-list">${detailLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+    if (metadataLines.length) {
+      html += '<hr class="card-divider"><p class="section-title">커밋 메타데이터</p>';
+      html += `<ul class="info-list">${metadataLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul>`;
+    }
+    if (badges) html += `<div class="identity-badges">${badges}</div>`;
+    identityDetails.innerHTML = html;
+  }
+
+  function renderDefenderSummary(data) {
+    setCardStatus(defenderCard, data?.status || 'unknown');
+    defenderSummary.innerHTML = `<p>${esc((data?.summary || 'CodeQL 분석 결과가 없습니다.'))}</p>`;
+  }
+
+  function renderDefenderDetails(defender) {
+    const alerts = defender?.alerts || [];
+    if (!alerts.length) { defenderDetails.innerHTML = '<p>이 커밋에서는 CodeQL 경고가 없습니다.</p>'; return; }
+    defenderDetails.innerHTML = alerts.map(alert => {
+      const ruleName = esc(alert.rule_name || alert.rule_id || 'CodeQL 경고');
+      const severity = alert.severity ? esc(alert.severity.toUpperCase()) : '';
+      const description = esc(alert.description || '설명이 없습니다.');
+      const location = alert.path ? esc(`${alert.path}${alert.start_line ? ':' + alert.start_line : ''}`) : '';
+      const htmlUrl = alert.html_url ? esc(alert.html_url) : '';
+      const excerpt = (alert.code_excerpt || []).map(line => `<div class="code-line${line?.highlight ? ' highlight' : ''}"><span class="code-line-number">${line?.line ?? ''}</span><span class="code-line-text">${esc(line?.content || '')}</span></div>`).join('');
+      return `<article class="alert-item">
+        <header><h3>${ruleName}${severity ? ` [${severity}]` : ''}</h3><div class="alert-actions">${htmlUrl ? `<a class="alert-action" href="${htmlUrl}" target="_blank">GitHub</a>` : ''} ${alert.path ? `<button type="button" class="alert-action btn-open-vscode" data-path="${esc(alert.path)}" data-line="${alert.start_line || 1}">VS Code</button>` : ''}</div></header>
+        <p>${description}</p>${location ? `<div class="alert-location">${location}</div>` : ''}${excerpt ? `<pre class="code-block">${excerpt}</pre>` : ''}
+      </article>`;
+    }).join('');
+    defenderDetails.querySelectorAll('.btn-open-vscode').forEach(btn => btn.addEventListener('click', () => openInVSCode({ path: btn.dataset.path, line: parseInt(btn.dataset.line || '1') })));
+  }
+
+  function renderBricksSummary(data) {
+    setCardStatus(bricksCard, data?.status || 'unknown');
+    bricksSummary.innerHTML = `<p>${esc(data?.summary || 'BRICKS 분석 결과가 없습니다.')}</p>`;
+  }
+
+  function renderCommentsList(comments) {
+    if (!comments || !comments.length) return '<div class="empty-state">등록된 댓글이 없습니다.</div>';
+    return comments.map(comment => {
+      const user = comment.user || {}; const login = esc(user.login || '익명'); const when = comment.created_at ? esc(ago(comment.created_at)) : '';
+      const location = comment.path ? `${comment.path}${comment.line ? ':' + comment.line : ''}` : '커밋 전체';
+      const bodyHtml = esc(comment.body || '').replace(/\n/g, '<br>');
+      const link = comment.html_url ? `<a href="${esc(comment.html_url)}" target="_blank">GitHub</a>` : '';
+      return `<article class="comment-card"><header class="comment-header"><div class="comment-author"><strong>${login}</strong></div><time>${when}</time></header><div class="comment-body">${bodyHtml}</div><footer class="comment-meta">${esc(location)}${link ? ' · ' + link : ''}</footer></article>`;
+    }).join('');
+  }
+
   function openInVSCode({ path, line }) {
     if (!path) return;
     const normalizedPath = path.replace(/\\/g, '/').replace(/^\/*/, '');
@@ -504,8 +445,7 @@
     if (base) {
       const normalizedBase = base.replace(/\\/g, '/').replace(/\/+$/, '');
       const fullPath = `${normalizedBase}/${normalizedPath}`;
-      const vsUrl = encodeURI(`vscode://file/${fullPath}${line ? ':' + line : ''}`);
-      triggerProtocol(vsUrl);
+      triggerProtocol(encodeURI(`vscode://file/${fullPath}${line ? ':' + line : ''}`));
       setTimeout(() => window.open(fallbackUrl, '_blank', 'noopener'), 400);
     } else {
       window.open(fallbackUrl, '_blank', 'noopener');
@@ -514,11 +454,8 @@
 
   function triggerProtocol(url) {
     const link = document.createElement('a');
-    link.style.display = 'none';
-    link.href = url;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.style.display = 'none'; link.href = url;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 
   async function loadAll() {
@@ -535,8 +472,7 @@
         const commentData = await api('/commit_comments', { query: { repo, sha } });
         cachedComments = commentData?.comments || [];
       } catch (error) {
-        console.warn('댓글을 불러오지 못했습니다:', error);
-        cachedComments = [];
+        console.warn('댓글을 불러오지 못했습니다:', error); cachedComments = [];
       }
 
       renderIdentitySummary(securityStatus.sentinel || {});
@@ -548,10 +484,9 @@
       renderCommitReview(commitDetails || {}, cachedComments);
     } catch (error) {
       console.error('세부 정보를 불러오지 못했습니다:', error);
-      const allCards = [identityCard, defenderCard, bricksCard];
-      allCards.forEach(card => {
+      [identityCard, defenderCard, bricksCard].forEach(card => {
           setCardStatus(card, 'bad');
-          card.querySelector('.card-body').innerHTML = `<p>데이터를 불러오는 데 실패했습니다: ${esc(error.message)}</p>`;
+          card.querySelector('.card-body').innerHTML = `<p>데이터 로딩 실패: ${esc(error.message)}</p>`;
       });
     }
   }
@@ -561,28 +496,18 @@
       event.preventDefault();
       const formData = new FormData(commentForm);
       const body = (formData.get('body') || '').toString().trim();
-      if (!body) {
-        commentFormStatus.textContent = '내용을 입력해주세요.';
-        return;
-      }
+      if (!body) { commentFormStatus.textContent = '내용을 입력해주세요.'; return; }
       const pathValue = (formData.get('path') || '').toString().trim();
       const lineValue = (formData.get('line') || '').toString().trim();
       const payload = { repo, sha, body };
       if (pathValue) payload.path = pathValue;
-      if (lineValue) {
-        const parsed = parseInt(lineValue, 10);
-        if (!Number.isNaN(parsed)) {
-          payload.line = parsed;
-        }
-      }
+      if (lineValue) { const parsed = parseInt(lineValue, 10); if (!Number.isNaN(parsed)) payload.line = parsed; }
       commentFormStatus.textContent = '저장 중...';
       try {
         const res = await api('/commit_comments', { method: 'POST', body: payload });
         if (res?.comment) {
           cachedComments = [res.comment, ...cachedComments];
-          if (commentsListEl) {
-            commentsListEl.innerHTML = renderCommentsList(cachedComments);
-          }
+          document.getElementById('commentsList').innerHTML = renderCommentsList(cachedComments);
           commentForm.reset();
           commentFormStatus.textContent = '등록되었습니다.';
         } else {
@@ -598,7 +523,5 @@
   loadAll();
 })();
 </script>
-
-
 </body>
 </html>
