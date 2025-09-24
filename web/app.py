@@ -721,7 +721,6 @@ def details():
 def healthz():
     return jsonify({"ok": True, "time": datetime.utcnow().isoformat() + "Z"})
 
---- NEW: GitHub 데이터를 Cosmos DB에 동기화하는 핵심 헬퍼 함수 ---
 def _sync_github_to_cosmos(user_login, full_sync=False):
     """
     GitHub 데이터를 Cosmos DB에 동기화합니다.
