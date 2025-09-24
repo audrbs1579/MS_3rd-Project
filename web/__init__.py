@@ -5,9 +5,10 @@ import hashlib
 import json
 import requests
 import azure.functions as func
+from datetime import datetime
 from azure.cosmos import CosmosClient, exceptions
 
-# --- Cosmos DB 및 GitHub PAT 설정 ---
+# --- 설정 ---
 COSMOS_CONNECTION_STRING = os.environ.get("COSMOS_DB_CONNECTION_STRING")
 GH_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
 GH_PAT = os.environ.get("GITHUB_PAT")
@@ -15,16 +16,17 @@ GITHUB_API_URL = "https://api.github.com"
 COSMOS_DATABASE_NAME = "ProjectGuardianDB"
 COSMOS_REPOS_CONTAINER = "repositories"
 COSMOS_COMMITS_CONTAINER = "commits"
+COSMOS_EVENTS_CONTAINER = "events"
 
-# Cosmos DB 클라이언트 초기화
+# --- Cosmos DB 클라이언트 초기화 ---
 try:
     cosmos_client = CosmosClient.from_connection_string(COSMOS_CONNECTION_STRING)
     database_client = cosmos_client.get_database_client(COSMOS_DATABASE_NAME)
     repos_container = database_client.get_container_client(COSMOS_REPOS_CONTAINER)
     commits_container = database_client.get_container_client(COSMOS_COMMITS_CONTAINER)
+    events_container = database_client.get_container_client(COSMOS_EVENTS_CONTAINER)
 except Exception as e:
     logging.error(f"Failed to initialize Cosmos DB client: {e}")
-    # 클라이언트 초기화 실패 시 함수가 실행되지 않도록 처리
     raise
 
 # --- GitHub API 호출 헬퍼 ---
@@ -41,11 +43,10 @@ def verify_signature(body: bytes, signature: str) -> bool:
     expected = hmac.new(GH_SECRET, msg=body, digestmod=hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig_hash, expected)
 
-# --- __init__.py 파일의 main 함수를 교체해주세요. ---
-
 def main(req: func.HttpRequest) -> func.HttpResponse:
     signature = req.headers.get("X-Hub-Signature-256", "")
     event_type = req.headers.get("X-GitHub-Event", "")
+    delivery_id = req.headers.get("X-GitHub-Delivery")
     body = req.get_body()
 
     if not verify_signature(body, signature):
@@ -58,6 +59,24 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         payload = json.loads(body)
+
+        # --- events 컨테이너에 원본 로그 저장 ---
+        if delivery_id:
+            try:
+                event_doc = {
+                    'id': delivery_id,
+                    'eventType': event_type,
+                    'payload': payload,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                # events 컨테이너의 파티션 키가 '/eventType'이라면 아래와 같이 설정
+                # events_container.upsert_item(event_doc, partition_key=event_type)
+                events_container.upsert_item(event_doc)
+                logging.info(f"Logged event {delivery_id} to events container.")
+            except Exception as e:
+                log.warning(f"Failed to log event {delivery_id} to Cosmos DB: {e}")
+
+        # --- 데이터 동기화 로직 ---
         repo_info = payload.get('repository', {})
         repo_full_name = repo_info.get('full_name')
         repo_owner_login = repo_info.get('owner', {}).get('login')
@@ -68,7 +87,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
         branch_name = branch_ref.split('/')[-1]
 
-        # --- 1. `repositories` 컨테이너 업데이트 ---
+        # 1. `repositories` 컨테이너 업데이트
         log.info(f"Updating repository info for {repo_full_name} in Cosmos DB.")
         
         branches_data = gh_api_get(f"{GITHUB_API_URL}/repos/{repo_full_name}/branches")
@@ -77,10 +96,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             for b in branches_data
         ]
         
-        # --- MODIFIED: ID에서 '/'를 '-'로 치환하고 원본 이름도 별도 저장 ---
         repo_doc = {
-            'id': repo_full_name.replace('/', '-'),
-            'repoFullName': repo_full_name, # 원본 이름은 별도 필드에 저장
+            'id': repo_full_name.replace('/', '-'), # ID에서 '/'를 '-'로 치환
+            'repoFullName': repo_full_name,
             'userId': repo_owner_login,
             'repoName': repo_info.get('name'),
             'pushed_at': repo_info.get('pushed_at'),
@@ -89,7 +107,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         repos_container.upsert_item(repo_doc)
         log.info(f"Successfully upserted repository: {repo_full_name}")
 
-        # --- 2. `commits` 컨테이너 업데이트 ---
+        # 2. `commits` 컨테이너 업데이트
         commits_from_push = payload.get('commits', [])
         if not commits_from_push:
             log.info("No new commits in this push. Exiting.")

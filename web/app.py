@@ -809,14 +809,11 @@ def get_initial_data():
 
     log.info(f"Requesting initial data for {user_login}")
     try:
-        # 1. DB에 이 사용자의 데이터가 있는지 확인
         query = "SELECT TOP 1 c.id FROM c WHERE c.userId = @userId"
         params = [{"name": "@userId", "value": user_login}]
         results = list(repos_container.query_items(query=query, parameters=params))
-        
         is_first_login = len(results) == 0
 
-        # 2. 최초 로그인이면 전체 동기화, 재로그인이면 부분 동기화 실행
         if is_first_login:
             log.info(f"First login detected for {user_login}. Performing full sync.")
             _sync_github_to_cosmos(user_login, full_sync=True)
@@ -824,24 +821,31 @@ def get_initial_data():
             log.info(f"Re-login detected for {user_login}. Performing delta sync.")
             _sync_github_to_cosmos(user_login, full_sync=False)
 
-        # 3. 동기화가 완료된 DB에서 데이터를 읽어와 반환 (기존 로직과 유사)
         log.info(f"Fetching synced data from Cosmos DB for {user_login}")
         repo_query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.pushed_at DESC"
         repos_list_cosmos = list(repos_container.query_items(query=repo_query, parameters=params))
         
-        repos_list = [{"full_name": r.get("id"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")} for r in repos_list_cosmos]
-        branches_map = {r["id"]: r.get("branches", []) for r in repos_list_cosmos}
+        # --- MODIFIED: r.get("id") 대신 r.get("repoFullName")을 사용하도록 수정 ---
+        repos_list = [{"full_name": r.get("repoFullName"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")} for r in repos_list_cosmos]
+        branches_map = {r["repoFullName"]: r.get("branches", []) for r in repos_list_cosmos if r.get("repoFullName")}
         
         commits_map = {}
         for r in repos_list_cosmos:
-            repo_name = r.get("id")
+            repo_name_original = r.get("repoFullName")
+            if not repo_name_original:
+                continue
+
             for branch in r.get("branches", []):
                 branch_name = branch.get("name")
                 commit_query = "SELECT TOP @limit * FROM c WHERE c.repoFullName = @repo AND c.branch = @branch ORDER BY c.date DESC"
-                commit_params = [{"name": "@limit", "value": COMMITS_PER_BRANCH}, {"name": "@repo", "value": repo_name}, {"name": "@branch", "value": branch_name}]
+                commit_params = [
+                    {"name": "@limit", "value": COMMITS_PER_BRANCH},
+                    {"name": "@repo", "value": repo_name_original}, # 올바른 저장소 이름 사용
+                    {"name": "@branch", "value": branch_name}
+                ]
                 
                 branch_commits = list(commits_container.query_items(query=commit_query, parameters=commit_params))
-                key = f"{repo_name}|{branch_name}"
+                key = f"{repo_name_original}|{branch_name}" # 키 생성 시에도 올바른 이름 사용
                 commits_map[key] = [{"sha": c.get("sha"), "message": c.get("message"), "author": c.get("author"), "date": c.get("date")} for c in branch_commits]
 
         return jsonify({"repos": repos_list, "branches": branches_map, "commits": commits_map, "timestamp": datetime.utcnow().isoformat()})
