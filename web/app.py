@@ -15,6 +15,9 @@ from flask import (
 
 from azure.cosmos import CosmosClient, PartitionKey, exceptions
 
+azure_logger = logging.getLogger('azure')
+azure_logger.setLevel(logging.DEBUG)
+
 # ---------- 기본 설정 ----------
 COMMITS_PER_BRANCH = 5
 
