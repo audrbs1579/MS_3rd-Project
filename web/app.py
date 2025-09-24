@@ -111,6 +111,38 @@ def _gh_get(url, params=None, accept_header=None):
         log.error(f"GitHub API request failed for URL {full_url}: {e}")
         raise
 
+# --- NEW: BRICKS 분석 근거를 생성하는 ण्यास퍼 함수 ---
+def _generate_anomaly_reasons(features, sentinel_status):
+    """
+    BRICKS 모델 입력값(features)과 계정 신원 분석 결과를 바탕으로
+    이상치 판단에 대한 설명 가능한 근거를 생성합니다.
+    """
+    reasons = []
+    if not features:
+        return reasons
+
+    # 규칙 1: 민감 파일 변경 여부
+    if features.get("is_sensitive_type", 0) > 0:
+        reasons.append("민감한 키워드(secret, key 등)가 포함된 파일을 수정했습니다.")
+
+    # 규칙 2: 비정상적 커밋 시간 (예: 새벽 1시 ~ 5시)
+    hour = features.get("hour")
+    if hour is not None and (1 <= hour <= 5):
+        reasons.append(f"일반적이지 않은 시간(새벽 {hour}시)에 커밋이 발생했습니다.")
+
+    # 규칙 3: 과도한 코드 변경량 (예: 1000 라인 이상)
+    if features.get("push_size", 0) > 1000:
+        reasons.append("평소보다 많은 양의 코드를 한 번에 커밋했습니다.")
+        
+    # 규칙 4: 첫 기여자 여부 (sentinel_status 결과 활용)
+    if sentinel_status and sentinel_status.get("first_contribution"):
+        reasons.append("이 저장소에 처음으로 기여한 사용자의 커밋입니다.")
+        
+    if not reasons:
+        reasons.append("복합적인 요인에 의해 '주의' 상태로 판단되었습니다.")
+
+    return reasons
+
 def _get_code_excerpt(repo_full_name, ref, path, start_line, end_line):
     if not path or not start_line:
         return []
@@ -1167,6 +1199,10 @@ def api_security_status():
         log.warning(f"Cache read error for {commit_sha}, proceeding with live analysis: {e}")
 
     live_result = None
+    commit_data = None
+    bricks_features = None
+    identity_assessment = {}
+
     try:
         commit_data, _ = _gh_get(f"/repos/{repo}/commits/{commit_sha}")
         
@@ -1181,17 +1217,16 @@ def api_security_status():
         alerts_data, _ = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)
         alerts = alerts_data or []
         commit_alerts = [a for a in alerts if (a.get('most_recent_instance') or {}).get('commit_sha') == commit_sha]
-        enriched_alerts = []
-        for alert in commit_alerts[:10]:
-            rule = alert.get('rule') or {}
-            most_recent = alert.get('most_recent_instance') or {}
-            location = most_recent.get('location') or {}
-            enriched_alerts.append({
-                'number': alert.get('number'), 'rule_id': rule.get('id'), 'rule_name': rule.get('name'),
-                'severity': rule.get('severity'), 'description': (most_recent.get('message') or {}).get('text'),
-                'path': location.get('path'), 'start_line': location.get('start_line'),
-                'html_url': alert.get('html_url')
-            })
+        enriched_alerts = [
+            {
+                'number': a.get('number'), 'rule_id': (a.get('rule') or {}).get('id'), 
+                'rule_name': (a.get('rule') or {}).get('name'), 'severity': (a.get('rule') or {}).get('severity'),
+                'description': ((a.get('most_recent_instance') or {}).get('message') or {}).get('text'),
+                'path': ((a.get('most_recent_instance') or {}).get('location') or {}).get('path'),
+                'start_line': ((a.get('most_recent_instance') or {}).get('location') or {}).get('start_line'),
+                'html_url': a.get('html_url')
+            } for a in commit_alerts[:10]
+        ]
         high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
         defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
         defender = {'status': defender_status, 'summary': f"CodeQL 경고: {len(commit_alerts)}", 'alerts': enriched_alerts}
@@ -1204,51 +1239,48 @@ def api_security_status():
                 bricks = _bricks_postprocess(result)
 
         live_result = {'defender': defender, 'sentinel': identity_assessment, 'bricks': bricks}
-
-        # commits 컨테이너에 결과 저장
-        try:
-            commit_doc = commits_container.read_item(item=commit_sha, partition_key=repo)
-        except exceptions.CosmosResourceNotFoundError:
-            commit_doc = { 'id': commit_sha, 'repoFullName': repo } # 기본 문서 생성
-        commit_doc['securityStatus'] = live_result
-        commits_container.upsert_item(commit_doc)
+        
+        if bricks.get('status') in ['warn', 'bad']:
+            reasons = _generate_anomaly_reasons(bricks_features, identity_assessment)
+            live_result['bricks']['reasons'] = reasons
 
     except requests.exceptions.HTTPError as e:
         if e.response and e.response.status_code in [404, 403]:
-            # CodeQL 비활성화 등 일부 분석 실패 시에도 나머지 결과는 반환
-            live_result = live_result or {'defender': {'status': 'unknown', 'summary': '결과 없음'}, 'sentinel': {}, 'bricks': {}}
+            live_result = live_result or {'defender': {'status': 'unknown', 'summary': '결과 없음'}, 'sentinel': identity_assessment, 'bricks': {}}
             return jsonify(live_result)
         log.exception(f"HTTP error during live analysis for {repo}@{commit_sha}")
         return jsonify(error="보안 상태 분석 중 오류 발생"), 500
-    except Exception:
+    except Exception as e:
         log.exception(f"Failed to get live security status for {repo}@{commit_sha}")
         return jsonify(error="보안 상태를 불러오지 못했습니다."), 500
 
-    # security_issues 컨테이너에 이슈 저장
     try:
-        statuses = [
-            (live_result.get('defender') or {}).get('status', 'good'),
-            (live_result.get('sentinel') or {}).get('status', 'good'),
-            (live_result.get('bricks') or {}).get('status', 'good')
-        ]
+        statuses = [(live_result.get(k) or {}).get('status', 'good') for k in ['defender', 'sentinel', 'bricks']]
         failures = [s for s in statuses if s in ['warn', 'bad']]
         
-        if failures:
-            failure_count = len(failures)
+        if failures and commit_data:
             commit_author_info = commit_data.get("commit", {}).get("author", {})
             commit_date_str = commit_author_info.get("date")
-
             issue_doc = {
                 'id': commit_sha, 'userId': user_id, 'repoFullName': repo,
                 'author': commit_author_info.get("name"), 'date': commit_date_str,
                 'message': (commit_data.get("commit", {}).get("message") or "").split("\n")[0],
-                'failureCount': failure_count, 'securityStatus': live_result
+                'failureCount': len(failures), 'securityStatus': live_result
             }
+            if commit_date_str:
+                issue_doc['yearMonth'] = datetime.fromisoformat(commit_date_str.replace('Z', '+00:00')).strftime('%Y-%m')
+            
             issues_container.upsert_item(issue_doc)
             log.info(f"Logged security issue for {commit_sha}.")
             
     except Exception as e:
         log.warning(f"Failed to log security issue for {commit_sha}: {e}")
+
+    try:
+        commit_doc_cache = { 'id': commit_sha, 'repoFullName': repo, 'securityStatus': live_result }
+        commits_container.upsert_item(commit_doc_cache)
+    except Exception as e:
+        log.warning(f"Failed to save to commits cache for {commit_sha}: {e}")
 
     return jsonify(live_result)
 
