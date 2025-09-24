@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf--8" />
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
@@ -81,7 +81,8 @@
   const $$ = (s, el = document) => el.querySelectorAll(s);
 
   const S = { repo: null, branch: null, selCommit: null, repos: [], branches: {}, securityByCommit: {}, commits_page: 1, commits_loading: false, commits_has_more: true, };
-  const CACHE_KEY = 'dashboardCache', CACHE_VERSION = 'v2';
+  const CACHE_KEY = 'dashboardCache';
+  const CACHE_VERSION = 'v2';
   const ICONS = {
     good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
     warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
@@ -89,11 +90,12 @@
     unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
   };
 
-  const repoListEl = $('#repoList'), branchListEl = $('#branchList'), commitListEl = $('#commitList');
+  const repoFilter = $('#repoFilter'), repoListEl = $('#repoList'), repoStamp = $('#repoStamp');
+  const branchListEl = $('#branchList'), commitListEl = $('#commitList');
   const detailViewCard = $('#detail-view-card'), detailContainerEl = $('#detail-container');
   const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
   const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
-  const btnDetails = $('#btn-view-details');
+  const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
 
   function loadCache() {
     try {
@@ -103,7 +105,7 @@
         if (data.version !== CACHE_VERSION) { sessionStorage.removeItem(CACHE_KEY); return false; }
         S.repos = data.repos || [];
         S.branches = data.branches || {};
-        $('#repoStamp').textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
+        repoStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
         return true;
       }
     } catch (e) { console.error("Cache load failed", e); sessionStorage.removeItem(CACHE_KEY); }
@@ -123,7 +125,7 @@
   }
   
   function renderRepos() {
-    const q = $('#repoFilter').value.toLowerCase();
+    const q = repoFilter.value.toLowerCase();
     const frag = document.createDocumentFragment();
     S.repos.filter(r => (r.full_name || '').toLowerCase().includes(q)).forEach(r => {
         const itemEl = el('div', 'list-item repo-item');
