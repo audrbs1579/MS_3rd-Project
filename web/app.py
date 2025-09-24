@@ -1176,6 +1176,7 @@ def api_developer_activity():
         "recent_comments": comments
     })
 
+# --- MODIFIED: /api/security_status 함수를 아래 코드로 교체해주세요 ---
 @app.get("/api/security_status")
 def api_security_status():
     repo = request.args.get("repo")
@@ -1217,6 +1218,7 @@ def api_security_status():
         alerts_data, _ = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)
         alerts = alerts_data or []
         commit_alerts = [a for a in alerts if (a.get('most_recent_instance') or {}).get('commit_sha') == commit_sha]
+        
         enriched_alerts = [
             {
                 'number': a.get('number'), 'rule_id': (a.get('rule') or {}).get('id'), 
@@ -1227,9 +1229,22 @@ def api_security_status():
                 'html_url': a.get('html_url')
             } for a in commit_alerts[:10]
         ]
+        
+        # --- MODIFIED: CodeQL 상태 및 요약 메시지 로직 개선 ---
         high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
-        defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
-        defender = {'status': defender_status, 'summary': f"CodeQL 경고: {len(commit_alerts)}", 'alerts': enriched_alerts}
+        
+        if high_alerts:
+            defender_status = 'bad'
+            summary_message = f"{len(high_alerts)}개의 '높음' 또는 '심각' 수준의 경고가 발견되었습니다."
+        elif commit_alerts:
+            defender_status = 'warn'
+            summary_message = f"{len(commit_alerts)}개의 '중간' 또는 '낮음' 수준의 경고가 발견되었습니다."
+        else:
+            defender_status = 'good'
+            summary_message = "CodeQL 분석을 통과했습니다. 발견된 경고가 없습니다."
+            
+        defender = {'status': defender_status, 'summary': summary_message, 'alerts': enriched_alerts}
+        # --- 수정 끝 ---
 
         bricks = {'status': 'unknown', 'summary': 'BRICKS 분석 대기 중.', 'details': []}
         bricks_features = _build_iforest_features_from_commit(repo, commit_sha, branch_name=branch, commit_data=commit_data)
