@@ -882,6 +882,8 @@ def api_branches():
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
     return jsonify({"branches": out})
 
+# app.py 파일의 기존 /api/commits 함수를 아래 코드로 교체해주세요.
+
 @app.get("/api/commits")
 def api_commits():
     if "access_token" not in session:
@@ -890,29 +892,51 @@ def api_commits():
     repo = request.args.get("repo")
     branch = request.args.get("branch")
     page = request.args.get("page", 1, type=int)
-    per_page = 30 # 한 번에 30개씩 불러오기
+    per_page = 30
 
     if not repo or not branch:
         return jsonify({"error": "repo and branch required"}), 400
 
-    # GitHub API는 페이지네이션을 지원합니다.
+    # 1. GitHub에서 커밋 기본 정보 가져오기
     commits_data, _ = _gh_get(f"/repos/{repo}/commits", params={
-        "sha": branch,
-        "per_page": per_page,
-        "page": page
+        "sha": branch, "per_page": per_page, "page": page
     })
-
-    commits = [{
-        "sha": c.get("sha"),
-        "message": (c.get("commit", {}).get("message") or "").split("\n")[0],
-        "author": (c.get("commit", {}).get("author") or {}).get("name"),
-        "date": (c.get("commit", {}).get("author") or {}).get("date")
-    } for c in (commits_data or [])]
     
-    # 더 불러올 커밋이 있는지 여부를 함께 전달
+    commit_list = (commits_data or [])
+    commit_shas = [c.get("sha") for c in commit_list if c.get("sha")]
+
+    # 2. Cosmos DB에서 해당 커밋들의 보안 분석 결과 미리 조회
+    security_statuses = {}
+    if commit_shas:
+        try:
+            # SQL의 IN 절과 유사한 쿼리를 사용하여 한 번에 여러 커밋 조회
+            query = f"SELECT c.id, c.securityStatus FROM c WHERE c.repoFullName = @repo AND c.id IN ({', '.join([f'@sha{i}' for i in range(len(commit_shas))])})"
+            params = [{"name": "@repo", "value": repo}]
+            for i, sha in enumerate(commit_shas):
+                params.append({"name": f"@sha{i}", "value": sha})
+            
+            results = commits_container.query_items(query=query, parameters=params, partition_key=repo)
+            for item in results:
+                security_statuses[item['id']] = item.get('securityStatus')
+        except Exception as e:
+            log.warning(f"Could not bulk fetch security statuses from Cosmos DB: {e}")
+
+    # 3. GitHub 정보와 DB의 보안 분석 결과를 합쳐서 최종 데이터 생성
+    commits_with_status = []
+    for c in commit_list:
+        sha = c.get("sha")
+        commit_info = {
+            "sha": sha,
+            "message": (c.get("commit", {}).get("message") or "").split("\n")[0],
+            "author": (c.get("commit", {}).get("author") or {}).get("name"),
+            "date": (c.get("commit", {}).get("author") or {}).get("date"),
+            "securityStatus": security_statuses.get(sha) # DB에 결과가 있으면 추가, 없으면 null
+        }
+        commits_with_status.append(commit_info)
+
     return jsonify({
-        "commits": commits,
-        "has_more": len(commits) == per_page
+        "commits": commits_with_status,
+        "has_more": len(commit_list) == per_page
     })
 
 @app.get("/api/commit_detail")
