@@ -279,13 +279,11 @@ def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=
 
 def _extract_anomaly_details(response_json):
     """
-    Databricks/MLflow 서빙 응답에서 anomaly score와 is_anomaly를 최대한 관대하게 추출.
+    Databricks/MLflow 서빙 응답에서 anomaly score, is_anomaly, threshold를 최대한 관대하게 추출.
     지원 형태 예:
-      - {"predictions": [{"_anomaly_score": 0.73, "_is_anomaly": true}]}
-      - {"predictions": [{"anomaly_score": 0.73, "is_anomaly": true}]}
-      - {"predictions": [0.73]}  # 점수만
-      - {"outputs": [{"score": 0.73, "is_outlier": true}]}
-      - {"score": 0.73, "is_anomaly": true}
+      - {"predictions": [{"anomaly_score": 0.73, "is_anomaly": true, "threshold_used": 0.6}]}
+      - {"predictions": [{"score": 0.73, "is_outlier": true, "threshold": 0.6}]}
+      - {"score": 0.73, "is_anomaly": true, "threshold": 0.6}
     """
     def _coerce_bool(v):
         if isinstance(v, bool):
@@ -309,38 +307,36 @@ def _extract_anomaly_details(response_json):
                     cand = arr
                 break
 
-    score = None
-    is_anom = None
+    score, is_anom, threshold = None, None, None
 
     # 2) cand가 숫자면 점수로 간주
     if isinstance(cand, (int, float)):
         score = float(cand)
     elif isinstance(cand, dict):
         # 점수 후보 키
-        for k in ("_anomaly_score", "anomaly_score", "score", "outlier_score", "anomalyScore"):
+        for k in ("anomaly_score", "_anomaly_score", "score", "outlier_score", "anomalyScore"):
             if k in cand and isinstance(cand[k], (int, float)):
                 score = float(cand[k])
                 break
         # 이진 판정 후보 키
-        for k in ("_is_anomaly", "is_anomaly", "is_outlier", "prediction", "label", "isAnomaly"):
+        for k in ("is_anomaly", "_is_anomaly", "is_outlier", "prediction", "label", "isAnomaly"):
             if k in cand:
                 is_anom = _coerce_bool(cand[k])
                 break
+        # 임계값 후보 키
+        for k in ("threshold_used", "threshold"):
+            if k in cand and isinstance(cand[k], (int, float)):
+                threshold = float(cand[k])
+                break
 
-    if score is None and isinstance(response_json, (int, float)):
-        score = float(response_json)
+    # 3) 판정값이 없고, 점수와 임계값이 있으면 직접 계산
+    if score is not None and is_anom is None and threshold is not None:
+        is_anom = bool(score >= threshold)
 
-    # 점수만 있고 판정이 없으면 임계값으로 판정 (기본 0.6, 환경변수로 조절)
-    if score is not None and is_anom is None:
-        thr = 0.6
-        try:
-            thr = float(os.environ.get("DATABRICKS_ANOMALY_THRESHOLD", thr))
-        except Exception:
-            pass
-        is_anom = bool(score >= thr)
-
+    # 4) 최종적으로 점수와 판정값이 모두 있어야 유효한 결과로 간주
     if score is not None and is_anom is not None:
-        return {"score": float(score), "is_anomaly": bool(is_anom)}
+        return {"score": float(score), "is_anomaly": bool(is_anom), "threshold": threshold}
+
     return None
 
 def _bricks_postprocess(model_parsed: dict):
@@ -405,8 +401,8 @@ def _invoke_databricks_model(features):
     response.raise_for_status()
     try:
         result_json = response.json()
-        # 실제 응답 로깅
-        print(f"✅ Databricks 실제 응답: {result_json}")
+        # 실제 응답 로깅 (기존 print -> log.info로 변경)
+        log.info(f"✅ Databricks 실제 응답: {result_json}")
     except ValueError:
         log.error("Databricks response was not JSON")
         return None
@@ -414,10 +410,12 @@ def _invoke_databricks_model(features):
     ext = _extract_anomaly_details(result_json)
     if not ext:
         return None
+
+    # _extract_anomaly_details에서 추출된 값을 사용하도록 정리
     return {
         'score': ext['score'],
         'is_anomaly': ext['is_anomaly'],
-        'threshold': (result_json.get('threshold') if isinstance(result_json, dict) else None),
+        'threshold': ext.get('threshold'),
         'percentile': (result_json.get('threshold_percentile') if isinstance(result_json, dict) else None),
         'model_version': (result_json.get('model_version') if isinstance(result_json, dict) else None),
     }
