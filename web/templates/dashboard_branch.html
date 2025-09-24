@@ -4,6 +4,7 @@
   <meta charset="utf--8" />
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
   <style>
     .main-container { display: grid; grid-template-columns: minmax(300px, 1.2fr) minmax(250px, 1fr) minmax(300px, 1.5fr); gap: 16px; height: 65vh; margin-bottom: 16px; }
@@ -27,6 +28,9 @@
     .indicator.status-unknown { background-color: #9ca3af; }
     .spinner { border: 2px solid #f3f4f6; border-top: 2px solid #4f46e5; border-radius: 50%; width: 12px; height: 12px; animation: spin 1s linear infinite; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    /* --- NEW: 마지막 갱신 시간 스타일 --- */
+    .stamp { font-size: 0.75rem; color: #9ca3af; text-align: right; margin-top: 8px; padding-right: 4px; }
+    .stamp.highlight { transition: color 0.2s; color: #4f46e5; }
   </style>
 </head>
 <body>
@@ -45,7 +49,6 @@
       <div class="column" id="repo-column">
         <h2>내 저장소</h2>
         <div class="body repo-list" id="repoList"><div class="empty-state">데이터 로딩 중...</div></div>
-        <div id="repoStamp" class="stamp"></div>
       </div>
       <div class="column" id="branch-column">
         <h2>브랜치</h2>
@@ -68,6 +71,7 @@
           </div>
           <button id="btn-view-details" disabled>상세 보기</button>
         </div>
+        <div id="lastUpdatedStamp" class="stamp"></div>
       </section>
       <section id="detail-view-card" class="card" style="display: none;">
         <h2>커밋 상세 정보</h2>
@@ -91,12 +95,14 @@
     unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
   };
 
-  const repoFilter = $('#repoFilter'), repoListEl = $('#repoList'), repoStamp = $('#repoStamp');
+  const repoFilter = $('#repoFilter'), repoListEl = $('#repoList');
   const branchListEl = $('#branchList'), commitListEl = $('#commitList');
   const detailViewCard = $('#detail-view-card'), detailContainerEl = $('#detail-container');
   const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
   const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
   const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
+  // --- NEW: 갱신 시간 엘리먼트 ---
+  const lastUpdatedStamp = $('#lastUpdatedStamp');
 
   function loadCache() {
     try {
@@ -106,11 +112,42 @@
         if (data.version !== CACHE_VERSION) { sessionStorage.removeItem(CACHE_KEY); return false; }
         S.repos = data.repos || [];
         S.branches = data.branches || {};
-        repoStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
+        // --- MODIFIED: 새로운 위치에 갱신 시간 표시 ---
+        lastUpdatedStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
         return true;
       }
     } catch (e) { console.error("Cache load failed", e); sessionStorage.removeItem(CACHE_KEY); }
     return false;
+  }
+  
+  // --- NEW: 자동 갱신을 위한 함수 ---
+  async function silentSync() {
+    try {
+        console.log("Auto-sync started...");
+        const response = await fetch('/api/get_initial_data');
+        if (!response.ok) {
+            console.error("Auto-sync failed with status:", response.status);
+            return;
+        }
+        const data = await response.json();
+        const dataToCache = Object.assign({ version: CACHE_VERSION }, data);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
+
+        // UI 업데이트
+        loadCache(); // S 객체를 새 데이터로 업데이트
+        renderRepos(); // 저장소 목록 다시 그리기
+        if (S.repo) {
+            renderBranches(); // 브랜치 목록 다시 그리기
+        }
+        
+        // 시각적 피드백
+        lastUpdatedStamp.classList.add('highlight');
+        setTimeout(() => lastUpdatedStamp.classList.remove('highlight'), 1000);
+
+        console.log("Auto-sync completed.");
+    } catch (error) {
+        console.error("Auto-sync failed:", error);
+    }
   }
 
   async function api(path, options = {}) {
@@ -323,6 +360,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     if (loadCache()) {
       renderRepos();
+      // --- NEW: 1분마다 자동 갱신 시작 ---
+      setInterval(silentSync, 60000); 
     } else {
       window.location.href = '/loading';
     }
@@ -336,6 +375,7 @@
   $('#btn-view-details').addEventListener('click', () => {
     if (S.selCommit) {
       const { repo, sha, branch } = S.selCommit;
+      // --- MODIFIED: 새 창이 아닌 현재 창에서 이동 ---
       window.location.href = `/details?repo=${repo}&sha=${sha}&branch=${branch || ''}`;
     }
   });
