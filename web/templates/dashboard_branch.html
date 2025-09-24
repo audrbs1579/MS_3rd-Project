@@ -28,7 +28,6 @@
     .indicator.status-unknown { background-color: #9ca3af; }
     .spinner { border: 2px solid #f3f4f6; border-top: 2px solid #4f46e5; border-radius: 50%; width: 12px; height: 12px; animation: spin 1s linear infinite; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    /* --- NEW: 마지막 갱신 시간 스타일 --- */
     .stamp { font-size: 0.75rem; color: #9ca3af; text-align: right; margin-top: 8px; padding-right: 4px; }
     .stamp.highlight { transition: color 0.2s; color: #4f46e5; }
   </style>
@@ -101,8 +100,33 @@
   const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
   const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
   const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
-  // --- NEW: 갱신 시간 엘리먼트 ---
   const lastUpdatedStamp = $('#lastUpdatedStamp');
+
+  // --- NEW: UTC to KST 변환 함수 ---
+  function formatToKST(isoString) {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+
+    // KST는 UTC+9. 9시간(밀리초)을 더함
+    const kstOffset = 9 * 60 * 60 * 1000;
+    const kstDate = new Date(date.getTime() + kstOffset);
+
+    // KST로 변환된 날짜를 UTC 기준으로 포맷팅하여 브라우저의 자동 시간대 변환을 방지
+    const year = kstDate.getUTCFullYear();
+    const month = kstDate.getUTCMonth() + 1;
+    const day = kstDate.getUTCDate();
+    
+    let hours = kstDate.getUTCHours();
+    const minutes = String(kstDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(kstDate.getUTCSeconds()).padStart(2, '0');
+
+    const ampm = hours >= 12 ? '오후' : '오전';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0시는 12시로 표시
+
+    // 최종 포맷: YYYY. MM. DD. 오전/오후 H:MM:SS
+    return `${year}. ${month}. ${day}. ${ampm} ${hours}:${minutes}:${seconds}`;
+  }
 
   function loadCache() {
     try {
@@ -112,15 +136,14 @@
         if (data.version !== CACHE_VERSION) { sessionStorage.removeItem(CACHE_KEY); return false; }
         S.repos = data.repos || [];
         S.branches = data.branches || {};
-        // --- MODIFIED: 새로운 위치에 갱신 시간 표시 ---
-        lastUpdatedStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
+        // --- MODIFIED: KST 변환 함수를 사용하여 시간 표시 ---
+        lastUpdatedStamp.textContent = `마지막 갱신: ${formatToKST(data.timestamp)}`;
         return true;
       }
     } catch (e) { console.error("Cache load failed", e); sessionStorage.removeItem(CACHE_KEY); }
     return false;
   }
   
-  // --- NEW: 자동 갱신을 위한 함수 ---
   async function silentSync() {
     try {
         console.log("Auto-sync started...");
@@ -133,14 +156,12 @@
         const dataToCache = Object.assign({ version: CACHE_VERSION }, data);
         sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
 
-        // UI 업데이트
-        loadCache(); // S 객체를 새 데이터로 업데이트
-        renderRepos(); // 저장소 목록 다시 그리기
+        loadCache(); 
+        renderRepos(); 
         if (S.repo) {
-            renderBranches(); // 브랜치 목록 다시 그리기
+            renderBranches(); 
         }
         
-        // 시각적 피드백
         lastUpdatedStamp.classList.add('highlight');
         setTimeout(() => lastUpdatedStamp.classList.remove('highlight'), 1000);
 
@@ -360,7 +381,6 @@
   document.addEventListener('DOMContentLoaded', () => {
     if (loadCache()) {
       renderRepos();
-      // --- NEW: 1분마다 자동 갱신 시작 ---
       setInterval(silentSync, 60000); 
     } else {
       window.location.href = '/loading';
@@ -375,7 +395,6 @@
   $('#btn-view-details').addEventListener('click', () => {
     if (S.selCommit) {
       const { repo, sha, branch } = S.selCommit;
-      // --- MODIFIED: 새 창이 아닌 현재 창에서 이동 ---
       window.location.href = `/details?repo=${repo}&sha=${sha}&branch=${branch || ''}`;
     }
   });
