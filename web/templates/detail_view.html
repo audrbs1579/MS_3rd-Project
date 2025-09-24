@@ -122,8 +122,22 @@
   let cachedComments = [];
 
   function esc(s) { return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c); }
+
+  // --- MODIFIED: UTC to KST 변환 함수 (표준 시간대 지정 방식으로 변경) ---
+  function formatToKST(isoString) {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  }
   
-  // --- MODIFIED: ago 함수 수정 ---
   function ago(isoString) {
       if (!isoString) return '';
       const reference = new Date(isoString);
@@ -135,13 +149,8 @@
       else if (seconds < 86400) relativeTime = `${Math.floor(seconds / 3600)}시간 전`;
       else relativeTime = `${Math.floor(seconds / 86400)}일 전`;
 
-      // 브라우저의 로컬 시간대(KST)로 전체 날짜/시간 포맷팅
-      const fullDateTime = reference.toLocaleString('ko-KR', {
-          year: 'numeric', month: 'long', day: 'numeric',
-          hour: 'numeric', minute: '2-digit', hour12: false
-      });
+      const fullDateTime = formatToKST(isoString);
       
-      // title 속성에 전체 시간을 넣은 time 태그 반환
       return `<time datetime="${isoString}" title="${fullDateTime}">${relativeTime}</time>`;
   }
 

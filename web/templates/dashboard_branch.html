@@ -1,131 +1,111 @@
 <!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="utf-8" />
-    <title>Detail Security Analysis - {{ commit_sha[:7] }}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
-    <style>
-        :root{
-            --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-            --text-main: #111827; --text-muted: #6b7280;
-            --status-good-bg: #dcfce7; --status-good-text: #166534;
-            --status-warn-bg: #fef9c3; --status-warn-text: #854d0e;
-            --status-bad-bg: #fee2e2; --status-bad-text: #991b1b;
-            --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
-            --code-bg: #0f172a; --code-text: #e2e8f0; --code-muted: #94a3b8;
-            --progress-bar: #4f46e5;
-        }
-        body { margin: 0; background-color: var(--bg); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
-        header { background-color: var(--panel); padding: 16px 24px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 24px; }
-        header h1 { font-size: 20px; margin: 0 0 4px 0; }
-        header p { margin: 0; color: var(--text-muted); font-family: monospace; }
-        .summary-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 24px; }
-        .card { background-color: var(--panel); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
-        .card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-        .card-header h2 { font-size: 16px; margin: 0; }
-        .card-body { padding: 16px; font-size: 14px; line-height: 1.6; }
-        .status-good { background-color: var(--status-good-bg); color: var(--status-good-text); }
-        .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
-        .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
-        .info-list { margin: 0; padding-left: 18px; }
-        .card-divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
-        .review-body { display: flex; flex-direction: column; gap: 18px; }
-        .review-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 14px; }
-        .review-meta .meta-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-        .review-meta .meta-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
-        .review-meta .meta-value { margin-top: 4px; font-weight: 600; }
-        .review-meta .meta-value.monospace { word-break: break-all; }
-        .additions { color: var(--status-good-text); font-weight: bold; }
-        .deletions { color: var(--status-bad-text); font-weight: bold; }
-        .review-files { display: flex; flex-direction: column; gap: 10px; }
-        .review-file { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f9fafb; }
-        .review-file .file-path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
-        .review-file .file-stats { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-        .review-file .file-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .review-file .file-actions button { font-size: 12px; padding: 4px 8px; }
-        .review-panel { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
-        .comments-list { display: flex; flex-direction: column; gap: 10px; max-height: 260px; overflow: auto; padding: 4px; background: #f9fafb; border-radius: 8px;}
-        .comment-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel); }
-        .review-form { display: flex; flex-direction: column; gap: 10px; }
-        .review-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-        .review-form input, .review-form select, .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
-        .review-form textarea { min-height: 80px; resize: vertical; }
-        .form-actions { display: flex; align-items: center; gap: 8px; }
-
-        .bricks-card-content { display: flex; flex-direction: column; gap: 16px; }
-        .bricks-graph-section { padding-bottom: 16px; }
-        .bricks-reason-section { padding-top: 16px; border-top: 1px solid var(--border); }
-        .bricks-reason-section h3 { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 8px 0; text-transform: uppercase; }
-        .reason-list { list-style-type: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-        .reason-list li { font-size: 0.9rem; }
-        .progress-wrapper { position: relative; padding-top: 24px; margin-top: 12px; }
-        .progress-bar-container { position: relative; height: 24px; border-radius: 12px; background-color: #e5e7eb; overflow: hidden; }
-        .progress-bar { height: 100%; background-color: var(--progress-bar); border-radius: 12px; transition: width 0.3s; display: flex; align-items: center; justify-content: center; }
-        .progress-bar-label { color: white; font-size: 14px; font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,0.5); }
-        .progress-bar-indicator { position: absolute; top: 0; height: 100%; width: 2px; background-color: #ef4444; transition: left 0.3s; }
-        .threshold-marker { position: absolute; top: 0; transform: translateX(-50%); font-size: 12px; font-weight: 600; color: var(--status-bad-text); white-space: nowrap; }
-        .threshold-marker::after { content: '▼'; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 16px; line-height: 0.8; }
-    </style>
+  <meta charset="utf--8" />
+  <title>Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+  <style>
+    .main-container { display: grid; grid-template-columns: minmax(300px, 1.2fr) minmax(250px, 1fr) minmax(300px, 1.5fr); gap: 16px; height: 65vh; margin-bottom: 16px; }
+    .column { display: flex; flex-direction: column; background-color: #fff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); overflow: hidden; }
+    .column h2 { font-size: 1rem; padding: 12px 16px; margin: 0; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+    .column .body { padding: 8px; overflow-y: auto; flex-grow: 1; }
+    .column .empty-state { padding: 16px; color: #6b7280; }
+    .detail-container { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: background-color 0.2s, border-color 0.2s; }
+    .list-item:hover { background-color: #f9fafb; }
+    .list-item.selected { background-color: #eef2ff; border-color: #c7d2fe; font-weight: 600; }
+    .commit-info { flex-grow: 1; overflow: hidden; }
+    .commit-message { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .commit-author { font-size: 0.8rem; color: #6b7280; margin-top: 2px; }
+    .commit-sha { font-family: monospace; font-size: 0.85rem; }
+    .commit-indicators { display: flex; gap: 5px; padding: 0 8px; width: 44px; justify-content: center; align-items: center; }
+    .indicator { width: 10px; height: 10px; border-radius: 50%; background-color: #e5e7eb; }
+    .indicator.status-good { background-color: #22c55e; }
+    .indicator.status-warn { background-color: #f59e0b; }
+    .indicator.status-bad { background-color: #ef4444; }
+    .indicator.status-unknown { background-color: #9ca3af; }
+    .spinner { border: 2px solid #f3f4f6; border-top: 2px solid #4f46e5; border-radius: 50%; width: 12px; height: 12px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .stamp { font-size: 0.75rem; color: #9ca3af; text-align: right; margin-top: 8px; padding-right: 4px; }
+    .stamp.highlight { transition: color 0.2s; color: #4f46e5; }
+  </style>
 </head>
 <body>
-    <div class="wrap">
-        <header>
-            <h1>보안 및 코드 상세 분석</h1>
-            <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
-        </header>
-
-        <section class="summary-grid">
-            <div id="identityCard" class="card status-unknown">
-                <div class="card-header"><h2>계정 신원 검증</h2></div>
-                <div class="card-body" id="identityBody"><p>로딩 중...</p></div>
-            </div>
-            <div id="defenderCard" class="card status-unknown">
-                <div class="card-header"><h2>CodeQL 분석</h2></div>
-                <div class="card-body" id="defenderBody"><p>로딩 중...</p></div>
-            </div>
-            <div id="bricksCard" class="card status-unknown">
-                <div class="card-header"><h2>BRICKS 이상 감지</h2></div>
-                <div class="card-body" id="bricksBody"><p>로딩 중...</p></div>
-            </div>
-        </section>
-
-        <section id="commitReviewCard" class="card">
-            <div class="card-header"><h2>커밋 상세 & 코드 리뷰</h2></div>
-            <div class="card-body review-body">
-                <div id="commitMeta" class="review-meta"></div>
-                <div id="commitFiles" class="review-files"></div>
-                <div class="review-panel">
-                    <h3>대화형 코드 리뷰</h3>
-                    <div id="commentsList" class="comments-list"><div class="empty-state">댓글을 불러오는 중...</div></div>
-                    <form id="commentForm" class="review-form"></form>
-                </div>
-            </div>
-        </section>
+  <div class="wrap">
+    <div class="toolbar">
+      <input id="repoFilter" class="input" placeholder="저장소 검색..." />
+      <div class="toolbar-actions">
+        <a href="/issues"><button type="button">보안 이슈 보기</button></a>
+        <button id="btnVsConfig" type="button">VS Code</button>
+        <button id="btnSync" type="button">새로고침</button>
+        <span>Signed in as <b>{{ user_id }}</b></span>
+        <a href="/logout"><button type="button">로그아웃</button></a>
+      </div>
     </div>
+    <div class="main-container">
+      <div class="column" id="repo-column">
+        <h2>내 저장소</h2>
+        <div class="body repo-list" id="repoList"><div class="empty-state">데이터 로딩 중...</div></div>
+      </div>
+      <div class="column" id="branch-column">
+        <h2>브랜치</h2>
+        <div class="body" id="branchList"><div class="empty-state">저장소를 선택하세요.</div></div>
+      </div>
+      <div class="column" id="commit-column">
+        <h2>커밋</h2>
+        <div class="body" id="commitList"><div class="empty-state">브랜치를 선택하세요.</div></div>
+      </div>
+    </div>
+    <div class="detail-container">
+      <section id="security-summary-card" class="card status-unknown">
+        <div class="security-summary-body">
+          <div class="security-status">
+            <div id="status-icon-container" class="status-icon"></div>
+            <div class="status-text">
+              <h3 id="security-summary-title">보안 요약</h3>
+              <p id="security-summary-text">분석할 커밋을 선택하세요.</p>
+            </div>
+          </div>
+          <button id="btn-view-details" disabled>상세 보기</button>
+        </div>
+        <div id="lastUpdatedStamp" class="stamp"></div>
+      </section>
+      <section id="detail-view-card" class="card" style="display: none;">
+        <h2>커밋 상세 정보</h2>
+        <div id="detail-container" class="body detail"></div>
+      </section>
+    </div>
+  </div>
 
 <script>
-(() => {
-  const repo = {{ repo_name|tojson }};
-  const sha = {{ commit_sha|tojson }};
-  const branch = {{ branch_name|tojson }};
+(()=>{
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => el.querySelectorAll(s);
 
-  const identityBody = document.getElementById('identityBody');
-  const defenderBody = document.getElementById('defenderBody');
-  const bricksBody = document.getElementById('bricksBody');
-  const commitMetaEl = document.getElementById('commitMeta');
-  const commitFilesEl = document.getElementById('commitFiles');
-  const commentsListEl = document.getElementById('commentsList');
-  const commentFormEl = document.getElementById('commentForm');
-  
-  let cachedComments = [];
+  const S = { repo: null, branch: null, selCommit: null, repos: [], branches: {}, securityByCommit: {}, commits_page: 1, commits_loading: false, commits_has_more: true, };
+  const CACHE_KEY = 'dashboardCache';
+  const CACHE_VERSION = 'v2';
+  const ICONS = {
+    good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+    warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
+    bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
+    unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
+  };
 
-  function esc(s) { return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c); }
+  const repoFilter = $('#repoFilter'), repoListEl = $('#repoList');
+  const branchListEl = $('#branchList'), commitListEl = $('#commitList');
+  const detailViewCard = $('#detail-view-card'), detailContainerEl = $('#detail-container');
+  const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
+  const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
+  const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
+  const lastUpdatedStamp = $('#lastUpdatedStamp');
 
   // --- MODIFIED: UTC to KST 변환 함수 (표준 시간대 지정 방식으로 변경) ---
   function formatToKST(isoString) {
     if (!isoString) return '';
+    // toLocaleString 메서드에 timeZone 옵션을 'Asia/Seoul'로 명시하여 KST로 변환
     return new Date(isoString).toLocaleString('ko-KR', {
       timeZone: 'Asia/Seoul',
       year: 'numeric',
@@ -137,193 +117,282 @@
       hour12: true,
     });
   }
-  
-  function ago(isoString) {
-      if (!isoString) return '';
-      const reference = new Date(isoString);
-      const seconds = (Date.now() - reference.getTime()) / 1000;
-      
-      let relativeTime;
-      if (seconds < 60) relativeTime = '방금 전';
-      else if (seconds < 3600) relativeTime = `${Math.floor(seconds / 60)}분 전`;
-      else if (seconds < 86400) relativeTime = `${Math.floor(seconds / 3600)}시간 전`;
-      else relativeTime = `${Math.floor(seconds / 86400)}일 전`;
 
-      const fullDateTime = formatToKST(isoString);
-      
-      return `<time datetime="${isoString}" title="${fullDateTime}">${relativeTime}</time>`;
+  function loadCache() {
+    try {
+      const cachedData = sessionStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        const data = JSON.parse(cachedData);
+        if (data.version !== CACHE_VERSION) { sessionStorage.removeItem(CACHE_KEY); return false; }
+        S.repos = data.repos || [];
+        S.branches = data.branches || {};
+        lastUpdatedStamp.textContent = `마지막 갱신: ${formatToKST(data.timestamp)}`;
+        return true;
+      }
+    } catch (e) { console.error("Cache load failed", e); sessionStorage.removeItem(CACHE_KEY); }
+    return false;
+  }
+  
+  async function silentSync() {
+    try {
+        console.log("Auto-sync started...");
+        const response = await fetch('/api/get_initial_data');
+        if (!response.ok) {
+            console.error("Auto-sync failed with status:", response.status);
+            return;
+        }
+        const data = await response.json();
+        const dataToCache = Object.assign({ version: CACHE_VERSION }, data);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
+
+        loadCache(); 
+        renderRepos(); 
+        if (S.repo) {
+            renderBranches(); 
+        }
+        
+        lastUpdatedStamp.classList.add('highlight');
+        setTimeout(() => lastUpdatedStamp.classList.remove('highlight'), 1000);
+
+        console.log("Auto-sync completed.");
+    } catch (error) {
+        console.error("Auto-sync failed:", error);
+    }
   }
 
-  async function api(path, options={}) {
-      const method = (options.method || 'GET').toUpperCase();
-      let url = `/api${path}`;
-      const init = { method, headers: { 'Accept': 'application/json', ...options.headers } };
-      if (method === 'GET' && options.query) {
-          url += `?${new URLSearchParams(options.query)}`;
-      } else if (method !== 'GET') {
-          init.body = JSON.stringify(options.body);
-          init.headers['Content-Type'] = 'application/json';
-      }
-      const res = await fetch(url, init);
-      if(!res.ok) {
-          const errData = await res.json().catch(() => ({ error: `HTTP error ${res.status}` }));
-          throw new Error(errData.error || `HTTP error ${res.status}`);
+  async function api(path, options = {}) {
+      const query = new URLSearchParams(options.query || {});
+      const url = `${path}?${query.toString()}`;
+      const res = await fetch(url);
+      if (res.status === 401) { window.location.href = '/'; throw new Error('Unauthorized'); }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(errData.error || `HTTP error ${res.status}`);
       }
       return res.json();
   }
-  function setCardStatus(cardId, status) { 
-      const el = document.getElementById(cardId);
-      if (el) el.className = `card status-${status || 'unknown'}`; 
+  
+  function renderRepos() {
+    const q = repoFilter.value.toLowerCase();
+    const frag = document.createDocumentFragment();
+    S.repos.filter(r => (r.full_name || '').toLowerCase().includes(q)).forEach(r => {
+        const itemEl = el('div', 'list-item repo-item');
+        itemEl.dataset.repo = r.full_name;
+        itemEl.onclick = () => selectRepo(r.full_name);
+        itemEl.innerHTML = `<span class="repo-name">${esc(r.full_name)}</span><span class="repo-meta">${r.pushed_at ? ago(new Date(r.pushed_at)) : ''}</span>`;
+        frag.appendChild(itemEl);
+    });
+    repoListEl.innerHTML = '';
+    repoListEl.appendChild(frag.children.length ? frag : el('div', 'empty-state', '결과 없음'));
+    highlightSelection();
   }
 
-  function renderIdentityDetails(data) {
-    setCardStatus('identityCard', data?.status);
-    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.');
-    const details = (data?.details || []).map(line => `<li>${esc(line)}</li>`).join('');
-    identityBody.innerHTML = `<p>${summary}</p>${details ? `<div class="card-divider"></div><ul class="info-list">${details}</ul>` : ''}`;
-  }
-
-  function renderDefenderDetails(data) {
-    setCardStatus('defenderCard', data?.status);
-    const summary = esc(data?.summary || 'CodeQL 분석 결과가 없습니다.');
-    const alerts = (data?.alerts || []).map(alert => {
-        return `<article>
-            <h4>${esc(alert.rule_name)} [${esc(alert.severity)}]</h4>
-            <p>${esc(alert.description)}</p>
-            <p><small>${esc(alert.path)}:${alert.start_line}</small></p>
-        </article>`;
-    }).join('<div class="card-divider"></div>');
-    defenderBody.innerHTML = `<p>${summary}</p>${alerts ? `<div class="card-divider"></div>${alerts}` : ''}`;
+  function renderBranches() {
+    const list = S.branches[S.repo] || [];
+    branchListEl.innerHTML = '';
+    if (!list.length) { branchListEl.innerHTML = `<div class="empty-state">브랜치가 없습니다.</div>`; return; }
+    const frag = document.createDocumentFragment();
+    list.forEach(b => {
+      const itemEl = el('div', 'list-item branch-item');
+      itemEl.dataset.branch = b.name;
+      itemEl.onclick = () => selectBranch(b.name);
+      itemEl.innerHTML = `<span class="branch-name">${esc(b.name)}</span><span class="branch-meta">${esc((b.sha || '').slice(0, 7))}</span>`;
+      frag.appendChild(itemEl);
+    });
+    branchListEl.appendChild(frag);
+    highlightSelection();
   }
   
-  function renderBricksDetails(bricks) {
-      setCardStatus('bricksCard', bricks?.status);
-      const score = bricks?.score;
-      let html = '';
-      if (score === null || score === undefined) {
-          html = '<p>모델 상세 정보가 없습니다.</p>';
-      } else {
-          const threshold = bricks?.threshold || 0;
-          const scorePercent = Math.min(100, score * 100);
-          const thresholdPercent = Math.min(100, threshold * 100);
-          const reasons = bricks?.reasons || [];
-          const reasonsHtml = reasons.length > 0 ? reasons.map(r => `<li>- ${esc(r)}</li>`).join('') : `<li>- 특별히 감지된 이상 행동 패턴은 없으나, 복합적인 요인에 의해 점수가 높게 산출되었습니다.</li>`;
-
-          html = `
-            <div class="bricks-card-content">
-                <div class="bricks-graph-section">
-                    <p>${esc(bricks?.summary || '분석 결과 없음')}</p>
-                    <div class="progress-wrapper">
-                        <div class="threshold-marker" style="left: ${thresholdPercent}%">${threshold.toFixed(2)}</div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: ${scorePercent}%">
-                                <span class="progress-bar-label">${score.toFixed(2)}</span>
-                            </div>
-                            <div class="progress-bar-indicator" style="left: ${thresholdPercent}%"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bricks-reason-section">
-                    <h3>분석 근거</h3>
-                    <ul class="reason-list">${reasonsHtml}</ul>
-                </div>
-            </div>`;
-      }
-      bricksBody.innerHTML = html;
-  }
-
-  function renderCommitReview(details) {
-    const stats = details?.stats || {};
-    const additions_deletions_html = `<span class="additions">+${stats.additions || 0}</span> / <span class="deletions">-${stats.deletions || 0}</span>`;
-    commitMetaEl.innerHTML = `
-        <div class="meta-item"><div class="meta-label">커밋 메시지</div><div class="meta-value">${esc((details.message || '').split('\n')[0])}</div></div>
-        <div class="meta-item"><div class="meta-label">작성자</div><div class="meta-value">${esc(details.author || '알 수 없음')}</div></div>
-        <div class="meta-item"><div class="meta-label">추가/삭제</div><div class="meta-value">${additions_deletions_html}</div></div>
-        <div class="meta-item"><div class="meta-label">SHA</div><div class="meta-value monospace">${esc(sha)}</div></div>`;
-
-    const files = details?.files || [];
-    commitFilesEl.innerHTML = files.map(file => {
-        const statsText = `+${file.additions} / -${file.deletions}`;
-        return `<div class="review-file">
-            <div>
-                <div class="file-path">${esc(file.filename)}</div>
-                <div class="file-stats">${statsText}</div>
-            </div>
-            <div class="file-actions">
-                <button type="button" onclick="window.open('${esc(file.blob_url)}', '_blank')">GitHub</button>
-                <button type="button">VS Code</button>
-            </div>
-        </div>`;
-    }).join('');
-  }
-
-  function renderComments(comments) {
-    if (!comments || comments.length === 0) {
-        commentsListEl.innerHTML = '<div class="empty-state">등록된 댓글이 없습니다.</div>';
-        return;
-    }
-    commentsListEl.innerHTML = comments.map(comment => {
-        const user = comment.user || {};
-        return `<div class="comment-card">
-            <p><strong>${esc(user.login)}</strong> <small>${ago(comment.created_at)}</small></p>
-            <p>${esc(comment.body).replace(/\n/g, '<br>')}</p>
-        </div>`;
-    }).join('');
+  function selectRepo(repoName) {
+    if (S.repo === repoName) return;
+    S.repo = repoName; S.branch = null; S.selCommit = null;
+    branchListEl.innerHTML = `<div class="empty-state">브랜치 로딩 중...</div>`;
+    commitListEl.innerHTML = `<div class="empty-state">브랜치를 선택하세요.</div>`;
+    resetDetailView();
+    renderBranches();
+    highlightSelection();
   }
   
-  function setupCommentForm(files) {
-      commentFormEl.innerHTML = `
-        <div class="field"><label>파일 선택</label><select name="path"><option value="">커밋 전체</option>${files.map(f => `<option value="${esc(f.filename)}">${esc(f.filename)}</option>`).join('')}</select></div>
-        <div class="field"><label>라인 번호 (선택)</label><input type="number" name="line" min="1" /></div>
-        <div class="field"><label>댓글 내용</label><textarea name="body" required></textarea></div>
-        <div class="form-actions"><button type="submit">댓글 추가</button><span id="commentFormStatus"></span></div>`;
-
-      commentFormEl.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const statusEl = document.getElementById('commentFormStatus');
-          statusEl.textContent = '저장 중...';
-          const formData = new FormData(e.target);
-          const payload = { 
-              repo, sha, 
-              body: formData.get('body'), 
-              path: formData.get('path') || null, 
-              line: formData.get('line') ? parseInt(formData.get('line')) : null 
-          };
-          
-          try {
-              await api('/commit_comments', { method: 'POST', body: payload });
-              statusEl.textContent = '등록 완료!';
-              e.target.reset();
-              const updatedComments = await api('/commit_comments', { query: { repo, sha } });
-              renderComments(updatedComments.comments || []);
-          } catch (err) {
-              statusEl.textContent = `오류: ${err.message}`;
-          }
-      });
+  function selectBranch(branchName) {
+    if (S.branch === branchName && !S.selCommit) return;
+    S.branch = branchName; S.selCommit = null;
+    commitListEl.innerHTML = `<div class="empty-state">커밋 로딩 중...</div>`;
+    resetDetailView();
+    S.commits_page = 1; S.commits_has_more = true; S.commits_loading = false;
+    loadMoreCommits();
+    highlightSelection();
   }
 
-  async function loadAll() {
+  async function loadMoreCommits() {
+    if (S.commits_loading || !S.commits_has_more) return;
+    S.commits_loading = true;
     try {
-      const [securityStatus, commitDetails, comments] = await Promise.all([
-        api('/security_status', { query: { repo, sha, branch } }),
-        api('/commit_detail', { query: { repo, sha } }),
-        api('/commit_comments', { query: { repo, sha } })
-      ]);
+      const data = await api('/api/commits', { query: { repo: S.repo, branch: S.branch, page: S.commits_page } });
+      if (S.commits_page === 1) commitListEl.innerHTML = '';
 
-      renderIdentityDetails(securityStatus.sentinel || {});
-      renderDefenderDetails(securityStatus.defender || {});
-      renderBricksDetails(securityStatus.bricks || {});
-      renderCommitReview(commitDetails || {});
-      renderComments(comments.comments || []);
-      setupCommentForm(commitDetails.files || []);
+      if (data.commits.length === 0 && S.commits_page === 1) {
+        commitListEl.innerHTML = `<div class="empty-state">커밋이 없습니다.</div>`;
+      } else {
+        const frag = document.createDocumentFragment();
+        data.commits.forEach(c => {
+          const itemEl = el('div', 'list-item commit-item');
+          itemEl.dataset.sha = c.sha;
+          itemEl.onclick = () => selectCommit(c.sha);
+          
+          let indicatorsHtml;
+          if (c.securityStatus) {
+            S.securityByCommit[c.sha] = c.securityStatus;
+            const s = c.securityStatus;
+            indicatorsHtml = `<span class="indicator status-${s?.defender?.status||'unknown'}"></span><span class="indicator status-${s?.sentinel?.status||'unknown'}"></span><span class="indicator status-${s?.bricks?.status||'unknown'}"></span>`;
+          } else {
+            indicatorsHtml = `<div class="spinner"></div>`;
+            analyzeCommitInBackground(c.sha);
+          }
 
-    } catch (error) {
-      console.error('Error loading page data:', error);
-      document.body.innerHTML = `<h1>오류 발생</h1><p>페이지 데이터를 불러오는 데 실패했습니다: ${esc(error.message)}</p>`;
+          itemEl.innerHTML = `
+            <div class="commit-info">
+                <span class="commit-message">${esc(c.message)}</span>
+                <span class="commit-author">${esc(c.author)} · ${ago(c.date)}</span>
+            </div>
+            <div class="commit-indicators" data-role="indicators">${indicatorsHtml}</div>
+            <span class="commit-sha">${esc(c.sha.slice(0, 7))}</span>`;
+          frag.appendChild(itemEl);
+        });
+        commitListEl.appendChild(frag);
+      }
+      S.commits_has_more = data.has_more;
+      S.commits_page++;
+    } catch (e) {
+      commitListEl.innerHTML = `<div class="detail-error">커밋 로딩 실패: ${e.message}</div>`;
+    } finally {
+      S.commits_loading = false;
     }
   }
 
-  document.addEventListener('DOMContentLoaded', loadAll);
+  async function analyzeCommitInBackground(sha) {
+    try {
+        const status = await api('/api/security_status', { query: { repo: S.repo, commit: sha, branch: S.branch }});
+        S.securityByCommit[sha] = status;
+        updateCommitIndicators(sha, status);
+    } catch (error) {
+        console.error(`Analysis failed for ${sha}:`, error);
+        updateCommitIndicators(sha, { defender:{status:'unknown'}, sentinel:{status:'unknown'}, bricks:{status:'unknown'} });
+    }
+  }
+
+  async function selectCommit(sha) {
+    if (S.selCommit?.sha === sha) return;
+    S.selCommit = { repo: S.repo, branch: S.branch, sha };
+    highlightSelection();
+    updateSecuritySummary('loading');
+    detailViewCard.style.display = 'block';
+    detailContainerEl.innerHTML = '<div class="empty-state">커밋 상세 정보 로딩 중...</div>';
+    
+    try {
+      const security = S.securityByCommit[sha] || await api('/api/security_status', { query: { repo: S.repo, commit: sha, branch: S.branch }});
+      S.securityByCommit[sha] = security;
+      
+      const details = await api('/api/commit_detail', { query: { repo: S.repo, sha } });
+      renderCommitDetails(details);
+      updateSecuritySummary(security);
+      updateCommitIndicators(sha, security);
+    } catch (e) {
+      detailContainerEl.innerHTML = `<div class="detail-error">상세 정보를 불러오지 못했습니다: ${esc(e.message)}</div>`;
+      updateSecuritySummary('unknown');
+    }
+  }
+  
+  function resetDetailView() {
+    detailViewCard.style.display = 'none';
+    detailContainerEl.innerHTML = '';
+    updateSecuritySummary('unknown');
+  }
+  
+  function renderCommitDetails(details) {
+    const files = details.files || [];
+    const fileList = files.length ? files.map(file => `<li>${esc(file.filename)} <span class="commit-meta">(+${file.additions} -${file.deletions})</span></li>`).join('') : '<li>변경된 파일 없음</li>';
+    detailContainerEl.innerHTML = `<h4>${esc((details.message || '').split('\n')[0])}</h4><p class="commit-meta">${esc(details.author)} · ${ago(details.date)}</p><hr><p><b>변경 파일:</b></p><ul>${fileList}</ul>`;
+  }
+  
+  function highlightSelection() {
+    $$('.list-item.selected').forEach(el => el.classList.remove('selected'));
+    if (S.repo) $(`.repo-item[data-repo="${S.repo}"]`)?.classList.add('selected');
+    if (S.branch) $(`.branch-item[data-branch="${S.branch}"]`)?.classList.add('selected');
+    if (S.selCommit) $(`.commit-item[data-sha="${S.selCommit.sha}"]`)?.classList.add('selected');
+  }
+  
+  function updateCommitIndicators(sha, status) {
+    const commitEl = $(`.commit-item[data-sha="${sha}"]`);
+    if (!commitEl) return;
+    const indicatorsContainer = commitEl.querySelector('[data-role="indicators"]');
+    if (!indicatorsContainer) return;
+    indicatorsContainer.innerHTML = `<span class="indicator status-${status?.defender?.status||'unknown'}"></span><span class="indicator status-${status?.sentinel?.status||'unknown'}"></span><span class="indicator status-${status?.bricks?.status||'unknown'}"></span>`;
+  }
+
+  function updateSecuritySummary(data) {
+    btnDetails.disabled = true;
+    if (data === 'loading' || data === 'unknown' || !data) {
+      securityCard.className = 'card status-unknown';
+      statusIcon.innerHTML = ICONS.unknown;
+      summaryTitle.textContent = data === 'loading' ? '분석 중...' : '보안 요약';
+      summaryText.innerHTML = data === 'loading' ? '잠시만 기다려주세요.' : '분석할 커밋을 선택하세요.';
+      return;
+    }
+    const statuses = [data.defender?.status, data.sentinel?.status, data.bricks?.status].filter(Boolean);
+    const overall = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
+    securityCard.className = `card status-${overall}`;
+    statusIcon.innerHTML = ICONS[overall];
+    summaryTitle.textContent = { good: '안전', warn: '주의', bad: '위험' }[overall];
+    const issues = statuses.filter(s => s === 'bad' || s === 'warn').length;
+    summaryText.textContent = issues > 0 ? `${issues}건의 잠재적 이슈 발견` : '모든 점검 통과';
+    btnDetails.disabled = false;
+  }
+  
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s).replace(/[&<>"']/g, (c) => map[c] || c);
+  }
+  function ago(d) {
+    const seconds = (Date.now() - new Date(d).getTime()) / 1000;
+    if (seconds < 60) return '방금 전';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+    return `${Math.floor(seconds / 86400)}일 전`;
+  }
+  function el(tag, cls, content) {
+    const e = document.createElement(tag);
+    if(cls) e.className = cls;
+    if(content) e.textContent = content;
+    return e;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (loadCache()) {
+      renderRepos();
+      setInterval(silentSync, 60000); 
+    } else {
+      window.location.href = '/loading';
+    }
+  });
+  
+  $('#repoFilter').addEventListener('input', renderRepos);
+  $('#btnSync').addEventListener('click', () => {
+    sessionStorage.removeItem(CACHE_KEY);
+    window.location.href = '/loading';
+  });
+  $('#btn-view-details').addEventListener('click', () => {
+    if (S.selCommit) {
+      const { repo, sha, branch } = S.selCommit;
+      window.location.href = `/details?repo=${repo}&sha=${sha}&branch=${branch || ''}`;
+    }
+  });
+
+  commitListEl.addEventListener('scroll', () => {
+    if (S.repo && S.branch && commitListEl.scrollTop + commitListEl.clientHeight >= commitListEl.scrollHeight - 100) {
+      loadMoreCommits();
+    }
+  });
 })();
 </script>
 </body>
