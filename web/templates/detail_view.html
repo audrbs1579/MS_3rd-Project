@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <title>Detail Security Analysis - {{ commit_sha[:7] }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- NEW: 방패 모양 favicon 추가 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
     <style>
         :root{
             --bg: #f9fafb; --panel: #ffffff; --border: #e5e7eb; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
@@ -11,6 +13,8 @@
             --status-good-bg: #dcfce7; --status-good-text: #166534;
             --status-warn-bg: #fef9c3; --status-warn-text: #854d0e;
             --status-bad-bg: #fee2e2; --status-bad-text: #991b1b;
+            --status-unknown-bg: #f3f4f6; --status-unknown-text: #4b5563;
+            --code-bg: #0f172a; --code-text: #e2e8f0; --code-muted: #94a3b8;
             --progress-bar: #4f46e5;
         }
         body { margin: 0; background-color: var(--bg); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -27,10 +31,30 @@
         .status-warn { background-color: var(--status-warn-bg); color: var(--status-warn-text); }
         .status-bad { background-color: var(--status-bad-bg); color: var(--status-bad-text); }
         .info-list { margin: 0; padding-left: 18px; }
+        .card-divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+        .review-body { display: flex; flex-direction: column; gap: 18px; }
+        .review-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 14px; }
+        .review-meta .meta-item { background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .review-meta .meta-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
+        .review-meta .meta-value { margin-top: 4px; font-weight: 600; }
         .review-meta .meta-value.monospace { word-break: break-all; }
         .additions { color: var(--status-good-text); font-weight: bold; }
         .deletions { color: var(--status-bad-text); font-weight: bold; }
-        
+        .review-files { display: flex; flex-direction: column; gap: 10px; }
+        .review-file { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f9fafb; }
+        .review-file .file-path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
+        .review-file .file-stats { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .review-file .file-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .review-file .file-actions button { font-size: 12px; padding: 4px 8px; }
+        .review-panel { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+        .comments-list { display: flex; flex-direction: column; gap: 10px; max-height: 260px; overflow: auto; padding: 4px; background: #f9fafb; border-radius: 8px;}
+        .comment-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel); }
+        .review-form { display: flex; flex-direction: column; gap: 10px; }
+        .review-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+        .review-form input, .review-form select, .review-form textarea { padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--panel); }
+        .review-form textarea { min-height: 80px; resize: vertical; }
+        .form-actions { display: flex; align-items: center; gap: 8px; }
+
         /* --- BRICKS 카드 UI 개선 --- */
         .bricks-card-content { display: flex; flex-direction: column; gap: 16px; }
         .bricks-graph-section { padding-bottom: 16px; }
@@ -39,14 +63,12 @@
         .reason-list { list-style-type: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
         .reason-list li { font-size: 0.9rem; }
         .progress-wrapper { position: relative; padding-top: 24px; margin-top: 12px; }
-        .progress-bar-container { height: 24px; border-radius: 12px; background-color: #e5e7eb; overflow: hidden; }
-        .progress-bar { height: 100%; background-color: var(--progress-bar); border-radius: 12px; transition: width 0.3s; }
-        .progress-bar-label { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: var(--text-main); text-shadow: 0 0 2px rgba(255,255,255,0.7); }
+        .progress-bar-container { position: relative; height: 24px; border-radius: 12px; background-color: #e5e7eb; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: var(--progress-bar); border-radius: 12px; transition: width 0.3s; display: flex; align-items: center; justify-content: center; }
+        .progress-bar-label { color: white; font-size: 14px; font-weight: 600; text-shadow: 0 0 2px rgba(0,0,0,0.5); }
         .progress-bar-indicator { position: absolute; top: 0; height: 100%; width: 2px; background-color: #ef4444; transition: left 0.3s; }
         .threshold-marker { position: absolute; top: 0; transform: translateX(-50%); font-size: 12px; font-weight: 600; color: var(--status-bad-text); white-space: nowrap; }
         .threshold-marker::after { content: '▼'; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 16px; line-height: 0.8; }
-        
-        /* ... (다른 모든 CSS는 기존과 동일) ... */
     </style>
 </head>
 <body>
@@ -56,7 +78,7 @@
             <p>Commit: {{ repo_name }}@{{ commit_sha }}</p>
         </header>
 
-        <section class="grid summary-grid">
+        <section class="summary-grid">
             <div id="identityCard" class="card status-unknown">
                 <div class="card-header"><h2>계정 신원 검증</h2></div>
                 <div class="card-body" id="identityBody"><p>로딩 중...</p></div>
@@ -72,7 +94,18 @@
         </section>
 
         <section id="commitReviewCard" class="card">
-            <!-- ... (커밋 상세 및 코드 리뷰 HTML 구조는 기존과 동일) ... -->
+            <div class="card-header"><h2>커밋 상세 & 코드 리뷰</h2></div>
+            <div class="card-body review-body">
+                <div id="commitMeta" class="review-meta"></div>
+                <div id="commitFiles" class="review-files"></div>
+                <div class="review-panel">
+                    <h3>대화형 코드 리뷰</h3>
+                    <div id="commentsList" class="comments-list"><div class="empty-state">댓글을 불러오는 중...</div></div>
+                    <form id="commentForm" class="review-form">
+                        <!-- JS에 의해 채워짐 -->
+                    </form>
+                </div>
+            </div>
         </section>
     </div>
 
@@ -85,31 +118,61 @@
   const identityBody = document.getElementById('identityBody');
   const defenderBody = document.getElementById('defenderBody');
   const bricksBody = document.getElementById('bricksBody');
+  const commitMetaEl = document.getElementById('commitMeta');
+  const commitFilesEl = document.getElementById('commitFiles');
+  const commentsListEl = document.getElementById('commentsList');
+  const commentFormEl = document.getElementById('commentForm');
+  
+  let cachedComments = [];
 
   function esc(s) { return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c); }
   function ago(d) { const seconds = (Date.now() - new Date(d).getTime()) / 1000; if (seconds < 60) return '방금 전'; if (seconds < 3600) return `${Math.floor(seconds/60)}분 전`; if (seconds < 86400) return `${Math.floor(seconds/3600)}시간 전`; return `${Math.floor(seconds/86400)}일 전`; }
-  async function api(path, options={}) { const res = await fetch(`/api${path}?${new URLSearchParams(options.query || {})}`); if(!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); }
-  function setCardStatus(cardEl, status) { cardEl.className = `card status-${status || 'unknown'}`; }
+  async function api(path, options={}) {
+      const method = (options.method || 'GET').toUpperCase();
+      let url = `/api${path}`;
+      const init = { method, headers: { 'Accept': 'application/json', ...options.headers } };
+      if (method === 'GET' && options.query) {
+          url += `?${new URLSearchParams(options.query)}`;
+      } else if (method !== 'GET') {
+          init.body = JSON.stringify(options.body);
+          init.headers['Content-Type'] = 'application/json';
+      }
+      const res = await fetch(url, init);
+      if(!res.ok) {
+          const errData = await res.json().catch(() => ({ error: `HTTP error ${res.status}` }));
+          throw new Error(errData.error || `HTTP error ${res.status}`);
+      }
+      return res.json();
+  }
+  function setCardStatus(cardId, status) { 
+      const el = document.getElementById(cardId);
+      if (el) el.className = `card status-${status || 'unknown'}`; 
+  }
 
   function renderIdentityDetails(data) {
-    setCardStatus(document.getElementById('identityCard'), data?.status);
-    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.').replace(/\n+/g, '<br>');
+    setCardStatus('identityCard', data?.status);
+    const summary = esc(data?.summary || '신원 정보를 불러오지 못했습니다.');
     const details = (data?.details || []).map(line => `<li>${esc(line)}</li>`).join('');
-    identityBody.innerHTML = `<p>${summary}</p>${details ? `<hr class="card-divider"><ul class="info-list">${details}</ul>` : ''}`;
+    identityBody.innerHTML = `<p>${summary}</p>${details ? `<div class="card-divider"></div><ul class="info-list">${details}</ul>` : ''}`;
   }
 
   function renderDefenderDetails(data) {
-    setCardStatus(document.getElementById('defenderCard'), data?.status);
+    setCardStatus('defenderCard', data?.status);
     const summary = esc(data?.summary || 'CodeQL 분석 결과가 없습니다.');
-    const alerts = (data?.alerts || []).map(alert => `<article class="alert-item">... (이전과 동일한 alert 렌더링 로직) ...</article>`).join('');
-    defenderBody.innerHTML = `<p>${summary}</p>${alerts ? `<hr class="card-divider">${alerts}` : ''}`;
+    const alerts = (data?.alerts || []).map(alert => {
+        return `<article>
+            <h4>${esc(alert.rule_name)} [${esc(alert.severity)}]</h4>
+            <p>${esc(alert.description)}</p>
+            <p><small>${esc(alert.path)}:${alert.start_line}</small></p>
+        </article>`;
+    }).join('<div class="card-divider"></div>');
+    defenderBody.innerHTML = `<p>${summary}</p>${alerts ? `<div class="card-divider"></div>${alerts}` : ''}`;
   }
   
   function renderBricksDetails(bricks) {
-      setCardStatus(document.getElementById('bricksCard'), bricks?.status);
+      setCardStatus('bricksCard', bricks?.status);
       const score = bricks?.score;
       let html = '';
-
       if (score === null || score === undefined) {
           html = '<p>모델 상세 정보가 없습니다.</p>';
       } else {
@@ -126,8 +189,9 @@
                     <div class="progress-wrapper">
                         <div class="threshold-marker" style="left: ${thresholdPercent}%">${threshold.toFixed(2)}</div>
                         <div class="progress-bar-container">
-                            <div class="progress-bar" style="width: ${scorePercent}%"></div>
-                            <div class="progress-bar-label">${score.toFixed(2)}</div>
+                            <div class="progress-bar" style="width: ${scorePercent}%">
+                                <span class="progress-bar-label">${score.toFixed(2)}</span>
+                            </div>
                             <div class="progress-bar-indicator" style="left: ${thresholdPercent}%"></div>
                         </div>
                     </div>
@@ -141,34 +205,101 @@
       bricksBody.innerHTML = html;
   }
 
-  // (renderCommitReview 등 다른 렌더링 함수는 여기에 위치)
+  function renderCommitReview(details) {
+    const stats = details?.stats || {};
+    const additions_deletions_html = `<span class="additions">+${stats.additions || 0}</span> / <span class="deletions">-${stats.deletions || 0}</span>`;
+    commitMetaEl.innerHTML = `
+        <div class="meta-item"><div class="meta-label">커밋 메시지</div><div class="meta-value">${esc((details.message || '').split('\n')[0])}</div></div>
+        <div class="meta-item"><div class="meta-label">작성자</div><div class="meta-value">${esc(details.author || '알 수 없음')}</div></div>
+        <div class="meta-item"><div class="meta-label">추가/삭제</div><div class="meta-value">${additions_deletions_html}</div></div>
+        <div class="meta-item"><div class="meta-label">SHA</div><div class="meta-value monospace">${esc(sha)}</div></div>`;
+
+    const files = details?.files || [];
+    commitFilesEl.innerHTML = files.map(file => {
+        const statsText = `+${file.additions} / -${file.deletions}`;
+        return `<div class="review-file">
+            <div>
+                <div class="file-path">${esc(file.filename)}</div>
+                <div class="file-stats">${statsText}</div>
+            </div>
+            <div class="file-actions">
+                <button type="button" onclick="window.open('${esc(file.blob_url)}', '_blank')">GitHub</button>
+                <button type="button">VS Code</button>
+            </div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderComments(comments) {
+    if (!comments || comments.length === 0) {
+        commentsListEl.innerHTML = '<div class="empty-state">등록된 댓글이 없습니다.</div>';
+        return;
+    }
+    commentsListEl.innerHTML = comments.map(comment => {
+        const user = comment.user || {};
+        return `<div class="comment-card">
+            <p><strong>${esc(user.login)}</strong> <small>${ago(comment.created_at)}</small></p>
+            <p>${esc(comment.body).replace(/\n/g, '<br>')}</p>
+        </div>`;
+    }).join('');
+  }
+  
+  function setupCommentForm(files) {
+      commentFormEl.innerHTML = `
+        <div class="field"><label>파일 선택</label><select name="path"><option value="">커밋 전체</option>${files.map(f => `<option value="${esc(f.filename)}">${esc(f.filename)}</option>`).join('')}</select></div>
+        <div class="field"><label>라인 번호 (선택)</label><input type="number" name="line" min="1" /></div>
+        <div class="field"><label>댓글 내용</label><textarea name="body" required></textarea></div>
+        <div class="form-actions"><button type="submit">댓글 추가</button><span id="commentFormStatus"></span></div>`;
+
+      commentFormEl.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const statusEl = document.getElementById('commentFormStatus');
+          statusEl.textContent = '저장 중...';
+          const formData = new FormData(e.target);
+          const payload = { 
+              repo, sha, 
+              body: formData.get('body'), 
+              path: formData.get('path') || null, 
+              line: formData.get('line') ? parseInt(formData.get('line')) : null 
+          };
+          
+          try {
+              await api('/commit_comments', { method: 'POST', body: payload });
+              statusEl.textContent = '등록 완료!';
+              e.target.reset();
+              // 새 댓글을 포함하여 다시 로드
+              const updatedComments = await api('/commit_comments', { query: { repo, sha } });
+              renderComments(updatedComments.comments || []);
+          } catch (err) {
+              statusEl.textContent = `오류: ${err.message}`;
+          }
+      });
+  }
 
   async function loadAll() {
     try {
-      const securityParams = { repo, commit: sha };
-      if (branch) { securityParams.branch = branch; }
-      
-      const [securityStatus, commitDetails] = await Promise.all([
-        api('/security_status', { query: securityParams }),
-        api('/commit_detail', { query: { repo, sha } })
+      const [securityStatus, commitDetails, comments] = await Promise.all([
+        api('/security_status', { query: { repo, sha, branch } }),
+        api('/commit_detail', { query: { repo, sha } }),
+        api('/commit_comments', { query: { repo, sha } })
       ]);
 
       renderIdentityDetails(securityStatus.sentinel || {});
       renderDefenderDetails(securityStatus.defender || {});
       renderBricksDetails(securityStatus.bricks || {});
-      // renderCommitReview(commitDetails || {}, []); // 댓글 기능이 필요하면 활성화
+      renderCommitReview(commitDetails || {});
+      renderComments(comments.comments || []);
+      setupCommentForm(commitDetails.files || []);
+
     } catch (error) {
-      console.error('세부 정보를 불러오지 못했습니다:', error);
-      [identityBody, defenderBody, bricksBody].forEach(el => {
-          el.innerHTML = `<p>데이터 로딩 실패: ${esc(error.message)}</p>`;
-          setCardStatus(el.parentElement, 'bad');
-      });
+      console.error('Error loading page data:', error);
+      document.body.innerHTML = `<h1>오류 발생</h1><p>페이지 데이터를 불러오는 데 실패했습니다: ${esc(error.message)}</p>`;
     }
   }
 
   document.addEventListener('DOMContentLoaded', loadAll);
-
 })();
 </script>
 </body>
 </html>
+
