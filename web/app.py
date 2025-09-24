@@ -1149,7 +1149,6 @@ def api_security_status():
     repo = request.args.get("repo")
     commit_sha = request.args.get("commit") or request.args.get("sha")
     branch = request.args.get("branch")
-    # NEW: 파티션 키로 사용할 userId를 세션에서 가져옵니다.
     user_id = session.get("user_login")
 
     if not repo or not commit_sha or not user_id:
@@ -1158,7 +1157,6 @@ def api_security_status():
         return jsonify({"error": "unauthorized"}), 401
 
     try:
-        # 1. commits 컨테이너에서 캐시된 결과 조회 (기존과 동일)
         cached_item = commits_container.read_item(item=commit_sha, partition_key=repo)
         if cached_item and cached_item.get("securityStatus"):
             log.info(f"Cache hit for {commit_sha} in Cosmos DB.")
@@ -1168,28 +1166,65 @@ def api_security_status():
     except Exception as e:
         log.warning(f"Cache read error for {commit_sha}, proceeding with live analysis: {e}")
 
-    # 2. 캐시 없으면 실시간 분석 수행 (기존과 동일)
+    live_result = None
     try:
         commit_data, _ = _gh_get(f"/repos/{repo}/commits/{commit_sha}")
-        # ... (CodeQL, Sentinel, Bricks 분석 로직은 기존과 동일)
-        # (설명을 위해 분석 로직 코드는 생략, 실제로는 이 부분에 분석 코드가 위치함)
-        identity_assessment = _evaluate_identity_risk(...)
-        defender = # ... CodeQL 분석 결과
-        bricks = # ... Databricks 분석 결과
         
+        author_email = (commit_data.get("commit", {}).get("author") or {}).get("email")
+        author_login = (commit_data.get("author") or {}).get("login")
+        identity_assessment = _evaluate_identity_risk(author_email, author_login, commit_data, repo_full_name=repo, current_commit_sha=commit_sha)
+
+        params = {"per_page": 100}
+        if branch:
+            params["ref"] = f"refs/heads/{branch}"
+        
+        alerts_data, _ = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)
+        alerts = alerts_data or []
+        commit_alerts = [a for a in alerts if (a.get('most_recent_instance') or {}).get('commit_sha') == commit_sha]
+        enriched_alerts = []
+        for alert in commit_alerts[:10]:
+            rule = alert.get('rule') or {}
+            most_recent = alert.get('most_recent_instance') or {}
+            location = most_recent.get('location') or {}
+            enriched_alerts.append({
+                'number': alert.get('number'), 'rule_id': rule.get('id'), 'rule_name': rule.get('name'),
+                'severity': rule.get('severity'), 'description': (most_recent.get('message') or {}).get('text'),
+                'path': location.get('path'), 'start_line': location.get('start_line'),
+                'html_url': alert.get('html_url')
+            })
+        high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
+        defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
+        defender = {'status': defender_status, 'summary': f"CodeQL 경고: {len(commit_alerts)}", 'alerts': enriched_alerts}
+
+        bricks = {'status': 'unknown', 'summary': 'BRICKS 분석 대기 중.', 'details': []}
+        bricks_features = _build_iforest_features_from_commit(repo, commit_sha, branch_name=branch, commit_data=commit_data)
+        if bricks_features:
+            result = _invoke_databricks_model(bricks_features)
+            if result is not None:
+                bricks = _bricks_postprocess(result)
+
         live_result = {'defender': defender, 'sentinel': identity_assessment, 'bricks': bricks}
-        
-    except Exception as e:
+
+        # commits 컨테이너에 결과 저장
+        try:
+            commit_doc = commits_container.read_item(item=commit_sha, partition_key=repo)
+        except exceptions.CosmosResourceNotFoundError:
+            commit_doc = { 'id': commit_sha, 'repoFullName': repo } # 기본 문서 생성
+        commit_doc['securityStatus'] = live_result
+        commits_container.upsert_item(commit_doc)
+
+    except requests.exceptions.HTTPError as e:
+        if e.response and e.response.status_code in [404, 403]:
+            # CodeQL 비활성화 등 일부 분석 실패 시에도 나머지 결과는 반환
+            live_result = live_result or {'defender': {'status': 'unknown', 'summary': '결과 없음'}, 'sentinel': {}, 'bricks': {}}
+            return jsonify(live_result)
+        log.exception(f"HTTP error during live analysis for {repo}@{commit_sha}")
+        return jsonify(error="보안 상태 분석 중 오류 발생"), 500
+    except Exception:
         log.exception(f"Failed to get live security status for {repo}@{commit_sha}")
         return jsonify(error="보안 상태를 불러오지 못했습니다."), 500
 
-    # 3. 분석 결과를 commits 컨테이너에 캐시로 저장 (기존과 동일)
-    try:
-        # ... (기존 commits 컨테이너 업데이트 로직) ...
-    except Exception as e:
-        log.warning(f"Failed to save security status to commits cache for {commit_sha}: {e}")
-
-    # --- NEW: 분석 결과에 이슈가 있으면 security_issues 컨테이너에 저장 ---
+    # security_issues 컨테이너에 이슈 저장
     try:
         statuses = [
             (live_result.get('defender') or {}).get('status', 'good'),
@@ -1198,24 +1233,20 @@ def api_security_status():
         ]
         failures = [s for s in statuses if s in ['warn', 'bad']]
         
-        if failures:  # 'warn' 또는 'bad'가 하나라도 있으면 저장
+        if failures:
             failure_count = len(failures)
             commit_author_info = commit_data.get("commit", {}).get("author", {})
             commit_date_str = commit_author_info.get("date")
 
             issue_doc = {
-                'id': commit_sha,
-                'userId': user_id,  # 파티션 키
-                'repoFullName': repo,
-                'author': commit_author_info.get("name"),
-                'date': commit_date_str,
+                'id': commit_sha, 'userId': user_id, 'repoFullName': repo,
+                'author': commit_author_info.get("name"), 'date': commit_date_str,
                 'message': (commit_data.get("commit", {}).get("message") or "").split("\n")[0],
-                'failureCount': failure_count,
-                'securityStatus': live_result
+                'failureCount': failure_count, 'securityStatus': live_result
             }
             issues_container.upsert_item(issue_doc)
-            log.info(f"Logged security issue for {commit_sha} to issues container.")
-
+            log.info(f"Logged security issue for {commit_sha}.")
+            
     except Exception as e:
         log.warning(f"Failed to log security issue for {commit_sha}: {e}")
 
