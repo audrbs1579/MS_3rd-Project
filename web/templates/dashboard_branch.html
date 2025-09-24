@@ -232,18 +232,18 @@
     S.repos
       .filter(r => (r.full_name || '').toLowerCase().includes(q))
       .forEach(r => {
-        const el = el('div', 'list-item repo-item');
-        el.dataset.repo = r.full_name;
-        el.onclick = () => selectRepo(r.full_name);
-        el.innerHTML = `
+        const itemEl = el('div', 'list-item repo-item'); // 변수명을 'el'에서 'itemEl'로 변경
+        itemEl.dataset.repo = r.full_name;
+        itemEl.onclick = () => selectRepo(r.full_name);
+        itemEl.innerHTML = `
           <span class="repo-name">${esc(r.full_name)}</span>
           <span class="repo-meta">${r.pushed_at ? ago(new Date(r.pushed_at)) : ''}</span>`;
-        frag.appendChild(el);
+        frag.appendChild(itemEl); // 변경된 변수명 적용
       });
     repoListEl.innerHTML = '';
     repoListEl.appendChild(frag.children.length ? frag : el('div', 'empty-state', '결과 없음'));
     highlightSelection();
-  }
+}
 
   function renderBranches() {
     const list = S.branches[S.repo] || [];
@@ -254,13 +254,13 @@
     }
     const frag = document.createDocumentFragment();
     list.forEach(b => {
-      const el = el('div', 'list-item branch-item');
-      el.dataset.branch = b.name;
-      el.onclick = () => selectBranch(b.name);
-      el.innerHTML = `
+      const itemEl = el('div', 'list-item branch-item'); // 변수명을 'el'에서 'itemEl'로 변경
+      itemEl.dataset.branch = b.name;
+      itemEl.onclick = () => selectBranch(b.name);
+      itemEl.innerHTML = `
         <span class="branch-name">${esc(b.name)}</span>
         <span class="branch-meta">${esc((b.sha || '').slice(0, 7))}</span>`;
-      frag.appendChild(el);
+      frag.appendChild(itemEl); // 변경된 변수명 적용
     });
     branchListEl.appendChild(frag);
     highlightSelection();
@@ -276,10 +276,10 @@
     }
     const frag = document.createDocumentFragment();
     list.forEach(c => {
-      const el = el('div', 'list-item commit-item');
-      el.dataset.sha = c.sha;
-      el.onclick = () => selectCommit(c.sha);
-      el.innerHTML = `
+      const itemEl = el('div', 'list-item commit-item'); // 변수명을 'el'에서 'itemEl'로 변경
+      itemEl.dataset.sha = c.sha;
+      itemEl.onclick = () => selectCommit(c.sha);
+      itemEl.innerHTML = `
         <div class="commit-info">
             <span class="commit-message">${esc(c.message)}</span>
             <span class="commit-author">${esc(c.author)} · ${ago(c.date)}</span>
@@ -288,7 +288,7 @@
             <span class="indicator" title="CodeQL"></span><span class="indicator" title="계정"></span><span class="indicator" title="BRICKS"></span>
         </div>
         <span class="commit-sha">${esc(c.sha.slice(0, 7))}</span>`;
-      frag.appendChild(el);
+      frag.appendChild(itemEl); // 변경된 변수명 적용
       fetchAndRenderCommitStatus(S.repo, S.branch, c.sha);
     });
     commitListEl.appendChild(frag);
