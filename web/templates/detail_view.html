@@ -4,7 +4,6 @@
     <meta charset="utf-8" />
     <title>Detail Security Analysis - {{ commit_sha[:7] }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- NEW: 방패 모양 favicon 추가 -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
     <style>
         :root{
@@ -55,7 +54,6 @@
         .review-form textarea { min-height: 80px; resize: vertical; }
         .form-actions { display: flex; align-items: center; gap: 8px; }
 
-        /* --- BRICKS 카드 UI 개선 --- */
         .bricks-card-content { display: flex; flex-direction: column; gap: 16px; }
         .bricks-graph-section { padding-bottom: 16px; }
         .bricks-reason-section { padding-top: 16px; border-top: 1px solid var(--border); }
@@ -101,9 +99,7 @@
                 <div class="review-panel">
                     <h3>대화형 코드 리뷰</h3>
                     <div id="commentsList" class="comments-list"><div class="empty-state">댓글을 불러오는 중...</div></div>
-                    <form id="commentForm" class="review-form">
-                        <!-- JS에 의해 채워짐 -->
-                    </form>
+                    <form id="commentForm" class="review-form"></form>
                 </div>
             </div>
         </section>
@@ -126,7 +122,29 @@
   let cachedComments = [];
 
   function esc(s) { return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c); }
-  function ago(d) { const seconds = (Date.now() - new Date(d).getTime()) / 1000; if (seconds < 60) return '방금 전'; if (seconds < 3600) return `${Math.floor(seconds/60)}분 전`; if (seconds < 86400) return `${Math.floor(seconds/3600)}시간 전`; return `${Math.floor(seconds/86400)}일 전`; }
+  
+  // --- MODIFIED: ago 함수 수정 ---
+  function ago(isoString) {
+      if (!isoString) return '';
+      const reference = new Date(isoString);
+      const seconds = (Date.now() - reference.getTime()) / 1000;
+      
+      let relativeTime;
+      if (seconds < 60) relativeTime = '방금 전';
+      else if (seconds < 3600) relativeTime = `${Math.floor(seconds / 60)}분 전`;
+      else if (seconds < 86400) relativeTime = `${Math.floor(seconds / 3600)}시간 전`;
+      else relativeTime = `${Math.floor(seconds / 86400)}일 전`;
+
+      // 브라우저의 로컬 시간대(KST)로 전체 날짜/시간 포맷팅
+      const fullDateTime = reference.toLocaleString('ko-KR', {
+          year: 'numeric', month: 'long', day: 'numeric',
+          hour: 'numeric', minute: '2-digit', hour12: false
+      });
+      
+      // title 속성에 전체 시간을 넣은 time 태그 반환
+      return `<time datetime="${isoString}" title="${fullDateTime}">${relativeTime}</time>`;
+  }
+
   async function api(path, options={}) {
       const method = (options.method || 'GET').toUpperCase();
       let url = `/api${path}`;
@@ -267,7 +285,6 @@
               await api('/commit_comments', { method: 'POST', body: payload });
               statusEl.textContent = '등록 완료!';
               e.target.reset();
-              // 새 댓글을 포함하여 다시 로드
               const updatedComments = await api('/commit_comments', { query: { repo, sha } });
               renderComments(updatedComments.comments || []);
           } catch (err) {
@@ -302,4 +319,3 @@
 </script>
 </body>
 </html>
-
