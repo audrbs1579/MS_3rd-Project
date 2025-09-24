@@ -13,8 +13,25 @@ from flask import (
     url_for, jsonify, Response
 )
 
+from azure.cosmos import CosmosClient, PartitionKey, exceptions
+
 # ---------- 기본 설정 ----------
 COMMITS_PER_BRANCH = 5
+
+# --- NEW: Cosmos DB 설정 ---
+COSMOS_CONNECTION_STRING = os.environ.get("COSMOS_DB_CONNECTION_STRING")
+COSMOS_DATABASE_NAME = "ProjectGuardianDB"
+COSMOS_REPOS_CONTAINER = "repositories"
+COSMOS_COMMITS_CONTAINER = "commits"
+
+# Cosmos DB 클라이언트 초기화
+cosmos_client = CosmosClient.from_connection_string(COSMOS_CONNECTION_STRING)
+database_client = cosmos_client.get_database_client(COSMOS_DATABASE_NAME)
+repos_container = database_client.get_container_client(COSMOS_REPOS_CONTAINER)
+commits_container = database_client.get_container_client(COSMOS_COMMITS_CONTAINER)
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("web.app")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
@@ -708,34 +725,69 @@ def healthz():
 def get_initial_data():
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
-    repos, _ = _gh_get("/user/repos", params={"per_page": 100, "sort": "pushed"})
-    repos_list = [{"full_name": r.get("full_name"), "name": r.get("name"), "pushed_at": r.get("pushed_at")} for r in (repos or [])]
-    branches_map = {}; commits_map = {}
-    for repo in repos_list:
-        repo_name = repo['full_name']
-        branches_data, _ = _gh_get(f"/repos/{repo_name}/branches", params={"per_page": 100})
-        branch_list = []
-        for b in (branches_data or []):
-            sha = (b.get("commit") or {}).get("sha")
-            try:
-                commit_data, _ = _gh_get(f"/repos/{repo_name}/commits/{sha}")
-                commit_date = (commit_data.get("commit", {}).get("author") or {}).get("date")
-                branch_list.append({"name": b.get("name"), "sha": sha, "last_commit_date": commit_date})
-            except requests.exceptions.RequestException:
-                branch_list.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
-        branches_map[repo_name] = branch_list
-        for branch_info in branch_list:
-            branch_name = branch_info['name']
-            commits_data, _ = _gh_get(f"/repos/{repo_name}/commits", params={"sha": branch_name, "per_page": COMMITS_PER_BRANCH})
-            key = f"{repo_name}|{branch_name}"
-            pick = lambda c: {
-                "sha": c.get("sha"),
-                "message": (c.get("commit", {}).get("message") or "").split("\n")[0],
-                "author": (c.get("commit", {}).get("author") or {}).get("name"),
-                "date": (c.get("commit", {}).get("author") or {}).get("date")
-            }
-            commits_map[key] = [pick(c) for c in (commits_data or [])]
-    return jsonify({"repos": repos_list, "branches": branches_map, "commits": commits_map, "timestamp": datetime.utcnow().isoformat()})
+    
+    user_login = session.get("user_login")
+    if not user_login:
+        return jsonify({"error": "user not found in session"}), 401
+
+    log.info(f"Fetching initial data for {user_login} from Cosmos DB")
+    try:
+        # 1. Cosmos DB에서 해당 유저의 모든 저장소 정보 조회
+        repo_query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.pushed_at DESC"
+        repo_params = [{"name": "@userId", "value": user_login}]
+        
+        repos_list_cosmos = list(repos_container.query_items(
+            query=repo_query, parameters=repo_params, enable_cross_partition_query=False
+        ))
+        
+        repos_list = [
+            {"full_name": r.get("id"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")}
+            for r in repos_list_cosmos
+        ]
+        
+        branches_map = {r["id"]: r.get("branches", []) for r in repos_list_cosmos}
+        
+        # 2. 각 브랜치의 최신 커밋 5개를 Cosmos DB에서 조회
+        commits_map = {}
+        for repo_name, branches in branches_map.items():
+            for branch in branches:
+                branch_name = branch.get("name")
+                commit_query = "SELECT TOP @limit * FROM c WHERE c.repoFullName = @repo AND c.branch = @branch ORDER BY c.date DESC"
+                commit_params = [
+                    {"name": "@limit", "value": COMMITS_PER_BRANCH},
+                    {"name": "@repo", "value": repo_name},
+                    {"name": "@branch", "value": branch_name}
+                ]
+                
+                branch_commits = list(commits_container.query_items(
+                    query=commit_query, parameters=commit_params, enable_cross_partition_query=False
+                ))
+                
+                key = f"{repo_name}|{branch_name}"
+                commits_map[key] = [
+                    {
+                        "sha": c.get("sha"),
+                        "message": c.get("message"),
+                        "author": c.get("author"),
+                        "date": c.get("date")
+                    } for c in branch_commits
+                ]
+
+        return jsonify({
+            "repos": repos_list,
+            "branches": branches_map,
+            "commits": commits_map,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+    except exceptions.CosmosResourceNotFoundError:
+        log.warning(f"Cosmos DB container not found for user {user_login}")
+        return jsonify({"repos": [], "branches": {}, "commits": {}, "timestamp": datetime.utcnow().isoformat()})
+    except Exception as e:
+        log.exception(f"Failed to get initial data from Cosmos DB for {user_login}")
+        return jsonify({"error": f"Failed to fetch data from Cosmos DB: {str(e)}"}), 500
+
+
 
 @app.get("/api/my_repos")
 def api_my_repos():
@@ -987,30 +1039,42 @@ def api_security_status():
     repo = request.args.get("repo")
     commit_sha = request.args.get("commit") or request.args.get("sha")
     branch = request.args.get("branch")
+
     if not repo or not commit_sha:
         return jsonify({"error": "repo and commit required"}), 400
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
 
-    # 커밋 기본 정보
-    commit_data = None
     try:
+        # 1. Cosmos DB에서 캐시된 결과 조회
+        cached_item = commits_container.read_item(item=commit_sha, partition_key=repo)
+        if cached_item and cached_item.get("securityStatus"):
+            log.info(f"Security status for {commit_sha} found in Cosmos DB cache.")
+            return jsonify(cached_item["securityStatus"])
+    except exceptions.CosmosResourceNotFoundError:
+        log.info(f"No cache entry for {commit_sha} in Cosmos DB. Performing live analysis.")
+    except Exception as e:
+        log.warning(f"Error reading from Cosmos DB cache, proceeding with live analysis: {e}")
+
+    # 2. 캐시 없으면 실시간 분석 수행
+    log.info(f"Performing live security analysis for {commit_sha}.")
+    
+    try:
+        # 커밋 기본 정보 가져오기
         commit_data, _ = _gh_get(f"/repos/{repo}/commits/{commit_sha}")
-    except requests.exceptions.RequestException as e:
-        log.warning(f"Failed to fetch commit {repo}@{commit_sha}: {e}")
 
-    author_email = (commit_data.get("author") or {}).get("email") or (commit_data.get("commit", {}).get("author") or {}).get("email")
-    author_login = (commit_data.get("author") or {}).get("login") or (commit_data.get("committer") or {}).get("login")
-    identity_assessment = _evaluate_identity_risk(author_email, author_login, commit_data, repo_full_name=repo, current_commit_sha=commit_sha)
+        # Sentinel (계정 신원) 분석
+        author_email = (commit_data.get("author") or {}).get("email") or (commit_data.get("commit", {}).get("author") or {}).get("email")
+        author_login = (commit_data.get("author") or {}).get("login") or (commit_data.get("committer") or {}).get("login")
+        identity_assessment = _evaluate_identity_risk(author_email, author_login, commit_data, repo_full_name=repo, current_commit_sha=commit_sha)
 
-    # Defender(CodeQL) 알림
-    params = {"per_page": 100}
-    if branch:
-        params["ref"] = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+        # Defender (CodeQL) 분석
+        params = {"per_page": 100}
+        if branch:
+            params["ref"] = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
 
-    try:
-        alerts, _ = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)
-        alerts = alerts or []
+        alerts_data, _ = _gh_get(f"/repos/{repo}/code-scanning/alerts", params=params)
+        alerts = alerts_data or []
         commit_alerts = [a for a in alerts if (a.get('most_recent_instance') or {}).get('commit_sha') == commit_sha]
         enriched_alerts = []
         for alert in commit_alerts[:10]:
@@ -1018,42 +1082,62 @@ def api_security_status():
             most_recent = alert.get('most_recent_instance') or {}
             location = most_recent.get('location') or {}
             enriched_alerts.append({
-                'number': alert.get('number'),
-                'rule_id': rule.get('id'), 'rule_name': rule.get('name'),
-                'severity': rule.get('severity'),
-                'description': (most_recent.get('message') or {}).get('text'),
-                'path': location.get('path'),
-                'start_line': location.get('start_line'),
-                'end_line': location.get('end_line'),
+                'number': alert.get('number'), 'rule_id': rule.get('id'), 'rule_name': rule.get('name'),
+                'severity': rule.get('severity'), 'description': (most_recent.get('message') or {}).get('text'),
+                'path': location.get('path'), 'start_line': location.get('start_line'), 'end_line': location.get('end_line'),
                 'html_url': alert.get('html_url'),
                 'code_excerpt': _get_code_excerpt(repo, commit_sha, location.get('path'), location.get('start_line'), location.get('end_line'))
             })
         high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
         defender_status = 'bad' if high_alerts else 'warn' if commit_alerts else 'good'
-        defender_summary = f"CodeQL 경고: {len(commit_alerts)}"
-        defender = {'status': defender_status, 'summary': defender_summary, 'alerts': enriched_alerts}
+        defender = {'status': defender_status, 'summary': f"CodeQL 경고: {len(commit_alerts)}", 'alerts': enriched_alerts}
 
-        # Bricks(iForest) 분석
-        bricks = {'status': 'unknown', 'summary': 'BRICKS 이상 탐지 분석 대기 중.', 'details': []}
+        # Bricks (iForest) 분석
+        bricks = {'status': 'unknown', 'summary': 'BRICKS 분석 대기 중.', 'details': []}
         bricks_features = _build_iforest_features_from_commit(repo, commit_sha, branch_name=branch, commit_data=commit_data)
         if bricks_features:
             result = _invoke_databricks_model(bricks_features)
             if result is not None:
                 bricks = _bricks_postprocess(result)
 
-        return jsonify({'defender': defender, 'sentinel': identity_assessment, 'bricks': bricks})
-
+        live_result = {'defender': defender, 'sentinel': identity_assessment, 'bricks': bricks}
+        
     except requests.exceptions.HTTPError as e:
-        if e.response is not None and e.response.status_code in [404, 403]:
-            return jsonify({
+        if e.response and e.response.status_code in [404, 403]: # CodeQL이 활성화되지 않은 경우 등
+             return jsonify({
                 'defender': {'status': 'unknown', 'summary': '결과 없음', 'alerts': []},
                 'sentinel': identity_assessment,
-                'bricks': {'status': 'unknown', 'summary': '분석 결과 없음', 'details': []}
+                'bricks': bricks
             })
-        raise
-    except Exception:
-        log.exception(f"Failed to get security status for {repo}@{commit_sha}")
+        log.exception(f"HTTP error during live analysis for {repo}@{commit_sha}")
+        return jsonify(error="보안 상태 분석 중 오류 발생"), 500
+    except Exception as e:
+        log.exception(f"Failed to get live security status for {repo}@{commit_sha}")
         return jsonify(error="보안 상태를 불러오지 못했습니다."), 500
+
+    # 3. 분석 결과를 Cosmos DB에 저장 (Upsert)
+    try:
+        # commit_doc가 DB에 없을 수도 있으므로 새로 생성하거나 기존 문서를 가져와 업데이트
+        try:
+            commit_doc = commits_container.read_item(item=commit_sha, partition_key=repo)
+        except exceptions.CosmosResourceNotFoundError:
+             commit_doc = {
+                'id': commit_sha,
+                'sha': commit_sha,
+                'repoFullName': repo,
+                'branch': branch,
+                'message': (commit_data.get("commit", {}).get("message") or "").split("\n")[0],
+                'author': (commit_data.get("commit", {}).get("author") or {}).get("name"),
+                'date': (commit_data.get("commit", {}).get("author") or {}).get("date")
+            }
+
+        commit_doc['securityStatus'] = live_result
+        commits_container.upsert_item(commit_doc)
+        log.info(f"Saved live analysis result for {commit_sha} to Cosmos DB.")
+    except Exception as e:
+        log.warning(f"Failed to save security status to Cosmos DB for {commit_sha}: {e}")
+
+    return jsonify(live_result)
 
 # ---------- 에러 핸들러 및 실행 ----------
 @app.errorhandler(PermissionError)

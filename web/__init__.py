@@ -5,10 +5,34 @@ import hashlib
 import json
 import requests
 import azure.functions as func
+from azure.cosmos import CosmosClient, exceptions
 
+# --- Cosmos DB 및 GitHub PAT 설정 ---
+COSMOS_CONNECTION_STRING = os.environ.get("COSMOS_DB_CONNECTION_STRING")
 GH_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
-GH_PAT = os.environ.get("GITHUB_PAT", "")
+GH_PAT = os.environ.get("GITHUB_PAT")
 GITHUB_API_URL = "https://api.github.com"
+COSMOS_DATABASE_NAME = "ProjectGuardianDB"
+COSMOS_REPOS_CONTAINER = "repositories"
+COSMOS_COMMITS_CONTAINER = "commits"
+
+# Cosmos DB 클라이언트 초기화
+try:
+    cosmos_client = CosmosClient.from_connection_string(COSMOS_CONNECTION_STRING)
+    database_client = cosmos_client.get_database_client(COSMOS_DATABASE_NAME)
+    repos_container = database_client.get_container_client(COSMOS_REPOS_CONTAINER)
+    commits_container = database_client.get_container_client(COSMOS_COMMITS_CONTAINER)
+except Exception as e:
+    logging.error(f"Failed to initialize Cosmos DB client: {e}")
+    # 클라이언트 초기화 실패 시 함수가 실행되지 않도록 처리
+    raise
+
+# --- GitHub API 호출 헬퍼 ---
+def gh_api_get(url):
+    headers = {'Authorization': f'token {GH_PAT}', 'Accept': 'application/vnd.github+json'}
+    res = requests.get(url, headers=headers, timeout=20)
+    res.raise_for_status()
+    return res.json()
 
 def verify_signature(body: bytes, signature: str) -> bool:
     if not signature or not signature.startswith("sha256="):
@@ -32,50 +56,68 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         payload = json.loads(body)
-        repo_full_name = payload.get('repository', {}).get('full_name')
-        if not repo_full_name:
-            logging.error("Repository full_name not found in webhook payload.")
-            return func.HttpResponse("Repository name not found in webhook payload.", status_code=400)
+        repo_info = payload.get('repository', {})
+        repo_full_name = repo_info.get('full_name')
+        repo_owner_login = repo_info.get('owner', {}).get('login')
+        branch_ref = payload.get('ref', '')
 
-        headers = {'Authorization': f'token {GH_PAT}', 'Accept': 'application/vnd.github+json'}
-        sbom_url = f"{GITHUB_API_URL}/repos/{repo_full_name}/dependency-graph/sbom"
+        if not repo_full_name or not repo_owner_login or not branch_ref.startswith('refs/heads/'):
+            return func.HttpResponse("Invalid payload: missing repo_full_name, owner, or valid ref.", status_code=400)
+            
+        branch_name = branch_ref.split('/')[-1]
+
+        # --- 1. `repositories` 컨테이너 업데이트 ---
+        log.info(f"Updating repository info for {repo_full_name} in Cosmos DB.")
         
-        logging.info(f"Fetching SBOM for repository: {repo_full_name}")
-        sbom_res = requests.get(sbom_url, headers=headers, timeout=20) # Added timeout
-        sbom_res.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-
-        dependencies = []
-        sbom_data = sbom_res.json().get('sbom', {})
-        packages = sbom_data.get('packages', [])
+        branches_data = gh_api_get(f"{GITHUB_API_URL}/repos/{repo_full_name}/branches")
+        branches_list = [
+            {"name": b.get("name"), "sha": (b.get("commit") or {}).get("sha")}
+            for b in branches_data
+        ]
         
-        # [OPTIMIZED] Simplified repo_name extraction and comparison
-        repo_name_lower = repo_full_name.split('/')[1].lower() if '/' in repo_full_name else ''
-        
-        for pkg in packages:
-            name = pkg.get('name', '')
-            version = pkg.get('versionInfo', '')
-            # Exclude the repository's own package from the dependency list
-            if name and repo_name_lower not in name.lower():
-                dependencies.append(f"{name} {version}".strip())
+        repo_doc = {
+            'id': repo_full_name,
+            'userId': repo_owner_login,
+            'repoName': repo_info.get('name'),
+            'pushed_at': repo_info.get('pushed_at'),
+            'branches': branches_list
+        }
+        repos_container.upsert_item(repo_doc)
+        log.info(f"Successfully upserted repository: {repo_full_name}")
 
-        result_json = json.dumps({
-            "repository": repo_full_name,
-            "dependency_count": len(dependencies),
-            "dependencies": sorted(dependencies)
-        }, indent=2)
+        # --- 2. `commits` 컨테이너 업데이트 ---
+        commits_from_push = payload.get('commits', [])
+        if not commits_from_push:
+            log.info("No new commits in this push. Exiting.")
+            return func.HttpResponse("OK, no commits to process.", status_code=200)
 
-        return func.HttpResponse(result_json, mimetype="application/json", status_code=200)
+        log.info(f"Processing {len(commits_from_push)} commits for {repo_full_name} on branch {branch_name}.")
+        for commit in commits_from_push:
+            commit_sha = commit.get('id')
+            if not commit_sha:
+                continue
+            
+            commit_doc = {
+                'id': commit_sha,
+                'sha': commit_sha,
+                'repoFullName': repo_full_name,
+                'branch': branch_name,
+                'message': commit.get('message', '').split('\n')[0],
+                'author': commit.get('author', {}).get('name'),
+                'date': commit.get('timestamp'),
+                'securityStatus': None # 초기에는 null. 비동기 분석 후 채워짐.
+            }
+            commits_container.upsert_item(commit_doc)
+            log.info(f"Upserted basic info for commit: {commit_sha}")
+            
+        return func.HttpResponse(f"Successfully processed push for {repo_full_name}.", status_code=200)
 
-    # [OPTIMIZED] More specific exception handling
     except json.JSONDecodeError:
         logging.exception("Failed to decode JSON from webhook body")
-        return func.HttpResponse("Invalid JSON format in request body.", status_code=400)
+        return func.HttpResponse("Invalid JSON format.", status_code=400)
     except requests.exceptions.HTTPError as e:
-        logging.exception(f"HTTP error while fetching SBOM for {repo_full_name}")
-        return func.HttpResponse(
-            f"Error fetching dependency graph: {e.response.status_code} - {e.response.text}",
-            status_code=e.response.status_code
-        )
+        logging.exception(f"HTTP error during GitHub API call")
+        return func.HttpResponse(f"GitHub API error: {e.response.status_code} - {e.response.text}", status_code=e.response.status_code)
     except Exception as e:
-        logging.exception(f"Failed to process webhook for {repo_full_name}")
+        logging.exception(f"Failed to process webhook")
         return func.HttpResponse(f"An unexpected error occurred: {str(e)}", status_code=500)
