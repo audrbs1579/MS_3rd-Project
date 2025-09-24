@@ -884,19 +884,36 @@ def api_branches():
 
 @app.get("/api/commits")
 def api_commits():
-    repo = request.args.get("repo"); branch = request.args.get("branch")
-    if not repo or not branch:
-        return jsonify({"error": "repo and branch required"}), 400
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
-    commits, _ = _gh_get(f"/repos/{repo}/commits", params={"sha": branch, "per_page": COMMITS_PER_BRANCH})
-    pick = lambda c: {
+    
+    repo = request.args.get("repo")
+    branch = request.args.get("branch")
+    page = request.args.get("page", 1, type=int)
+    per_page = 30 # 한 번에 30개씩 불러오기
+
+    if not repo or not branch:
+        return jsonify({"error": "repo and branch required"}), 400
+
+    # GitHub API는 페이지네이션을 지원합니다.
+    commits_data, _ = _gh_get(f"/repos/{repo}/commits", params={
+        "sha": branch,
+        "per_page": per_page,
+        "page": page
+    })
+
+    commits = [{
         "sha": c.get("sha"),
         "message": (c.get("commit", {}).get("message") or "").split("\n")[0],
         "author": (c.get("commit", {}).get("author") or {}).get("name"),
         "date": (c.get("commit", {}).get("author") or {}).get("date")
-    }
-    return jsonify({"commits": [pick(c) for c in (commits or [])]})
+    } for c in (commits_data or [])]
+    
+    # 더 불러올 커밋이 있는지 여부를 함께 전달
+    return jsonify({
+        "commits": commits,
+        "has_more": len(commits) == per_page
+    })
 
 @app.get("/api/commit_detail")
 def api_commit_detail():
