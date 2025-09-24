@@ -57,6 +57,7 @@
 (async () => {
     const statusText = document.getElementById('statusText');
     const progressBar = document.getElementById('progressBar');
+    const CACHE_VERSION = 'v2'; // 캐시 버전을 정의합니다.
 
     function updateProgress(percentage, text) {
         const p = Math.max(0, Math.min(100, percentage));
@@ -66,8 +67,6 @@
 
     try {
         updateProgress(10, '초기 데이터 로딩을 시작합니다...');
-
-        // API 호출 중 진행률 시뮬레이션
         setTimeout(() => updateProgress(40, '저장소, 브랜치, 커밋 정보를 한번에 가져오는 중... (시간이 걸릴 수 있습니다)'), 500);
 
         const response = await fetch('/api/get_initial_data', {
@@ -86,7 +85,9 @@
         const data = await response.json();
 
         updateProgress(95, '가져온 데이터를 캐시에 저장하는 중...');
-        sessionStorage.setItem('dashboardCache', JSON.stringify(data));
+        // 데이터에 버전을 추가하여 저장합니다.
+        const dataToCache = Object.assign({ version: CACHE_VERSION }, data);
+        sessionStorage.setItem('dashboardCache', JSON.stringify(dataToCache));
 
         updateProgress(100, '데이터 로딩 완료! 대시보드로 이동합니다.');
         
@@ -97,7 +98,7 @@
     } catch (error) {
         console.error('초기 데이터 로딩 실패:', error);
         updateProgress(100, `오류 발생: ${error.message}`);
-        progressBar.style.backgroundColor = '#ef4444'; // 빨간색으로 변경
+        progressBar.style.backgroundColor = '#ef4444';
         statusText.style.color = '#991b1b';
     }
 })();

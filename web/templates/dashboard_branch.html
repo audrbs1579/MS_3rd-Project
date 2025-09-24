@@ -67,7 +67,7 @@
       font-size: 0.8rem;
       color: #6b7280;
     }
-    .commit-info { flex-grow: 1; }
+    .commit-info { flex-grow: 1; overflow: hidden; }
     .commit-message { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .commit-author { font-size: 0.8rem; color: #6b7280; margin-top: 2px; }
     .commit-sha { font-family: monospace; font-size: 0.85rem; }
@@ -152,18 +152,19 @@
 
   // --- State Management ---
   const S = {
-    repo: null,
-    branch: null, // NEW: Selected branch state
-    selCommit: null,
-    repos: [],
-    branches: {},
-    commits: {},
-    securityByCommit: {},
+    repo: null, branch: null, selCommit: null, repos: [],
+    branches: {}, commits: {}, securityByCommit: {},
   };
   
-  // --- Constants (ICONS, IDENTITY_LEVELS, etc. - unchanged) ---
-  const ICONS = { /* ... 기존 코드와 동일 ... */ };
-  const IDENTITY_LEVELS = { /* ... 기존 코드와 동일 ... */ };
+  // --- Constants ---
+  const CACHE_KEY = 'dashboardCache';
+  const CACHE_VERSION = 'v2'; // 현재 코드와 호환되는 캐시 버전
+  const ICONS = {
+    good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+    warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
+    bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
+    unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
+  };
 
   // --- DOM Elements ---
   const repoFilter = $('#repoFilter'), repoListEl = $('#repoList'), repoStamp = $('#repoStamp');
@@ -173,21 +174,65 @@
   const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
   const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
 
-  // --- Cache & API (api function is unchanged) ---
-  const CACHE_KEY = 'dashboardCache';
-  async function api(path, options={}) { /* ... 기존 코드와 동일 ... */ }
-  function loadCache() { /* ... 기존 코드와 동일 ... */ }
-  
-  // --- RENDER FUNCTIONS (Heavily Modified) ---
+  function loadCache() {
+    try {
+      const cachedData = sessionStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        const data = JSON.parse(cachedData);
+        // 버전이 맞지 않으면 캐시를 무효화하고 false를 반환합니다.
+        if (data.version !== CACHE_VERSION) {
+            console.warn('Cache version mismatch, clearing cache.');
+            sessionStorage.removeItem(CACHE_KEY);
+            return false;
+        }
+        S.repos = data.repos || [];
+        S.branches = data.branches || {};
+        S.commits = data.commits || {};
+        repoStamp.textContent = `마지막 갱신: ${new Date(data.timestamp).toLocaleString('ko-KR')}`;
+        return true;
+      }
+    } catch (e) {
+      console.error("Failed to load from cache", e);
+      sessionStorage.removeItem(CACHE_KEY);
+    }
+    return false;
+  }
 
+  async function api(path, options = {}) {
+      const method = (options.method || 'GET').toUpperCase();
+      const query = options.query || (method === 'GET' ? (options.params || {}) : {});
+      const qs = new URLSearchParams(query);
+      const url = `/api${path}${qs.toString() ? `?${qs.toString()}` : ''}`;
+      const init = {
+        method,
+        headers: Object.assign({ 'Accept': 'application/json' }, options.headers || {}),
+      };
+      if (method !== 'GET') {
+        const body = options.body !== undefined ? options.body : options.params;
+        if (body !== undefined && body !== null) {
+          init.body = typeof body === 'string' ? body : JSON.stringify(body);
+          if (!init.headers['Content-Type']) {
+            init.headers['Content-Type'] = 'application/json';
+          }
+        }
+      }
+      const res = await fetch(url, init);
+      if (res.status === 401) { location.href = '/'; throw new Error('Unauthorized'); }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(errData.error || `HTTP error ${res.status}`);
+      }
+      return res.json();
+  }
+  
+  // --- RENDER FUNCTIONS ---
   function renderRepos() {
     const q = repoFilter.value.toLowerCase();
     const frag = document.createDocumentFragment();
     S.repos
       .filter(r => (r.full_name || '').toLowerCase().includes(q))
       .forEach(r => {
-        const el = document.createElement('div');
-        el.className = 'list-item repo-item';
+        const el = el('div', 'list-item repo-item');
         el.dataset.repo = r.full_name;
         el.onclick = () => selectRepo(r.full_name);
         el.innerHTML = `
@@ -202,14 +247,14 @@
 
   function renderBranches() {
     const list = S.branches[S.repo] || [];
+    branchListEl.innerHTML = '';
     if (!list.length) {
       branchListEl.innerHTML = `<div class="empty-state">브랜치가 없습니다.</div>`;
       return;
     }
     const frag = document.createDocumentFragment();
     list.forEach(b => {
-      const el = document.createElement('div');
-      el.className = 'list-item branch-item';
+      const el = el('div', 'list-item branch-item');
       el.dataset.branch = b.name;
       el.onclick = () => selectBranch(b.name);
       el.innerHTML = `
@@ -217,7 +262,6 @@
         <span class="branch-meta">${esc((b.sha || '').slice(0, 7))}</span>`;
       frag.appendChild(el);
     });
-    branchListEl.innerHTML = '';
     branchListEl.appendChild(frag);
     highlightSelection();
   }
@@ -225,14 +269,14 @@
   function renderCommits() {
     const key = `${S.repo}|${S.branch}`;
     const list = S.commits[key] || [];
+    commitListEl.innerHTML = '';
     if (!list.length) {
       commitListEl.innerHTML = `<div class="empty-state">커밋이 없습니다.</div>`;
       return;
     }
     const frag = document.createDocumentFragment();
     list.forEach(c => {
-      const el = document.createElement('div');
-      el.className = 'list-item commit-item';
+      const el = el('div', 'list-item commit-item');
       el.dataset.sha = c.sha;
       el.onclick = () => selectCommit(c.sha);
       el.innerHTML = `
@@ -245,40 +289,28 @@
         </div>
         <span class="commit-sha">${esc(c.sha.slice(0, 7))}</span>`;
       frag.appendChild(el);
-      // Fetch status for each commit
       fetchAndRenderCommitStatus(S.repo, S.branch, c.sha);
     });
-    commitListEl.innerHTML = '';
     commitListEl.appendChild(frag);
     highlightSelection();
   }
   
   // --- SELECTION & WORKFLOW LOGIC ---
-
   function selectRepo(repoName) {
     if (S.repo === repoName) return;
-    S.repo = repoName;
-    S.branch = null;
-    S.selCommit = null;
-
-    // Clear subsequent columns and details
+    S.repo = repoName; S.branch = null; S.selCommit = null;
     branchListEl.innerHTML = `<div class="empty-state">브랜치 로딩 중...</div>`;
     commitListEl.innerHTML = `<div class="empty-state">브랜치를 선택하세요.</div>`;
     resetDetailView();
-    
     renderBranches();
     highlightSelection();
   }
   
   function selectBranch(branchName) {
     if (S.branch === branchName) return;
-    S.branch = branchName;
-    S.selCommit = null;
-
-    // Clear commit column and details
+    S.branch = branchName; S.selCommit = null;
     commitListEl.innerHTML = `<div class="empty-state">커밋 로딩 중...</div>`;
     resetDetailView();
-
     renderCommits();
     highlightSelection();
   }
@@ -286,19 +318,16 @@
   async function selectCommit(sha) {
     if (S.selCommit?.sha === sha) return;
     S.selCommit = { repo: S.repo, branch: S.branch, sha };
-
     highlightSelection();
     updateSecuritySummary('loading');
     detailViewCard.style.display = 'block';
     detailContainerEl.innerHTML = '<div class="empty-state">커밋 상세 정보 로딩 중...</div>';
     
     try {
-      const security = S.securityByCommit[sha] || await api('/security_status', { query: { repo: S.repo, commit: sha, branch: S.branch } });
+      const security = S.securityByCommit[sha] || await api('/security_status', { query: { repo: S.repo, commit: sha, branch: S.branch }});
       S.securityByCommit[sha] = security;
-      
       const details = await api('/commit_detail', { query: { repo: S.repo, sha } });
-      
-      renderCommitDetails(details); // NEW function to render details in the bottom card
+      renderCommitDetails(details);
       updateSecuritySummary(security);
       updateCommitIndicators(sha, security);
     } catch (e) {
@@ -309,7 +338,6 @@
   }
 
   // --- DETAIL & STATUS RENDERING ---
-  
   function resetDetailView() {
     detailViewCard.style.display = 'none';
     detailContainerEl.innerHTML = '';
@@ -322,14 +350,10 @@
       const stats = `+${file.additions} -${file.deletions}`;
       return `<li>${esc(file.filename)} <span class="commit-meta">(${esc(stats)})</span></li>`;
     }).join('') : '<li>변경된 파일 없음</li>';
-
     detailContainerEl.innerHTML = `
       <h4>${esc(details.message.split('\n')[0])}</h4>
       <p class="commit-meta">${esc(details.author)} · ${ago(details.date)}</p>
-      <hr>
-      <p><b>변경 파일:</b></p>
-      <ul>${fileList}</ul>
-    `;
+      <hr><p><b>변경 파일:</b></p><ul>${fileList}</ul>`;
   }
   
   function highlightSelection() {
@@ -345,11 +369,10 @@
       return;
     }
     try {
-      const status = await api('/security_status', { query: { repo, commit: sha, branch } });
+      const status = await api('/security_status', { query: { repo, commit: sha, branch }});
       S.securityByCommit[sha] = status;
       updateCommitIndicators(sha, status);
     } catch (e) {
-      console.error(`Failed to fetch security status for ${sha}`, e);
       const failure = { defender:{status:'unknown'}, sentinel:{status:'unknown'}, bricks:{status:'unknown'} };
       S.securityByCommit[sha] = failure;
       updateCommitIndicators(sha, failure);
@@ -367,11 +390,10 @@
   }
 
   function updateSecuritySummary(data) {
-    // This function remains largely the same as before.
     btnDetails.disabled = true;
     if (data === 'loading' || data === 'unknown' || !data || !data.defender) {
       securityCard.className = 'card status-unknown';
-      statusIcon.innerHTML = ICONS?.unknown || '?';
+      statusIcon.innerHTML = ICONS.unknown;
       summaryTitle.textContent = data === 'loading' ? '분석 중...' : '보안 요약';
       summaryText.innerHTML = data === 'loading' ? '잠시만 기다려주세요.' : '분석할 커밋을 선택하세요.';
       return;
@@ -379,16 +401,26 @@
     const statuses = [data.defender.status, data.sentinel?.status, data.bricks?.status].filter(Boolean);
     const overall = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
     securityCard.className = `card status-${overall}`;
-    statusIcon.innerHTML = ICONS?.[overall] || '?';
+    statusIcon.innerHTML = ICONS[overall];
     summaryTitle.textContent = { good: '안전', warn: '주의', bad: '위험' }[overall];
     const issues = statuses.filter(s => s === 'bad' || s === 'warn').length;
     summaryText.textContent = issues > 0 ? `${issues}건의 잠재적 이슈 발견` : '모든 점검 통과';
     btnDetails.disabled = false;
   }
   
-  // --- HELPERS (unchanged) ---
-  function esc(s) { /* ... */ }
-  function ago(d) { /* ... */ }
+  // --- FULL HELPER FUNCTIONS (RESTORED) ---
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s).replace(/[&<>"']/g, (c) => map[c] || c);
+  }
+  function ago(d) {
+    const seconds = (Date.now() - new Date(d).getTime()) / 1000;
+    if (seconds < 60) return '방금 전';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+    return `${Math.floor(seconds / 86400)}일 전`;
+  }
   function el(tag, cls, content) {
     const e = document.createElement(tag);
     if(cls) e.className = cls;
@@ -416,10 +448,6 @@
       window.location.href = `/details?repo=${repo}&sha=${sha}&branch=${branch || ''}`;
     }
   });
-
-  // Helper functions like `esc`, `ago`, `ICONS` etc. need to be copied from the old file if they are not here
-  const isRecent = (d) => d && (Date.now() - new Date(d).getTime()) < (5 * 60 * 1000);
-  /* Paste existing ICONS, IDENTITY_LEVELS, esc, ago, etc. here */
   
 })();
 </script>
