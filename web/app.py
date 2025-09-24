@@ -721,6 +721,8 @@ def details():
 def healthz():
     return jsonify({"ok": True, "time": datetime.utcnow().isoformat() + "Z"})
 
+# --- app.py 파일의 _sync_github_to_cosmos 함수를 교체해주세요. ---
+
 def _sync_github_to_cosmos(user_login, full_sync=False):
     """
     GitHub 데이터를 Cosmos DB에 동기화합니다.
@@ -729,8 +731,6 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
     """
     log.info(f"Starting GitHub sync for {user_login}. Full sync: {full_sync}")
     
-    # 1. GitHub에서 저장소 목록 가져오기
-    # full_sync가 아니면 최근 20개만 확인하여 부하를 줄임
     params = {"per_page": 100 if full_sync else 20, "sort": "pushed"}
     repos_from_gh, _ = _gh_get("/user/repos", params=params)
     
@@ -738,22 +738,24 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
         repo_full_name = repo_info.get("full_name")
         if not repo_full_name:
             continue
+        
+        # --- MODIFIED: ID에서 '/'를 '-'로 치환 ---
+        sanitized_repo_id = repo_full_name.replace('/', '-')
             
-        # 재로그인 시, DB 데이터와 비교하여 변경이 없으면 건너뛰기
         if not full_sync:
             try:
-                repo_doc_db = repos_container.read_item(item=repo_full_name, partition_key=user_login)
+                # --- MODIFIED: 조회할 때도 치환된 ID 사용 ---
+                repo_doc_db = repos_container.read_item(item=sanitized_repo_id, partition_key=user_login)
                 if repo_doc_db.get('pushed_at') == repo_info.get('pushed_at'):
                     log.info(f"Repo {repo_full_name} is up to date. Skipping.")
                     continue
             except exceptions.CosmosResourceNotFoundError:
                 log.info(f"New repo {repo_full_name} found on re-login. Syncing.")
             except Exception:
-                pass # DB 읽기 실패 시 그냥 동기화 진행
+                pass
 
         log.info(f"Syncing repo: {repo_full_name}")
         
-        # 2. 브랜치 및 커밋 정보 가져오기
         try:
             branches_data, _ = _gh_get(f"/repos/{repo_full_name}/branches", params={"per_page": 100})
             branches_list = []
@@ -765,7 +767,6 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
                 
                 branches_list.append({"name": branch_name, "sha": sha})
                 
-                # 3. 각 브랜치의 최신 커밋 5개 저장
                 commits_data, _ = _gh_get(f"/repos/{repo_full_name}/commits", params={"sha": branch_name, "per_page": COMMITS_PER_BRANCH})
                 for c in (commits_data or []):
                     commit_sha = c.get("sha")
@@ -779,10 +780,13 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
                     }
                     commits_container.upsert_item(commit_doc)
 
-            # 4. 저장소 정보 최종 업데이트
+            # --- MODIFIED: 저장할 때도 치환된 ID 사용하고, 원본 이름도 별도 저장 ---
             repo_doc = {
-                'id': repo_full_name, 'userId': user_login,
-                'repoName': repo_info.get('name'), 'pushed_at': repo_info.get('pushed_at'),
+                'id': sanitized_repo_id,
+                'repoFullName': repo_full_name, # 원본 이름은 별도 필드에 저장
+                'userId': user_login,
+                'repoName': repo_info.get('name'), 
+                'pushed_at': repo_info.get('pushed_at'),
                 'branches': branches_list
             }
             repos_container.upsert_item(repo_doc)

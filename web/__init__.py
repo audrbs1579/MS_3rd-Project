@@ -41,6 +41,8 @@ def verify_signature(body: bytes, signature: str) -> bool:
     expected = hmac.new(GH_SECRET, msg=body, digestmod=hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig_hash, expected)
 
+# --- __init__.py 파일의 main 함수를 교체해주세요. ---
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
     signature = req.headers.get("X-Hub-Signature-256", "")
     event_type = req.headers.get("X-GitHub-Event", "")
@@ -75,8 +77,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             for b in branches_data
         ]
         
+        # --- MODIFIED: ID에서 '/'를 '-'로 치환하고 원본 이름도 별도 저장 ---
         repo_doc = {
-            'id': repo_full_name,
+            'id': repo_full_name.replace('/', '-'),
+            'repoFullName': repo_full_name, # 원본 이름은 별도 필드에 저장
             'userId': repo_owner_login,
             'repoName': repo_info.get('name'),
             'pushed_at': repo_info.get('pushed_at'),
@@ -105,7 +109,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 'message': commit.get('message', '').split('\n')[0],
                 'author': commit.get('author', {}).get('name'),
                 'date': commit.get('timestamp'),
-                'securityStatus': None # 초기에는 null. 비동기 분석 후 채워짐.
+                'securityStatus': None
             }
             commits_container.upsert_item(commit_doc)
             log.info(f"Upserted basic info for commit: {commit_sha}")
