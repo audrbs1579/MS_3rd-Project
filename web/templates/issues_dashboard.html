@@ -47,19 +47,20 @@
   </div>
 
 <script>
-  // --- MODIFIED: UTC to KST 변환 및 시간 표시 함수 (표준 시간대 지정 방식) ---
+  // --- MODIFIED: UTC 시간에 9시간을 더해 KST로 수동 변환하는 함수 ---
   function formatToKST(isoString) {
     if (!isoString) return '';
-    return new Date(isoString).toLocaleString('ko-KR', {
-      timeZone: 'Asia/Seoul',
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    });
+    const date = new Date(isoString);
+    date.setHours(date.getHours() + 9);
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const day = date.getUTCDate();
+    let hours = date.getUTCHours();
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? '오후' : '오전';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${year}년 ${month}월 ${day}일 ${ampm} ${hours}:${minutes}`;
   }
 
   function ago(isoString) {
