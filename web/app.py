@@ -1176,28 +1176,34 @@ def api_developer_activity():
         "recent_comments": comments
     })
 
-# --- MODIFIED: /api/security_status 함수를 아래 코드로 교체해주세요 ---
+# --- MODIFIED: /api/security_status 함수 ---
 @app.get("/api/security_status")
 def api_security_status():
     repo = request.args.get("repo")
     commit_sha = request.args.get("commit") or request.args.get("sha")
     branch = request.args.get("branch")
     user_id = session.get("user_login")
+    force_refresh = request.args.get("force_refresh", "false").lower() == "true"
 
     if not repo or not commit_sha or not user_id:
         return jsonify({"error": "repo, commit, and user_id required"}), 400
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
 
-    try:
-        cached_item = commits_container.read_item(item=commit_sha, partition_key=repo)
-        if cached_item and cached_item.get("securityStatus"):
-            log.info(f"Cache hit for {commit_sha} in Cosmos DB.")
-            return jsonify(cached_item["securityStatus"])
-    except exceptions.CosmosResourceNotFoundError:
-        log.info(f"Cache miss for {commit_sha}. Performing live analysis.")
-    except Exception as e:
-        log.warning(f"Cache read error for {commit_sha}, proceeding with live analysis: {e}")
+    if not force_refresh:
+        try:
+            # 파티션 키(repo)를 명시하여 캐시된 아이템을 읽습니다.
+            cached_item = commits_container.read_item(item=commit_sha, partition_key=repo)
+            if cached_item and cached_item.get("securityStatus"):
+                log.info(f"Cache hit for {commit_sha} in Cosmos DB.")
+                return jsonify(cached_item["securityStatus"])
+        except exceptions.CosmosResourceNotFoundError:
+            log.info(f"Cache miss for {commit_sha}. Performing live analysis.")
+        except Exception as e:
+            log.warning(f"Cache read error for {commit_sha}, proceeding with live analysis: {e}")
+    else:
+        log.info(f"Force refresh requested for {commit_sha}. Performing live analysis.")
+
 
     live_result = None
     commit_data = None
@@ -1230,7 +1236,6 @@ def api_security_status():
             } for a in commit_alerts[:10]
         ]
         
-        # --- MODIFIED: CodeQL 상태 및 요약 메시지 로직 개선 ---
         high_alerts = [a for a in commit_alerts if (a.get('rule') or {}).get('severity', '').lower() in {'critical', 'high'}]
         
         if high_alerts:
@@ -1244,7 +1249,6 @@ def api_security_status():
             summary_message = "CodeQL 분석을 통과했습니다. 발견된 경고가 없습니다."
             
         defender = {'status': defender_status, 'summary': summary_message, 'alerts': enriched_alerts}
-        # --- 수정 끝 ---
 
         bricks = {'status': 'unknown', 'summary': 'BRICKS 분석 대기 중.', 'details': []}
         bricks_features = _build_iforest_features_from_commit(repo, commit_sha, branch_name=branch, commit_data=commit_data)
@@ -1292,12 +1296,15 @@ def api_security_status():
         log.warning(f"Failed to log security issue for {commit_sha}: {e}")
 
     try:
+        # 분석 결과를 DB에 갱신 (upsert)
         commit_doc_cache = { 'id': commit_sha, 'repoFullName': repo, 'securityStatus': live_result }
         commits_container.upsert_item(commit_doc_cache)
+        log.info(f"Upserted security status for {commit_sha} to cache.")
     except Exception as e:
         log.warning(f"Failed to save to commits cache for {commit_sha}: {e}")
 
     return jsonify(live_result)
+
 
 # ---------- 에러 핸들러 및 실행 ----------
 @app.errorhandler(PermissionError)

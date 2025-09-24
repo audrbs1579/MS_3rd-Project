@@ -47,20 +47,27 @@
   </div>
 
 <script>
-  // --- MODIFIED: UTC 시간에 9시간을 더해 KST로 수동 변환하는 함수 ---
+  // --- MODIFIED: KST 변환 함수 수정 ---
   function formatToKST(isoString) {
     if (!isoString) return '';
-    const date = new Date(isoString);
-    date.setHours(date.getHours() + 9);
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth() + 1;
-    const day = date.getUTCDate();
-    let hours = date.getUTCHours();
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? '오후' : '오전';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${year}년 ${month}월 ${day}일 ${ampm} ${hours}:${minutes}`;
+    try {
+        const date = new Date(isoString);
+        const kstTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+        
+        const year = kstTime.getUTCFullYear();
+        const month = kstTime.getUTCMonth() + 1;
+        const day = kstTime.getUTCDate();
+        let hours = kstTime.getUTCHours();
+        const minutes = String(kstTime.getUTCMinutes()).padStart(2, '0');
+
+        const ampm = hours >= 12 ? '오후' : '오전';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        
+        return `${year}년 ${month}월 ${day}일 ${ampm} ${hours}:${minutes}`;
+    } catch(e) {
+        return '날짜 오류';
+    }
   }
 
   function ago(isoString) {
