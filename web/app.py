@@ -1267,6 +1267,35 @@ def handle_exception(e):
     log.exception("An unhandled exception occurred")
     return jsonify(error="Internal server error"), 500
 
+@app.route("/issues")
+def issues():
+    if "access_token" not in session:
+        return redirect(url_for("index"))
+    return render_template("issues_dashboard.html", user_id=session.get("user_login") or "me")
+
+@app.get("/api/issues")
+def api_issues():
+    if "access_token" not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    
+    user_id = session.get("user_login")
+    if not user_id:
+        return jsonify({"error": "user not found in session"}), 401
+
+    log.info(f"Fetching security issues for {user_id} from Cosmos DB")
+    try:
+        query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.date DESC"
+        params = [{"name": "@userId", "value": user_id}]
+        
+        issues_list = list(issues_container.query_items(
+            query=query, parameters=params, enable_cross_partition_query=False
+        ))
+        return jsonify(issues_list)
+        
+    except Exception as e:
+        log.exception(f"Failed to get issues from Cosmos DB for {user_id}")
+        return jsonify({"error": f"Failed to fetch issues from Cosmos DB: {str(e)}"}), 500
+
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
     port = int(os.environ.get("PORT", "8000"))
