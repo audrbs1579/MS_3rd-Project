@@ -90,9 +90,6 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("web.app")
 
 # ---------- 유틸 ----------
-def _normalize_repo_param(s: str) -> str:
-    return (s or "").replace("\\", "/").strip()
-
 def _gh_headers():
     tok = session.get("access_token")
     h = {"Accept": "application/vnd.github+json", "User-Agent": "branch-activity-dashboard"}
@@ -117,7 +114,7 @@ def _gh_get(url, params=None, accept_header=None):
         log.error(f"GitHub API request failed for URL {full_url}: {e}")
         raise
 
-# --- NEW: BRICKS 분석 근거를 생성하는 함수 등 (이하 기존 코드 그대로) ---
+# --- NEW: BRICKS 분석 근거를 생성하는 ण्यास퍼 함수 ---
 def _generate_anomaly_reasons(features, sentinel_status):
     """
     BRICKS 모델 입력값(features)과 계정 신원 분석 결과를 바탕으로
@@ -126,17 +123,27 @@ def _generate_anomaly_reasons(features, sentinel_status):
     reasons = []
     if not features:
         return reasons
+
+    # 규칙 1: 민감 파일 변경 여부
     if features.get("is_sensitive_type", 0) > 0:
         reasons.append("민감한 키워드(secret, key 등)가 포함된 파일을 수정했습니다.")
+
+    # 규칙 2: 비정상적 커밋 시간 (예: 새벽 1시 ~ 5시)
     hour = features.get("hour")
     if hour is not None and (1 <= hour <= 5):
         reasons.append(f"일반적이지 않은 시간(새벽 {hour}시)에 커밋이 발생했습니다.")
+
+    # 규칙 3: 과도한 코드 변경량 (예: 1000 라인 이상)
     if features.get("push_size", 0) > 1000:
         reasons.append("평소보다 많은 양의 코드를 한 번에 커밋했습니다.")
+        
+    # 규칙 4: 첫 기여자 여부 (sentinel_status 결과 활용)
     if sentinel_status and sentinel_status.get("first_contribution"):
         reasons.append("이 저장소에 처음으로 기여한 사용자의 커밋입니다.")
+        
     if not reasons:
         reasons.append("복합적인 요인에 의해 '주의' 상태로 판단되었습니다.")
+
     return reasons
 
 def _get_code_excerpt(repo_full_name, ref, path, start_line, end_line):
@@ -168,7 +175,7 @@ def _get_code_excerpt(repo_full_name, ref, path, start_line, end_line):
         excerpt.append({'line': lineno, 'content': line_text, 'highlight': start_line <= lineno <= end_line})
     return excerpt
 
-# ---------- Databricks 모델 통합 & 기타 유틸 (원본 유지) ----------
+# ---------- Databricks 모델 통합 ----------
 def _safe_parse_iso8601(value):
     if not value:
         return None
@@ -692,17 +699,6 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
     }
 
 # ---------- 라우팅 ----------
-@app.after_request
-def _force_auto_refresh(resp):
-    try:
-        if request.path == "/dashboard":
-            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-            resp.headers["Pragma"] = "no-cache"
-            resp.headers["Refresh"] = "30"
-    except Exception:
-        pass
-    return resp
-
 @app.route("/")
 def index():
     if "access_token" not in session:
@@ -821,15 +817,14 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
                     }
                     commits_container.upsert_item(commit_doc)
 
-            # --- MODIFIED: 'type' 필드를 추가하여 쿼리할 수 있도록 수정 ---
+            # --- MODIFIED: 저장할 때도 치환된 ID 사용하고, 원본 이름도 별도 저장 ---
             repo_doc = {
                 'id': sanitized_repo_id,
-                'repoFullName': repo_full_name, 
+                'repoFullName': repo_full_name, # 원본 이름은 별도 필드에 저장
                 'userId': user_login,
                 'repoName': repo_info.get('name'), 
                 'pushed_at': repo_info.get('pushed_at'),
-                'branches': branches_list,
-                'type': 'repo'  # <-- FIX: 쿼리에서 사용할 'type' 필드 추가
+                'branches': branches_list
             }
             repos_container.upsert_item(repo_doc)
             log.info(f"Successfully synced repo: {repo_full_name}")
@@ -863,80 +858,75 @@ def get_initial_data():
             log.info(f"Re-login detected for {user_login}. Performing delta sync.")
             _sync_github_to_cosmos(user_login, full_sync=False)
 
-        # --- MODIFIED: DB 조회 쿼리 및 결과 처리 로직 수정 ---
-        repos_query = "SELECT c.repoFullName, c.pushed_at FROM c WHERE c.userId = @userId AND c.type = 'repo'"
-        repos_params = [{"name": "@userId", "value": user_login}]
-        repos_items = list(repos_container.query_items(query=repos_query, parameters=repos_params)) or []
-
-        repos_list = []
-        for repo in repos_items:
-            full = _normalize_repo_param(repo.get("repoFullName")) # <-- FIX: 'repoFullName' 필드 사용
-            if not full:
+        log.info(f"Fetching synced data from Cosmos DB for {user_login}")
+        repo_query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.pushed_at DESC"
+        repos_list_cosmos = list(repos_container.query_items(query=repo_query, parameters=params))
+        
+        # --- MODIFIED: r.get("id") 대신 r.get("repoFullName")을 사용하도록 수정 ---
+        repos_list = [{"full_name": r.get("repoFullName"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")} for r in repos_list_cosmos]
+        branches_map = {r["repoFullName"]: r.get("branches", []) for r in repos_list_cosmos if r.get("repoFullName")}
+        
+        commits_map = {}
+        for r in repos_list_cosmos:
+            repo_name_original = r.get("repoFullName")
+            if not repo_name_original:
                 continue
-            repos_list.append({
-                "full_name": full, # 프론트엔드와 호환성을 위해 'full_name' 키 사용
-                "pushed_at": repo.get("pushed_at"),
-            })
 
-        # 상위 10개 레포에 대해 브랜치 미리 담기
-        branches_map = {}
-        for r in repos_list[:10]:
-            full = r["full_name"]
-            try:
-                brs, _ = _gh_get(f"/repos/{full}/branches", params={"per_page": 100})
-            except Exception:
-                brs = []
-            branches_map[full] = [
-                {
-                    "name": (b or {}).get("name"),
-                    "commit": {"sha": ((b or {}).get("commit") or {}).get("sha")}
-                }
-                for b in (brs or [])
-                if (b or {}).get("name")
-            ]
+            for branch in r.get("branches", []):
+                branch_name = branch.get("name")
+                commit_query = "SELECT TOP @limit * FROM c WHERE c.repoFullName = @repo AND c.branch = @branch ORDER BY c.date DESC"
+                commit_params = [
+                    {"name": "@limit", "value": COMMITS_PER_BRANCH},
+                    {"name": "@repo", "value": repo_name_original}, # 올바른 저장소 이름 사용
+                    {"name": "@branch", "value": branch_name}
+                ]
+                
+                branch_commits = list(commits_container.query_items(query=commit_query, parameters=commit_params))
+                key = f"{repo_name_original}|{branch_name}" # 키 생성 시에도 올바른 이름 사용
+                commits_map[key] = [{"sha": c.get("sha"), "message": c.get("message"), "author": c.get("author"), "date": c.get("date")} for c in branch_commits]
 
-        return jsonify({
-            "version": "v2",
-            "repos": repos_list,
-            "branches": branches_map,
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        })
+        return jsonify({"repos": repos_list, "branches": branches_map, "commits": commits_map, "timestamp": datetime.utcnow().isoformat()})
         
     except Exception as e:
         log.exception(f"Failed to get initial data for {user_login}")
         return jsonify({"error": f"Failed to process initial data: {str(e)}"}), 500
 
-@app.get("/api/branches")
-def api_branches():
+
+
+@app.get("/api/my_repos")
+def api_my_repos():
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
+    repos, _ = _gh_get("/user/repos", params={"per_page": 100, "sort": "pushed"})
+    return jsonify({"repos": [{"full_name": r.get("full_name"), "name": r.get("name"), "pushed_at": r.get("pushed_at")} for r in (repos or [])]})
 
-    repo = _normalize_repo_param(request.args.get("repo"))
+@app.get("/api/branches")
+def api_branches():
+    repo = request.args.get("repo")
     if not repo:
         return jsonify({"error": "repo required"}), 400
+    if "access_token" not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    branches_data, _ = _gh_get(f"/repos/{repo}/branches", params={"per_page": 100})
+    out = []
+    for b in (branches_data or []):
+        sha = (b.get("commit") or {}).get("sha")
+        try:
+            commit_data, _ = _gh_get(f"/repos/{repo}/commits/{sha}")
+            commit_date = (commit_data.get("commit", {}).get("author") or {}).get("date")
+            out.append({"name": b.get("name"), "sha": sha, "last_commit_date": commit_date})
+        except requests.exceptions.RequestException:
+            out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
+    return jsonify({"branches": out})
 
-    try:
-        brs, _ = _gh_get(f"/repos/{repo}/branches", params={"per_page": 100})
-    except Exception as e:
-        return jsonify({"error": f"branches_fetch_failed: {e}"}), 502
-
-    return jsonify({
-        "branches": [
-            {
-                "name": (b or {}).get("name"),
-                "commit": {"sha": ((b or {}).get("commit") or {}).get("sha")}
-            }
-            for b in (brs or [])
-            if (b or {}).get("name")
-        ]
-    })
+# app.py 파일의 기존 /api/commits 함수를 아래 코드로 교체해주세요.
 
 @app.get("/api/commits")
 def api_commits():
     if "access_token" not in session:
         return jsonify({"error": "unauthorized"}), 401
     
-    repo = _normalize_repo_param(request.args.get("repo"))
+    repo = request.args.get("repo")
     branch = request.args.get("branch")
     page = request.args.get("page", 1, type=int)
     per_page = 30
@@ -948,23 +938,43 @@ def api_commits():
     commits_data, _ = _gh_get(f"/repos/{repo}/commits", params={
         "sha": branch, "per_page": per_page, "page": page
     })
-    commit_list = commits_data or []
+    
+    commit_list = (commits_data or [])
+    commit_shas = [c.get("sha") for c in commit_list if c.get("sha")]
 
-    # 2. 결과 정규화(대시보드가 쓰는 최소 필드)
-    out = []
+    # 2. Cosmos DB에서 해당 커밋들의 보안 분석 결과 미리 조회
+    security_statuses = {}
+    if commit_shas:
+        try:
+            # SQL의 IN 절과 유사한 쿼리를 사용하여 한 번에 여러 커밋 조회
+            query = f"SELECT c.id, c.securityStatus FROM c WHERE c.repoFullName = @repo AND c.id IN ({', '.join([f'@sha{i}' for i in range(len(commit_shas))])})"
+            params = [{"name": "@repo", "value": repo}]
+            for i, sha in enumerate(commit_shas):
+                params.append({"name": f"@sha{i}", "value": sha})
+            
+            results = commits_container.query_items(query=query, parameters=params, partition_key=repo)
+            for item in results:
+                security_statuses[item['id']] = item.get('securityStatus')
+        except Exception as e:
+            log.warning(f"Could not bulk fetch security statuses from Cosmos DB: {e}")
+
+    # 3. GitHub 정보와 DB의 보안 분석 결과를 합쳐서 최종 데이터 생성
+    commits_with_status = []
     for c in commit_list:
         sha = c.get("sha")
-        info = c.get("commit") or {}
-        author_info = info.get("author") or {}
-        out.append({
+        commit_info = {
             "sha": sha,
-            "message": info.get("message"),
-            "author": (author_info.get("name") or author_info.get("email") or ""),
-            "date": author_info.get("date"),
-        })
+            "message": (c.get("commit", {}).get("message") or "").split("\n")[0],
+            "author": (c.get("commit", {}).get("author") or {}).get("name"),
+            "date": (c.get("commit", {}).get("author") or {}).get("date"),
+            "securityStatus": security_statuses.get(sha) # DB에 결과가 있으면 추가, 없으면 null
+        }
+        commits_with_status.append(commit_info)
 
-    has_more = len(out) == per_page
-    return jsonify({"commits": out, "has_more": has_more})
+    return jsonify({
+        "commits": commits_with_status,
+        "has_more": len(commit_list) == per_page
+    })
 
 @app.get("/api/commit_detail")
 def api_commit_detail():
