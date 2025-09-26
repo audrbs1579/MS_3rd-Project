@@ -123,6 +123,7 @@
 
   function esc(s) { return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c); }
 
+  // --- MODIFIED: KST 변환 함수 수정 ---
   function formatToKST(isoString) {
     if (!isoString) return '';
     try {
@@ -259,6 +260,7 @@
             </div>
             <div class="file-actions">
                 <button type="button" onclick="window.open('${esc(file.blob_url)}', '_blank')">GitHub</button>
+                <button type="button">VS Code</button>
             </div>
         </div>`;
     }).join('');
