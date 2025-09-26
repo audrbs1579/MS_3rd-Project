@@ -2,156 +2,101 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Detail Security Analysis - {{ commit_sha[:7] }}</title>
+  <title>Detail</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
   <style>
-    :root{
-      --bg:#f9fafb; --panel:#fff; --border:#e5e7eb; --shadow:0 1px 3px rgba(0,0,0,.1);
-      --text:#111827; --muted:#6b7280; --good:#166534; --warn:#854d0e; --bad:#991b1b; --unknown:#4b5563;
-      --good-bg:#dcfce7; --warn-bg:#fef9c3; --bad-bg:#fee2e2; --unknown-bg:#f3f4f6;
-    }
-    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif}
-    .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-    .hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
-    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
-    .card h3{margin:0;padding:12px 14px;border-bottom:1px solid var(--border);font-size:1rem}
-    .card .body{padding:12px 14px;min-height:80px}
-    .files .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border)}
-    .files .row:last-child{border-bottom:none}
-    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.8rem}
-    .stamp{font-size:.85rem;color:var(--muted)}
-    button{padding:8px 10px;border:1px solid var(--border);background:#fff;border-radius:10px;cursor:pointer}
-    button:hover{background:#f3f4f6}
+    :root{ --bg:#f9fafb; --card:#fff; --border:#e5e7eb; --muted:#6b7280 }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;color:#111827}
+    .wrap{padding:16px;max-width:1100px;margin:0 auto}
+    .grid{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
+    .h{margin:0 0 8px 0;font-size:15px;border-bottom:1px solid var(--border);padding-bottom:8px}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .muted{color:var(--muted)}
+    .file{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);border-radius:10px;padding:8px;margin:6px 0;background:#fff}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="hdr">
-      <div>
-        <div><b>Repo</b>: <span id="repoName">{{ repo_name }}</span></div>
-        <div><b>Branch</b>: <span id="branchName">{{ branch_name }}</span></div>
-        <div><b>Commit</b>: <span id="commitSha" class="mono">{{ commit_sha }}</span></div>
-      </div>
-      <div class="stamp" id="lastUpdated">마지막 갱신: -</div>
+<div class="wrap">
+  <div class="grid">
+    <div class="card">
+      <h2 class="h">Commit</h2>
+      <div id="commitMeta" class="meta"></div>
+      <div id="commitFiles"></div>
     </div>
-
-    <div class="grid">
-      <div class="card">
-        <h3>Sentinel (계정/인증)</h3>
-        <div class="body" id="identityBody"><em>로딩 중...</em></div>
-      </div>
-      <div class="card">
-        <h3>Defender / CodeQL</h3>
-        <div class="body" id="defenderBody"><em>로딩 중...</em></div>
-      </div>
-      <div class="card">
-        <h3>Databricks / 모델 판정</h3>
-        <div class="body" id="bricksBody"><em>로딩 중...</em></div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h3>변경 파일</h3>
-      <div class="body files" id="filesBody">
-        <div class="row"><div>로딩 중...</div></div>
-      </div>
-    </div>
-
-    <div style="margin-top:12px; display:flex; gap:8px">
-      <button id="btnOpenOnGithub" type="button">GitHub에서 보기</button>
-      <button id="btnForceRefresh" type="button">강제 새로고침</button>
+    <div class="card">
+      <h2 class="h">Security</h2>
+      <div id="identityBody" class="muted">로딩 중…</div>
+      <div id="defenderBody" class="muted"></div>
+      <div id="bricksBody" class="muted"></div>
     </div>
   </div>
+</div>
 
 <script>
 (()=>{
-  // 쿼리 파라미터 우선, 템플릿 값 백업
-  const url = new URL(location.href);
-  const repo   = url.searchParams.get('repo')   || document.getElementById('repoName').textContent.trim();
-  const branch = url.searchParams.get('branch') || document.getElementById('branchName').textContent.trim();
-  const sha    = url.searchParams.get('sha')    || document.getElementById('commitSha').textContent.trim();
+  const repo   = new URLSearchParams(location.search).get('repo') || {{ repo_name|tojson if repo_name is defined else 'null' }};
+  const branch = new URLSearchParams(location.search).get('branch') || {{ branch_name|tojson if branch_name is defined else 'null' }};
+  const sha    = new URLSearchParams(location.search).get('sha') || {{ commit_sha|tojson if commit_sha is defined else 'null' }};
 
-  const identityBody = document.getElementById('identityBody');
-  const defenderBody = document.getElementById('defenderBody');
-  const bricksBody   = document.getElementById('bricksBody');
-  const filesBody    = document.getElementById('filesBody');
-  const stamp        = document.getElementById('lastUpdated');
+  const esc = (s)=> String(s??"").replace(/[&<>"'`]/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;","`":"&#96;" }[m]));
+  const ago=(iso)=>{ if(!iso) return "-"; const d=(Date.now()-new Date(iso).getTime())/1000;
+    if(d<60) return `${d|0}초 전`; const m=d/60|0; if(m<60) return `${m}분 전`; const h=m/60|0; if(h<24) return `${h}시간 전`; return `${h/24|0}일 전`; };
 
-  document.getElementById('btnForceRefresh').addEventListener('click', refreshDetail);
-  document.getElementById('btnOpenOnGithub').addEventListener('click', ()=>{
-    // 네 환경의 GitHub URL 패턴에 맞게 수정 가능
-    window.open(`https://github.com/${repo}/commit/${sha}`, '_blank');
-  });
-
-  function ago(iso){
-    if (!iso) return '-';
-    const t = new Date(iso).getTime();
-    const d = Date.now() - t;
-    const s = Math.floor(d/1000);
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s/60);
-    if (m < 60) return `${m}m`;
-    const h = Math.floor(m/60);
-    return `${h}h`;
+  async function api(path, query){
+    const qs = query ? `?${new URLSearchParams(query).toString()}` : "";
+    const res = await fetch(path+qs, {credentials:'same-origin'});
+    if(!res.ok) throw new Error(`${path} ${res.status}`);
+    return await res.json();
   }
-  function esc(s){ return (s??'').toString().replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
-  function kst(iso){
-    const d = new Date(iso || Date.now());
-    const opts = { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' };
-    return new Intl.DateTimeFormat('ko-KR', opts).format(d);
+
+  function renderCommitReview(d){
+    const meta = document.getElementById('commitMeta');
+    meta.innerHTML = `
+      <div><div class="muted">작성자</div><div>${esc(d.author?.name||d.author||'-')}</div></div>
+      <div><div class="muted">시간</div><div>${ago(d.date)}</div></div>
+      <div><div class="muted">SHA</div><div>${esc(d.sha||sha||'-')}</div></div>
+      <div><div class="muted">브랜치</div><div>${esc(branch||'-')}</div></div>
+    `;
+    const files = document.getElementById('commitFiles');
+    files.innerHTML = (d.files||[]).map(f=>`
+      <div class="file">
+        <div>
+          <div>${esc(f.filename)}</div>
+          <div class="muted">+${f.additions} / -${f.deletions} (${f.status})</div>
+        </div>
+        <a href="${f.blob_url||'#'}" target="_blank">보기</a>
+      </div>
+    `).join("") || '<div class="muted">변경 파일 없음</div>';
+  }
+
+  function renderSecurity(s){
+    const id = document.getElementById('identityBody');
+    const de = document.getElementById('defenderBody');
+    const br = document.getElementById('bricksBody');
+    const txt = (x)=> esc(x?.summary || '결과 없음');
+    id.textContent = txt(s.sentinel);
+    de.textContent = txt(s.defender);
+    br.textContent = txt(s.bricks);
+  }
+
+  async function loadAll(){
+    const c = await api('/api/commit_detail', { repo, sha });
+    renderCommitReview(c||{});
+    const s = await api('/api/security_status', { repo, commit: sha, branch: branch||'' });
+    renderSecurity(s||{});
   }
 
   async function refreshDetail(){
     try{
-      // 1) 커밋 상세
-      const r1 = await fetch(`/api/commit_detail?repo=${encodeURIComponent(repo)}&sha=${encodeURIComponent(sha)}`, {cache:'no-store'});
-      if (r1.ok){
-        const d = await r1.json();
-        document.title = `Detail Security Analysis - ${(d.sha||sha).slice(0,7)}`;
-
-        // 파일 목록
-        const files = d.files || [];
-        filesBody.innerHTML = files.length
-          ? files.map(f=>`
-              <div class="row">
-                <div>
-                  <div class="mono">${esc(f.filename)}</div>
-                  <div class="stamp">+${f.additions}  -${f.deletions}  (${esc(f.status)})</div>
-                </div>
-                <div>
-                  ${f.blob_url ? `<a href="${esc(f.blob_url)}" target="_blank"><button type="button">보기</button></a>` : ''}
-                </div>
-              </div>
-            `).join('')
-          : `<div class="row"><div>변경 파일 없음</div></div>`;
-
-        // 코어 메타 (상단 텍스트는 그대로 두고, 툴팁/시간은 아래 카드에서 표기)
-        const when = d.date ? `${ago(d.date)} ago` : '-';
-        bricksBody.dataset._when = when;
-      }
-
-      // 2) 보안 상태(세 가지 블록)
-      const r2 = await fetch(`/api/security_status?repo=${encodeURIComponent(repo)}&commit=${encodeURIComponent(sha)}&branch=${encodeURIComponent(branch||'')}`, {cache:'no-store'});
-      if (r2.ok){
-        const s = await r2.json();
-        const toText = (o)=> esc(o?.summary || '결과 없음');
-        identityBody.innerHTML = `<p>${toText(s.sentinel)}</p>`;
-        defenderBody.innerHTML = `<p>${toText(s.defender)}</p>`;
-        bricksBody.innerHTML   = `<p>${toText(s.bricks)}</p>`;
-      }
-
-      stamp.textContent = `마지막 갱신: ${kst(new Date().toISOString())}`;
-    }catch(e){
-      console.warn('detail auto-refresh error:', e);
-    }
+      await loadAll();
+    }catch(e){ console.warn('detail auto-refresh error', e); }
   }
 
   document.addEventListener('DOMContentLoaded', ()=>{
-    refreshDetail();                 // 최초 1회
-    setInterval(refreshDetail, 30000); // 30초마다 같은 커밋으로 데이터만 갱신
+    loadAll();
+    setInterval(refreshDetail, 30000); // 30초 강제 자동 새로고침(동일 커밋 유지)
   });
 })();
 </script>
