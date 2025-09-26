@@ -1,4 +1,8 @@
-﻿import os
+﻿# NEW: eventlet을 가장 먼저 import하고 monkey_patch를 실행해야 합니다.
+import eventlet
+eventlet.monkey_patch()
+
+import os
 import json
 import logging
 import random
@@ -6,6 +10,14 @@ import base64
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from threading import Lock
+
+import requests
+from flask import (
+    Flask, render_template, request, redirect, session,
+    url_for, jsonify, Response
+)
+from flask_socketio import SocketIO
+from azure.cosmos import CosmosClient, PartitionKey, exceptions
 
 import requests
 from flask import (
@@ -1182,9 +1194,7 @@ def api_issues():
 
 # MODIFIED: 앱 실행 방식을 socketio.run으로 변경
 if __name__ == "__main__":
-    import eventlet
-    eventlet.monkey_patch()
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() in {"1", "true", "yes"}
     port = int(os.environ.get("PORT", "8000"))
-    # Flask 앱을 SocketIO 서버로 실행합니다.
+    # Gunicorn이 아닌, 직접 python app.py로 실행할 때를 위한 부분입니다.
     socketio.run(app, host="0.0.0.0", port=port, debug=debug_mode)
