@@ -553,7 +553,7 @@ def _evaluate_identity_risk(author_email=None, author_login=None, commit_data=No
         level_map = { "internal": {"icon": "✅", "label": "내부 직원"} }
         identity_meta = level_map["internal"]
         summary = f"{display_name} 님은 조직 내부에서 인증된 계정입니다."
-        details = [f"확인된 표시 이름: {display_name}", f"이메일: {email}", "사용자 유형: Member (시스템 예외)"]
+        details = [f"확인된 표시 이름: {display_name}", f"이메일: {email}", "사용자 유형: Member"]
         return {
             "status": "good", "summary": summary, "details": details, "metadata": metadata_lines,
             "identity_level": "internal", "identity_label": identity_meta["label"], "identity_icon": identity_meta["icon"],
