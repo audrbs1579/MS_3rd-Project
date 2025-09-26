@@ -2,107 +2,61 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>데이터 로딩 중...</title>
+  <title>Loading</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
   <style>
-    :root{
-      --bg:#f9fafb;
-      --card:#ffffff;
-      --text:#111827;
-      --muted:#6b7280;
-      --border:#e5e7eb;
-      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-      --primary: #4f46e5;
-    }
-    *{box-sizing:border-box}
-    html,body{
-      margin:0; padding:0; background:var(--bg); color:var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      display: flex; align-items: center; justify-content: center; height: 100vh;
-    }
-    .wrap{max-width:560px; width: 100%; padding:0 20px; text-align: center;}
-    .card{
-      background:var(--card); border:1px solid var(--border);
-      border-radius:12px; padding:32px 40px; box-shadow: var(--shadow);
-    }
-    h1{margin:0 0 16px 0; font-size:24px; color:var(--text);}
-    p#statusText{margin:0 0 24px 0; color:var(--muted); font-size: 16px; min-height: 24px; transition: color 0.3s;}
-    .progress-bar-container{
-      width: 100%;
-      height: 12px;
-      background-color: var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .progress-bar{
-      width: 0%;
-      height: 100%;
-      background-color: var(--primary);
-      border-radius: 6px;
-      transition: width 0.3s ease-in-out, background-color 0.3s;
-    }
+    body { margin: 0; background: #f9fafb; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif; }
+    .loading { text-align: center; color: #374151; }
+    .spinner { border: 4px solid #f3f4f6; border-top: 4px solid #4f46e5; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>데이터를 준비하는 중입니다</h1>
-      <p id="statusText">초기화 중...</p>
-      <div class="progress-bar-container">
-        <div id="progressBar" class="progress-bar"></div>
-      </div>
-    </div>
+  <div class="loading">
+    <div class="spinner"></div>
+    <p>데이터를 불러오는 중...</p>
   </div>
-<script>
-(async () => {
-    const statusText = document.getElementById('statusText');
-    const progressBar = document.getElementById('progressBar');
-    const CACHE_VERSION = 'v2'; // 캐시 버전을 정의합니다.
 
-    function updateProgress(percentage, text) {
-        const p = Math.max(0, Math.min(100, percentage));
-        progressBar.style.width = `${p}%`;
-        statusText.textContent = text;
-    }
+  <script>
+    const CACHE_KEY = 'dashboardCache';
+    const CACHE_VERSION = 'v2';   // ← dashboard_branch.html 과 동일하게 맞춤
 
-    try {
-        updateProgress(10, '초기 데이터 로딩을 시작합니다...');
-        setTimeout(() => updateProgress(40, '저장소, 브랜치, 커밋 정보를 한번에 가져오는 중... (시간이 걸릴 수 있습니다)'), 500);
-
+    async function loadData() {
+      try {
         const response = await fetch('/api/get_initial_data', {
-            headers: { 'Accept': 'application/json' },
+          headers: { 'Accept': 'application/json' },
         });
 
         if (response.status === 401) {
-            window.location.href = '/';
-            throw new Error('Unauthorized');
+          window.location.href = '/';
+          throw new Error('Unauthorized');
         }
+
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({ error: response.statusText }));
-            throw new Error(errData.error || `HTTP error ${response.status}`);
+          throw new Error(`Failed to fetch: ${response.status}`);
         }
 
         const data = await response.json();
 
-        updateProgress(95, '가져온 데이터를 캐시에 저장하는 중...');
-        // 데이터에 버전을 추가하여 저장합니다.
-        const dataToCache = Object.assign({ version: CACHE_VERSION }, data);
-        sessionStorage.setItem('dashboardCache', JSON.stringify(dataToCache));
+        // 캐시에 구조적으로 저장
+        const dataToCache = {
+          version: CACHE_VERSION,
+          repos: data.repos || [],
+          branches: data.branches || {},
+          timestamp: new Date().toISOString()
+        };
 
-        updateProgress(100, '데이터 로딩 완료! 대시보드로 이동합니다.');
-        
-        setTimeout(() => {
-            window.location.href = '/dashboard';
-        }, 500);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
 
-    } catch (error) {
-        console.error('초기 데이터 로딩 실패:', error);
-        updateProgress(100, `오류 발생: ${error.message}`);
-        progressBar.style.backgroundColor = '#ef4444';
-        statusText.style.color = '#991b1b';
+        // 완료 후 대시보드로 이동
+        window.location.href = '/dashboard';
+      } catch (err) {
+        console.error('Loading error:', err);
+        document.querySelector('.loading p').textContent = '데이터를 불러오지 못했습니다.';
+      }
     }
-})();
-</script>
+
+    loadData();
+  </script>
 </body>
 </html>
