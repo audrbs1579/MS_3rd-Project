@@ -47,7 +47,6 @@
       <input id="repoFilter" class="input" placeholder="저장소 검색..." />
       <div class="toolbar-actions">
         <a href="/issues"><button type="button">보안 이슈 보기</button></a>
-        <button id="btnVsConfig" type="button">VS Code</button>
         <button id="btnSync" type="button">새로고침</button>
         <span>Signed in as <b>{{ user_id }}</b></span>
         <a href="/logout"><button type="button">로그아웃</button></a>
@@ -108,18 +107,15 @@
   const detailViewCard = $('#detail-view-card'), detailContainerEl = $('#detail-container');
   const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
   const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
-  const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
+  const btnSync = $('#btnSync'), btnDetails = $('#btn-view-details');
   const lastUpdatedStamp = $('#lastUpdatedStamp');
 
-  // --- MODIFIED: KST 변환 함수 수정 ---
   function formatToKST(isoString) {
     if (!isoString) return '';
     try {
         const date = new Date(isoString);
-        // KST는 UTC+9. getTime()으로 UTC timestamp를 얻고, 9시간(밀리초)을 더해 KST 시간 객체 생성
         const kstTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
         
-        // getUTC* 메서드를 사용해 KST 시간 구성요소를 추출 (이중 변환 방지)
         const year = kstTime.getUTCFullYear();
         const month = kstTime.getUTCMonth() + 1;
         const day = kstTime.getUTCDate();
@@ -129,7 +125,7 @@
 
         const ampm = hours >= 12 ? '오후' : '오전';
         hours = hours % 12;
-        hours = hours ? hours : 12; // 0시는 오후 12시로 표시
+        hours = hours ? hours : 12;
 
         return `${year}. ${month}. ${day}. ${ampm} ${hours}:${minutes}:${seconds}`;
     } catch (e) {
@@ -153,7 +149,6 @@
     return false;
   }
   
-  // --- MODIFIED: 자동 동기화 기능 강화 ---
   async function silentSync() {
     try {
         console.log("Auto-sync started...");
@@ -166,25 +161,21 @@
         const dataToCache = { version: CACHE_VERSION, ...data, timestamp: new Date().toISOString() };
         sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
         
-        // 상태 업데이트
         S.repos = data.repos || [];
         S.branches = data.branches || {};
 
-        // UI 렌더링
         renderRepos(); 
         if (S.repo) {
             renderBranches(); 
         }
         
-        // NEW: 현재 선택된 브랜치의 커밋 목록도 새로고침
         if (S.repo && S.branch) {
             console.log(`Auto-refreshing commits for ${S.repo}/${S.branch}`);
             S.commits_page = 1;
             S.commits_has_more = true;
             S.commits_loading = false;
-            commitListEl.innerHTML = ''; // 기존 목록을 비우고 새로 로드
+            commitListEl.innerHTML = '';
             await loadMoreCommits();
-            // 커밋 목록이 갱신되었으므로 상세 정보 뷰는 초기화
             if (S.selCommit) {
                 S.selCommit = null;
                 resetDetailView();
@@ -264,7 +255,6 @@
     highlightSelection();
   }
 
-  // --- MODIFIED: 커밋별 새로고침 버튼 템플릿 추가 ---
   async function loadMoreCommits() {
     if (S.commits_loading || !S.commits_has_more) return;
     S.commits_loading = true;
@@ -285,7 +275,7 @@
           if (c.securityStatus) {
             S.securityByCommit[c.sha] = c.securityStatus;
             const s = c.securityStatus;
-            indicatorsHtml = `<span class="indicator status-${s?.defender?.status||'unknown'}"></span><span class="indicator status-${s?.sentinel?.status||'unknown'}"></span><span class="indicator status-${s?.bricks?.status||'unknown'}"></span>`;
+            indicatorsHtml = `<span class="indicator status-${s?.sentinel?.status||'unknown'}"></span><span class="indicator status-${s?.defender?.status||'unknown'}"></span><span class="indicator status-${s?.bricks?.status||'unknown'}"></span>`;
           } else {
             indicatorsHtml = `<div class="spinner"></div>`;
             analyzeCommitInBackground(c.sha);
@@ -323,7 +313,7 @@
         updateCommitIndicators(sha, status);
     } catch (error) {
         console.error(`Analysis failed for ${sha}:`, error);
-        updateCommitIndicators(sha, { defender:{status:'unknown'}, sentinel:{status:'unknown'}, bricks:{status:'unknown'} });
+        updateCommitIndicators(sha, { sentinel:{status:'unknown'}, defender:{status:'unknown'}, bricks:{status:'unknown'} });
     }
   }
 
@@ -349,7 +339,6 @@
     }
   }
   
-  // --- NEW: 커밋별 수동 새로고침 함수 ---
   async function refreshCommit(sha) {
     const commitEl = $(`.commit-item[data-sha="${sha}"]`);
     if (!commitEl) return;
@@ -361,7 +350,6 @@
     if(refreshBtn) refreshBtn.disabled = true;
 
     try {
-        // force_refresh=true 파라미터와 함께 API 호출
         const newStatus = await api('/security_status', {
             query: { repo: S.repo, commit: sha, branch: S.branch, force_refresh: 'true' }
         });
@@ -374,7 +362,7 @@
         }
     } catch (error) {
         console.error(`Failed to refresh commit ${sha}:`, error);
-        indicatorsContainer.innerHTML = originalIndicators; // 실패 시 원래 상태로 복구
+        indicatorsContainer.innerHTML = originalIndicators;
         alert(`커밋 ${sha.slice(0,7)} 새로고침에 실패했습니다: ${error.message}`);
     } finally {
         if(refreshBtn) refreshBtn.disabled = false;
@@ -405,7 +393,7 @@
     if (!commitEl) return;
     const indicatorsContainer = commitEl.querySelector('[data-role="indicators"]');
     if (!indicatorsContainer) return;
-    indicatorsContainer.innerHTML = `<span class="indicator status-${status?.defender?.status||'unknown'}"></span><span class="indicator status-${status?.sentinel?.status||'unknown'}"></span><span class="indicator status-${status?.bricks?.status||'unknown'}"></span>`;
+    indicatorsContainer.innerHTML = `<span class="indicator status-${status?.sentinel?.status||'unknown'}"></span><span class="indicator status-${status?.defender?.status||'unknown'}"></span><span class="indicator status-${status?.bricks?.status||'unknown'}"></span>`;
   }
 
   function updateSecuritySummary(data) {
@@ -417,7 +405,7 @@
       summaryText.innerHTML = data === 'loading' ? '잠시만 기다려주세요.' : '분석할 커밋을 선택하세요.';
       return;
     }
-    const statuses = [data.defender?.status, data.sentinel?.status, data.bricks?.status].filter(Boolean);
+    const statuses = [data.sentinel?.status, data.defender?.status, data.bricks?.status].filter(Boolean);
     const overall = statuses.includes('bad') ? 'bad' : statuses.includes('warn') ? 'warn' : 'good';
     securityCard.className = `card status-${overall}`;
     statusIcon.innerHTML = ICONS[overall];
@@ -449,7 +437,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     if (loadCache()) {
       renderRepos();
-      setInterval(silentSync, 60000); // 1분마다 자동 동기화
+      // 1분 단위 폴링 제거
+      // setInterval(silentSync, 60000);
     } else {
       window.location.href = '/loading';
     }
@@ -473,11 +462,10 @@
     }
   });
 
-  // --- NEW: 커밋 목록에 대한 이벤트 위임 (새로고침 버튼 클릭 처리) ---
   commitListEl.addEventListener('click', (e) => {
     const refreshButton = e.target.closest('.btn-refresh');
     if (refreshButton) {
-        e.stopPropagation(); // 커밋 아이템 선택 이벤트는 막음
+        e.stopPropagation();
         const sha = refreshButton.dataset.sha;
         if (sha) {
             refreshCommit(sha);

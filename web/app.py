@@ -114,37 +114,63 @@ def _gh_get(url, params=None, accept_header=None):
         log.error(f"GitHub API request failed for URL {full_url}: {e}")
         raise
 
-# --- NEW: BRICKS 분석 근거를 생성하는 ण्यास퍼 함수 ---
+# --- MODIFIED: BRICKS 분석 근거를 생성하는 고도화된 함수 ---
 def _generate_anomaly_reasons(features, sentinel_status):
     """
     BRICKS 모델 입력값(features)과 계정 신원 분석 결과를 바탕으로
-    이상치 판단에 대한 설명 가능한 근거를 생성합니다.
+    이상치 판단에 대한 설명 가능한 근거를 생성합니다. (고도화 버전)
     """
     reasons = []
     if not features:
         return reasons
 
-    # 규칙 1: 민감 파일 변경 여부
-    if features.get("is_sensitive_type", 0) > 0:
+    hour = features.get("hour")
+    is_mainline = features.get("ref_is_mainline", 0) > 0
+    is_sensitive = features.get("is_sensitive_type", 0) > 0
+    is_dependency = features.get("is_dependency_change", 0) > 0
+    push_size = features.get("push_size", 0)
+    push_distinct = features.get("push_distinct", 0)
+    repo_push_q90 = features.get("repo_push_q90", 0.0)
+    is_first_contrib = sentinel_status and sentinel_status.get("first_contribution")
+
+    # 규칙 1: 민감 파일 & 주요 브랜치
+    if is_sensitive and is_mainline:
+        reasons.append("민감한 키워드가 포함된 파일을 주요 브랜치(main/master)에 직접 수정했습니다.")
+    elif is_sensitive:
         reasons.append("민감한 키워드(secret, key 등)가 포함된 파일을 수정했습니다.")
 
-    # 규칙 2: 비정상적 커밋 시간 (예: 새벽 1시 ~ 5시)
-    hour = features.get("hour")
+    # 규칙 2: 의존성 파일 & 주요 브랜치
+    if is_dependency and is_mainline:
+        reasons.append("의존성 관리 파일을 주요 브랜치에 직접 수정했습니다.")
+    elif is_dependency:
+        reasons.append("프로젝트 의존성(라이브러리 등) 관련 파일을 수정했습니다.")
+
+    # 규칙 3: 비정상적 커밋 시간
     if hour is not None and (1 <= hour <= 5):
         reasons.append(f"일반적이지 않은 시간(새벽 {hour}시)에 커밋이 발생했습니다.")
 
-    # 규칙 3: 과도한 코드 변경량 (예: 1000 라인 이상)
-    if features.get("push_size", 0) > 1000:
-        reasons.append("평소보다 많은 양의 코드를 한 번에 커밋했습니다.")
+    # 규칙 4: 과도한 코드 변경량 (평균 대비)
+    if repo_push_q90 > 100 and push_size > repo_push_q90 * 1.5:
+        reasons.append(f"평소보다 많은 양의 코드({int(push_size)}줄)를 한 번에 커밋했습니다. (평균 {int(repo_push_q90)}줄)")
+    elif push_size > 1000:
+        reasons.append(f"코드 변경량이 {int(push_size)}줄로 매우 많습니다.")
         
-    # 규칙 4: 첫 기여자 여부 (sentinel_status 결과 활용)
-    if sentinel_status and sentinel_status.get("first_contribution"):
+    # 규칙 5: 과도한 파일 변경 수
+    if push_distinct > 20:
+        reasons.append(f"{int(push_distinct)}개의 많은 파일을 한 번에 수정했습니다.")
+
+    # 규칙 6: 첫 기여자
+    if is_first_contrib:
         reasons.append("이 저장소에 처음으로 기여한 사용자의 커밋입니다.")
         
-    if not reasons:
-        reasons.append("복합적인 요인에 의해 '주의' 상태로 판단되었습니다.")
+    # 규칙 7: 단시간 내 활동 집중
+    if features.get("actor_hour_ratio", 0.0) > 0.7 and features.get("actor_hour_events", 0) > 5:
+        reasons.append("최근 1시간 이내에 활동이 집중적으로 발생했습니다.")
 
-    return reasons
+    if not reasons:
+        reasons.append("여러 요인(시간, 변경량, 파일 유형 등)을 복합적으로 분석한 결과 '주의' 상태로 판단되었습니다.")
+
+    return list(dict.fromkeys(reasons)) # 중복 제거 후 반환
 
 def _get_code_excerpt(repo_full_name, ref, path, start_line, end_line):
     if not path or not start_line:
@@ -287,6 +313,7 @@ def _fetch_event_stats(repo_full_name, actor_login):
         "org_events_total": 0, "actor_org_events": 0,
     }
 
+# --- MODIFIED: 시간대를 KST로 변환하여 hour 특징을 생성 ---
 def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=None, commit_data=None, hint=None):
     """github_iforest_modelA 모델의 입력에 맞게 피처를 생성합니다."""
     if not repo_full_name or not commit_sha:
@@ -303,16 +330,26 @@ def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=
     author_info = commit_info.get("author") or {}
     commit_files = commit_data.get("files") or []
     stats = commit_data.get("stats") or {}
-    dt = _safe_parse_iso8601(author_info.get("date"))
+    
+    # 시간(KST) 관련 특징 추출
+    dt_utc = _safe_parse_iso8601(author_info.get("date"))
+    hour = 0
+    created_at_ts = 0
+    if dt_utc:
+        kst_tz = timezone(timedelta(hours=9))
+        dt_kst = dt_utc.astimezone(kst_tz)
+        hour = dt_kst.hour
+        created_at_ts = int(dt_utc.timestamp())
 
     event_type = hint.get("event_type") or "PushEvent"
-    created_at_ts = int(dt.timestamp()) if dt else 0
-    hour = dt.hour if dt else 0
     push_size = float(stats.get("total", 0))
     push_distinct = float(len(commit_files))
     mainline_branches = {'main', 'master'}
     ref_is_mainline = 1.0 if branch_name and branch_name.lower() in mainline_branches else 0.0
+    
+    # 파일 유형 관련 특징 추출
     is_sensitive_type = 1.0 if _count_sensitive_paths(commit_files) > 0 else 0.0
+    is_dependency_change = 1.0 if _count_dependency_changes(commit_files) > 0 else 0.0
 
     author_login = (commit_data.get("author") or {}).get("login")
     event_stats = _fetch_event_stats(repo_full_name, author_login)
@@ -321,6 +358,7 @@ def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=
         "type": event_type, "created_at_ts": created_at_ts, "hour": hour,
         "push_size": push_size, "push_distinct": push_distinct, "ref_is_mainline": ref_is_mainline,
         "is_sensitive_type": is_sensitive_type,
+        "is_dependency_change": is_dependency_change, # 분석 근거 생성을 위해 추가
         "actor_events_total": event_stats.get("actor_events_total", 0),
         "repo_events_total": event_stats.get("repo_events_total", 0),
         "org_events_total": event_stats.get("org_events_total", 0),
@@ -334,10 +372,6 @@ def _build_iforest_features_from_commit(repo_full_name, commit_sha, branch_name=
 def _extract_anomaly_details(response_json):
     """
     Databricks/MLflow 서빙 응답에서 anomaly score, is_anomaly, threshold를 최대한 관대하게 추출.
-    지원 형태 예:
-      - {"predictions": [{"anomaly_score": 0.73, "is_anomaly": true, "threshold_used": 0.6}]}
-      - {"predictions": [{"score": 0.73, "is_outlier": true, "threshold": 0.6}]}
-      - {"score": 0.73, "is_anomaly": true, "threshold": 0.6}
     """
     def _coerce_bool(v):
         if isinstance(v, bool):
@@ -350,7 +384,6 @@ def _extract_anomaly_details(response_json):
 
     cand = response_json
 
-    # 1) predictions/outputs/data 키 우선
     if isinstance(cand, dict):
         for key in ("predictions", "outputs", "data"):
             if key in cand:
@@ -363,31 +396,25 @@ def _extract_anomaly_details(response_json):
 
     score, is_anom, threshold = None, None, None
 
-    # 2) cand가 숫자면 점수로 간주
     if isinstance(cand, (int, float)):
         score = float(cand)
     elif isinstance(cand, dict):
-        # 점수 후보 키
         for k in ("anomaly_score", "_anomaly_score", "score", "outlier_score", "anomalyScore"):
             if k in cand and isinstance(cand[k], (int, float)):
                 score = float(cand[k])
                 break
-        # 이진 판정 후보 키
         for k in ("is_anomaly", "_is_anomaly", "is_outlier", "prediction", "label", "isAnomaly"):
             if k in cand:
                 is_anom = _coerce_bool(cand[k])
                 break
-        # 임계값 후보 키
         for k in ("threshold_used", "threshold"):
             if k in cand and isinstance(cand[k], (int, float)):
                 threshold = float(cand[k])
                 break
 
-    # 3) 판정값이 없고, 점수와 임계값이 있으면 직접 계산
     if score is not None and is_anom is None and threshold is not None:
         is_anom = bool(score >= threshold)
 
-    # 4) 최종적으로 점수와 판정값이 모두 있어야 유효한 결과로 간주
     if score is not None and is_anom is not None:
         return {"score": float(score), "is_anomaly": bool(is_anom), "threshold": threshold}
 
@@ -445,7 +472,12 @@ def _invoke_databricks_model(features):
     if not DATABRICKS_TOKEN:
         raise RuntimeError("Databricks token is not configured.")
     headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}", "Content-Type": "application/json"}
-    payload = {"dataframe_records": [features]}
+    
+    # 분석 근거 생성에 사용된 특징(is_dependency_change)은 모델 입력에서 제외
+    model_features = features.copy()
+    model_features.pop('is_dependency_change', None)
+    
+    payload = {"dataframe_records": [model_features]}
     response = requests.post(
         DATABRICKS_ENDPOINT,
         headers=headers,
@@ -455,7 +487,6 @@ def _invoke_databricks_model(features):
     response.raise_for_status()
     try:
         result_json = response.json()
-        # 실제 응답 로깅 (기존 print -> log.info로 변경)
         log.info(f"✅ Databricks 실제 응답: {result_json}")
     except ValueError:
         log.error("Databricks response was not JSON")
@@ -465,7 +496,6 @@ def _invoke_databricks_model(features):
     if not ext:
         return None
 
-    # _extract_anomaly_details에서 추출된 값을 사용하도록 정리
     return {
         'score': ext['score'],
         'is_anomaly': ext['is_anomaly'],
@@ -758,8 +788,6 @@ def details():
 def healthz():
     return jsonify({"ok": True, "time": datetime.utcnow().isoformat() + "Z"})
 
-# --- app.py 파일의 _sync_github_to_cosmos 함수를 교체해주세요. ---
-
 def _sync_github_to_cosmos(user_login, full_sync=False):
     """
     GitHub 데이터를 Cosmos DB에 동기화합니다.
@@ -776,12 +804,10 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
         if not repo_full_name:
             continue
         
-        # --- MODIFIED: ID에서 '/'를 '-'로 치환 ---
         sanitized_repo_id = repo_full_name.replace('/', '-')
             
         if not full_sync:
             try:
-                # --- MODIFIED: 조회할 때도 치환된 ID 사용 ---
                 repo_doc_db = repos_container.read_item(item=sanitized_repo_id, partition_key=user_login)
                 if repo_doc_db.get('pushed_at') == repo_info.get('pushed_at'):
                     log.info(f"Repo {repo_full_name} is up to date. Skipping.")
@@ -817,10 +843,9 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
                     }
                     commits_container.upsert_item(commit_doc)
 
-            # --- MODIFIED: 저장할 때도 치환된 ID 사용하고, 원본 이름도 별도 저장 ---
             repo_doc = {
                 'id': sanitized_repo_id,
-                'repoFullName': repo_full_name, # 원본 이름은 별도 필드에 저장
+                'repoFullName': repo_full_name,
                 'userId': user_login,
                 'repoName': repo_info.get('name'), 
                 'pushed_at': repo_info.get('pushed_at'),
@@ -834,7 +859,6 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
 
     log.info(f"GitHub sync finished for {user_login}.")
 
-# --- MODIFIED: 자동 동기화 로직이 포함된 get_initial_data ---
 @app.get("/api/get_initial_data")
 def get_initial_data():
     if "access_token" not in session:
@@ -862,7 +886,6 @@ def get_initial_data():
         repo_query = "SELECT * FROM c WHERE c.userId = @userId ORDER BY c.pushed_at DESC"
         repos_list_cosmos = list(repos_container.query_items(query=repo_query, parameters=params))
         
-        # --- MODIFIED: r.get("id") 대신 r.get("repoFullName")을 사용하도록 수정 ---
         repos_list = [{"full_name": r.get("repoFullName"), "name": r.get("repoName"), "pushed_at": r.get("pushed_at")} for r in repos_list_cosmos]
         branches_map = {r["repoFullName"]: r.get("branches", []) for r in repos_list_cosmos if r.get("repoFullName")}
         
@@ -877,12 +900,12 @@ def get_initial_data():
                 commit_query = "SELECT TOP @limit * FROM c WHERE c.repoFullName = @repo AND c.branch = @branch ORDER BY c.date DESC"
                 commit_params = [
                     {"name": "@limit", "value": COMMITS_PER_BRANCH},
-                    {"name": "@repo", "value": repo_name_original}, # 올바른 저장소 이름 사용
+                    {"name": "@repo", "value": repo_name_original},
                     {"name": "@branch", "value": branch_name}
                 ]
                 
                 branch_commits = list(commits_container.query_items(query=commit_query, parameters=commit_params))
-                key = f"{repo_name_original}|{branch_name}" # 키 생성 시에도 올바른 이름 사용
+                key = f"{repo_name_original}|{branch_name}"
                 commits_map[key] = [{"sha": c.get("sha"), "message": c.get("message"), "author": c.get("author"), "date": c.get("date")} for c in branch_commits]
 
         return jsonify({"repos": repos_list, "branches": branches_map, "commits": commits_map, "timestamp": datetime.utcnow().isoformat()})
@@ -890,8 +913,6 @@ def get_initial_data():
     except Exception as e:
         log.exception(f"Failed to get initial data for {user_login}")
         return jsonify({"error": f"Failed to process initial data: {str(e)}"}), 500
-
-
 
 @app.get("/api/my_repos")
 def api_my_repos():
@@ -919,8 +940,6 @@ def api_branches():
             out.append({"name": b.get("name"), "sha": sha, "last_commit_date": None})
     return jsonify({"branches": out})
 
-# app.py 파일의 기존 /api/commits 함수를 아래 코드로 교체해주세요.
-
 @app.get("/api/commits")
 def api_commits():
     if "access_token" not in session:
@@ -934,7 +953,6 @@ def api_commits():
     if not repo or not branch:
         return jsonify({"error": "repo and branch required"}), 400
 
-    # 1. GitHub에서 커밋 기본 정보 가져오기
     commits_data, _ = _gh_get(f"/repos/{repo}/commits", params={
         "sha": branch, "per_page": per_page, "page": page
     })
@@ -942,11 +960,9 @@ def api_commits():
     commit_list = (commits_data or [])
     commit_shas = [c.get("sha") for c in commit_list if c.get("sha")]
 
-    # 2. Cosmos DB에서 해당 커밋들의 보안 분석 결과 미리 조회
     security_statuses = {}
     if commit_shas:
         try:
-            # SQL의 IN 절과 유사한 쿼리를 사용하여 한 번에 여러 커밋 조회
             query = f"SELECT c.id, c.securityStatus FROM c WHERE c.repoFullName = @repo AND c.id IN ({', '.join([f'@sha{i}' for i in range(len(commit_shas))])})"
             params = [{"name": "@repo", "value": repo}]
             for i, sha in enumerate(commit_shas):
@@ -958,7 +974,6 @@ def api_commits():
         except Exception as e:
             log.warning(f"Could not bulk fetch security statuses from Cosmos DB: {e}")
 
-    # 3. GitHub 정보와 DB의 보안 분석 결과를 합쳐서 최종 데이터 생성
     commits_with_status = []
     for c in commit_list:
         sha = c.get("sha")
@@ -967,7 +982,7 @@ def api_commits():
             "message": (c.get("commit", {}).get("message") or "").split("\n")[0],
             "author": (c.get("commit", {}).get("author") or {}).get("name"),
             "date": (c.get("commit", {}).get("author") or {}).get("date"),
-            "securityStatus": security_statuses.get(sha) # DB에 결과가 있으면 추가, 없으면 null
+            "securityStatus": security_statuses.get(sha)
         }
         commits_with_status.append(commit_info)
 
@@ -1179,7 +1194,6 @@ def api_developer_activity():
         "recent_comments": comments
     })
 
-# --- MODIFIED: /api/security_status 함수 ---
 @app.get("/api/security_status")
 def api_security_status():
     repo = request.args.get("repo")
@@ -1195,7 +1209,6 @@ def api_security_status():
 
     if not force_refresh:
         try:
-            # 파티션 키(repo)를 명시하여 캐시된 아이템을 읽습니다.
             cached_item = commits_container.read_item(item=commit_sha, partition_key=repo)
             if cached_item and cached_item.get("securityStatus"):
                 log.info(f"Cache hit for {commit_sha} in Cosmos DB.")
@@ -1299,7 +1312,6 @@ def api_security_status():
         log.warning(f"Failed to log security issue for {commit_sha}: {e}")
 
     try:
-        # 분석 결과를 DB에 갱신 (upsert)
         commit_doc_cache = { 'id': commit_sha, 'repoFullName': repo, 'securityStatus': live_result }
         commits_container.upsert_item(commit_doc_cache)
         log.info(f"Upserted security status for {commit_sha} to cache.")
@@ -1310,12 +1322,10 @@ def api_security_status():
         if e.response and e.response.status_code in [404, 403]:
             live_result = live_result or {'defender': {'status': 'unknown', 'summary': '결과 없음'}, 'sentinel': identity_assessment, 'bricks': {}}
             return jsonify(live_result)
-        # HTTP 에러의 경우, 더 상세한 정보를 반환하도록 수정
         log.exception(f"HTTP error during live analysis for {repo}@{commit_sha}")
         error_details = f"HTTP 분석 오류: {str(e)}"
         return jsonify(error=error_details), 500
     except Exception as e:
-        # 모든 예외에 대해 실제 에러 메시지를 포함하여 반환하도록 수정
         log.exception(f"Failed to get live security status for {repo}@{commit_sha}")
         error_details = f"내부 서버 오류: {str(e)}"
         return jsonify(error=error_details), 500
