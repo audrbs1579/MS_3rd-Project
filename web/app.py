@@ -1303,8 +1303,22 @@ def api_security_status():
         commit_doc_cache = { 'id': commit_sha, 'repoFullName': repo, 'securityStatus': live_result }
         commits_container.upsert_item(commit_doc_cache)
         log.info(f"Upserted security status for {commit_sha} to cache.")
+        
     except Exception as e:
         log.warning(f"Failed to save to commits cache for {commit_sha}: {e}")
+    except requests.exceptions.HTTPError as e:
+        if e.response and e.response.status_code in [404, 403]:
+            live_result = live_result or {'defender': {'status': 'unknown', 'summary': '결과 없음'}, 'sentinel': identity_assessment, 'bricks': {}}
+            return jsonify(live_result)
+        # HTTP 에러의 경우, 더 상세한 정보를 반환하도록 수정
+        log.exception(f"HTTP error during live analysis for {repo}@{commit_sha}")
+        error_details = f"HTTP 분석 오류: {str(e)}"
+        return jsonify(error=error_details), 500
+    except Exception as e:
+        # 모든 예외에 대해 실제 에러 메시지를 포함하여 반환하도록 수정
+        log.exception(f"Failed to get live security status for {repo}@{commit_sha}")
+        error_details = f"내부 서버 오류: {str(e)}"
+        return jsonify(error=error_details), 500
 
     return jsonify(live_result)
 
