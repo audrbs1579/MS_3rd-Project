@@ -821,14 +821,15 @@ def _sync_github_to_cosmos(user_login, full_sync=False):
                     }
                     commits_container.upsert_item(commit_doc)
 
-            # --- MODIFIED: 저장할 때도 치환된 ID 사용하고, 원본 이름도 별도 저장 ---
+            # --- MODIFIED: 'type' 필드를 추가하여 쿼리할 수 있도록 수정 ---
             repo_doc = {
                 'id': sanitized_repo_id,
-                'repoFullName': repo_full_name, # 원본 이름은 별도 필드에 저장
+                'repoFullName': repo_full_name, 
                 'userId': user_login,
                 'repoName': repo_info.get('name'), 
                 'pushed_at': repo_info.get('pushed_at'),
-                'branches': branches_list
+                'branches': branches_list,
+                'type': 'repo'  # <-- FIX: 쿼리에서 사용할 'type' 필드 추가
             }
             repos_container.upsert_item(repo_doc)
             log.info(f"Successfully synced repo: {repo_full_name}")
@@ -862,18 +863,18 @@ def get_initial_data():
             log.info(f"Re-login detected for {user_login}. Performing delta sync.")
             _sync_github_to_cosmos(user_login, full_sync=False)
 
-        # Cosmos에서 대시보드 초기 데이터 조회
-        repos_query = "SELECT c.full_name, c.pushed_at FROM c WHERE c.userId = @userId AND c.type = 'repo'"
+        # --- MODIFIED: DB 조회 쿼리 및 결과 처리 로직 수정 ---
+        repos_query = "SELECT c.repoFullName, c.pushed_at FROM c WHERE c.userId = @userId AND c.type = 'repo'"
         repos_params = [{"name": "@userId", "value": user_login}]
         repos_items = list(repos_container.query_items(query=repos_query, parameters=repos_params)) or []
 
         repos_list = []
         for repo in repos_items:
-            full = _normalize_repo_param(repo.get("full_name"))
+            full = _normalize_repo_param(repo.get("repoFullName")) # <-- FIX: 'repoFullName' 필드 사용
             if not full:
                 continue
             repos_list.append({
-                "full_name": full,
+                "full_name": full, # 프론트엔드와 호환성을 위해 'full_name' 키 사용
                 "pushed_at": repo.get("pushed_at"),
             })
 
