@@ -16,7 +16,8 @@ GITHUB_API_URL = "https://api.github.com"
 COSMOS_DATABASE_NAME = "ProjectGuardianDB"
 COSMOS_REPOS_CONTAINER = "repositories"
 COSMOS_COMMITS_CONTAINER = "commits"
-# events 컨테이너는 더 이상 사용하지 않음
+# NEW: 실시간 업데이트를 위해 알림을 보낼 Flask 웹 서버의 URL
+FLASK_SERVER_URL = os.environ.get("FLASK_SERVER_URL")
 
 # --- Cosmos DB 클라이언트 초기화 ---
 try:
@@ -78,7 +79,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             'branches': branches_list
         }
         repos_container.upsert_item(repo_doc)
-        log.info(f"Upserted repository: {repo_full_name}")
+        logging.info(f"Upserted repository: {repo_full_name}")
 
         # 2. `commits` 컨테이너 업데이트
         for commit in payload.get('commits', []):
@@ -92,10 +93,21 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 'securityStatus': None
             }
             commits_container.upsert_item(commit_doc)
-            log.info(f"Upserted basic info for commit: {commit_sha}")
+            logging.info(f"Upserted basic info for commit: {commit_sha}")
             
+        # 3. NEW: 데이터베이스 업데이트 후 Flask 서버에 알림 전송
+        if FLASK_SERVER_URL:
+            try:
+                notify_url = f"{FLASK_SERVER_URL}/api/webhook_notify"
+                notify_payload = {'repoFullName': repo_full_name}
+                requests.post(notify_url, json=notify_payload, timeout=5)
+                logging.info(f"Sent update notification for {repo_full_name} to {notify_url}")
+            except Exception as notify_error:
+                # 알림 실패가 웹훅의 주요 기능을 막지 않도록 경고만 로깅합니다.
+                logging.warning(f"Failed to send update notification: {notify_error}")
+
         return func.HttpResponse(f"Processed push for {repo_full_name}.", status_code=200)
 
     except Exception as e:
-        logging.exception(f"Failed to process webhook")
+        logging.exception("Failed to process webhook")
         return func.HttpResponse(f"An unexpected error occurred: {str(e)}", status_code=500)
