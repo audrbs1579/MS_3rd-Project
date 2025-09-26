@@ -1,4 +1,4 @@
-﻿# NEW: eventlet을 가장 먼저 import하고 monkey_patch를 실행해야 합니다.
+﻿# 1. eventlet을 가장 먼저 import하고 monkey_patch를 실행합니다.
 import eventlet
 eventlet.monkey_patch()
 
@@ -19,22 +19,18 @@ from flask import (
 from flask_socketio import SocketIO
 from azure.cosmos import CosmosClient, PartitionKey, exceptions
 
-import requests
-from flask import (
-    Flask, render_template, request, redirect, session,
-    url_for, jsonify, Response
-)
-# NEW: Flask-SocketIO 라이브러리를 임포트합니다.
-from flask_socketio import SocketIO
-
-from azure.cosmos import CosmosClient, PartitionKey, exceptions
-
 azure_logger = logging.getLogger('azure')
 azure_logger.setLevel(logging.DEBUG)
 
-# ---------- 기본 설정 ----------
-COMMITS_PER_BRANCH = 5
+# 2. Flask 앱 객체를 먼저 생성합니다.
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 
+# 3. 생성된 앱 객체를 사용하여 다른 라이브러리들을 초기화합니다.
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*")
+
+# --- 기본 설정 및 Cosmos DB 클라이언트 초기화 ---
+COMMITS_PER_BRANCH = 5
 COSMOS_CONNECTION_STRING = os.environ.get("COSMOS_DB_CONNECTION_STRING")
 COSMOS_DATABASE_NAME = "ProjectGuardianDB"
 COSMOS_REPOS_CONTAINER = "repositories"
@@ -1192,9 +1188,7 @@ def api_issues():
         log.exception(f"Failed to get issues from Cosmos DB for {user_id}")
         return jsonify({"error": str(e)}), 500
 
-# MODIFIED: 앱 실행 방식을 socketio.run으로 변경
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() in {"1", "true", "yes"}
     port = int(os.environ.get("PORT", "8000"))
-    # Gunicorn이 아닌, 직접 python app.py로 실행할 때를 위한 부분입니다.
     socketio.run(app, host="0.0.0.0", port=port, debug=debug_mode)
