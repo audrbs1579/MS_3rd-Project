@@ -1,265 +1,172 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf--8" />
   <title>Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
   <style>
-    :root{
-      --bg:#f9fafb; --card:#fff; --text:#111827; --muted:#6b7280; --border:#e5e7eb;
-      --ok:#22c55e; --ok-soft:#22c55e55;
+    .main-container { display: grid; grid-template-columns: minmax(300px, 1.2fr) minmax(250px, 1fr) minmax(300px, 1.5fr); gap: 16px; height: 65vh; margin-bottom: 16px; }
+    .column { display: flex; flex-direction: column; background-color: #fff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); overflow: hidden; }
+    .column h2 { font-size: 1rem; padding: 12px 16px; margin: 0; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+    .column .body { padding: 8px; overflow-y: auto; flex-grow: 1; }
+    .column .empty-state { padding: 16px; color: #6b7280; }
+    .detail-container { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: background-color 0.2s, border-color 0.2s; }
+    .list-item:hover { background-color: #f9fafb; }
+    .list-item.selected { background-color: #eef2ff; border-color: #c7d2fe; font-weight: 600; }
+    .commit-info { flex-grow: 1; overflow: hidden; margin-right: 8px; }
+    .commit-message { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .commit-author { font-size: 0.8rem; color: #6b7280; margin-top: 2px; }
+    .commit-sha { font-family: monospace; font-size: 0.85rem; }
+    .commit-indicators { display: flex; gap: 5px; padding: 0 8px; width: 44px; justify-content: center; align-items: center; flex-shrink: 0; }
+    .indicator { width: 10px; height: 10px; border-radius: 50%; background-color: #e5e7eb; }
+    .indicator.status-good { background-color: #22c55e; }
+    .indicator.status-warn { background-color: #f59e0b; }
+    .indicator.status-bad { background-color: #ef4444; }
+    .indicator.status-unknown { background-color: #9ca3af; }
+    .spinner { border: 2px solid #f3f4f6; border-top: 2px solid #4f46e5; border-radius: 50%; width: 12px; height: 12px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .stamp { font-size: 0.75rem; color: #9ca3af; text-align: right; margin-top: 8px; padding-right: 4px; }
+    .stamp.highlight { transition: color 0.2s; color: #4f46e5; }
+    
+    /* --- NEW: 커밋 새로고침 버튼 스타일 --- */
+    .commit-actions { flex-shrink: 0; }
+    .btn-refresh {
+      background: none; border: none; cursor: pointer; padding: 4px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #9ca3af;
     }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;}
-    .wrap{padding:16px;max-width:1200px;margin:0 auto}
-    .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
-    .toolbar input{flex:1;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:#fff}
-    .toolbar .btn{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
-    .grid{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:16px;min-height:520px}
-    .col{background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
-    .col h2{margin:0;padding:12px 16px;border-bottom:1px solid var(--border);font-size:15px}
-    .body{padding:8px;overflow:auto;flex:1}
-    .empty{color:var(--muted);padding:12px}
-    .item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;margin:6px 4px;cursor:pointer}
-    .item.active{outline:2px solid #3b82f622}
-    .left{min-width:0}
-    .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .dots{display:flex;gap:6px;align-items:center}
-    .dot{width:8px;height:8px;border-radius:50%;background:#d1d5db}
-    .recent{box-shadow: inset 0 0 0 2px var(--ok-soft); position:relative}
-    .recent::after{content:"";position:absolute;right:8px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:var(--ok)}
-    .footer{margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
-    .link{border:1px solid var(--border);padding:8px 12px;border-radius:10px;background:#fff;text-decoration:none;color:inherit}
-    .highlight{animation:flash 0.8s}
-    @keyframes flash{from{background:#fef9c3} to{background:transparent}}
+    .btn-refresh:hover { background-color: #e5e7eb; color: #111827; }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="toolbar">
-    <input id="search" placeholder="저장소 검색..." />
-    <button id="btn-issues" class="btn">보안 이슈 보기</button>
-    <button id="btn-vscode" class="btn">VS Code</button>
-    <button id="btn-refresh" class="btn">새로고침</button>
+  <div class="wrap">
+    <div class="toolbar">
+      <input id="repoFilter" class="input" placeholder="저장소 검색..." />
+      <div class="toolbar-actions">
+        <a href="/issues"><button type="button">보안 이슈 보기</button></a>
+        <button id="btnVsConfig" type="button">VS Code</button>
+        <button id="btnSync" type="button">새로고침</button>
+        <span>Signed in as <b>{{ user_id }}</b></span>
+        <a href="/logout"><button type="button">로그아웃</button></a>
+      </div>
+    </div>
+    <div class="main-container">
+      <div class="column" id="repo-column">
+        <h2>내 저장소</h2>
+        <div class="body repo-list" id="repoList"><div class="empty-state">데이터 로딩 중...</div></div>
+      </div>
+      <div class="column" id="branch-column">
+        <h2>브랜치</h2>
+        <div class="body" id="branchList"><div class="empty-state">저장소를 선택하세요.</div></div>
+      </div>
+      <div class="column" id="commit-column">
+        <h2>커밋</h2>
+        <div class="body" id="commitList"><div class="empty-state">브랜치를 선택하세요.</div></div>
+      </div>
+    </div>
+    <div class="detail-container">
+      <section id="security-summary-card" class="card status-unknown">
+        <div class="security-summary-body">
+          <div class="security-status">
+            <div id="status-icon-container" class="status-icon"></div>
+            <div class="status-text">
+              <h3 id="security-summary-title">보안 요약</h3>
+              <p id="security-summary-text">분석할 커밋을 선택하세요.</p>
+            </div>
+          </div>
+          <button id="btn-view-details" disabled>상세 보기</button>
+        </div>
+        <div id="lastUpdatedStamp" class="stamp"></div>
+      </section>
+      <section id="detail-view-card" class="card" style="display: none;">
+        <h2>커밋 상세 정보</h2>
+        <div id="detail-container" class="body detail"></div>
+      </section>
+    </div>
   </div>
-
-  <div class="grid">
-    <div class="col">
-      <h2>Repositories</h2>
-      <div id="repoList" class="body"><div class="empty">데이터 로딩 중...</div></div>
-    </div>
-    <div class="col">
-      <h2>Branches</h2>
-      <div id="branchList" class="body"><div class="empty">브랜치를 먼저 선택하세요.</div></div>
-    </div>
-    <div class="col">
-      <h2>Commits</h2>
-      <div id="commitList" class="body"><div class="empty">브랜치를 선택하면 커밋이 표시됩니다.</div></div>
-    </div>
-  </div>
-
-  <div class="footer">
-    <div>
-      <div id="lastUpdated" class="sub">마지막 갱신: -</div>
-      <div class="sub">선택 레포: <span id="selRepo">-</span> &nbsp; 선택 브랜치: <span id="selBranch">-</span> &nbsp; 선택 커밋: <span id="selCommit">-</span></div>
-    </div>
-    <a id="btn-detail" class="link" href="#" target="_blank">상세 보기</a>
-  </div>
-</div>
 
 <script>
-(()=> {
-  // ====== 상태 ======
-  const S = {
-    repo:null, branch:null, commit:null,
-    repos:[], branches:[], commits:[],
-    page:1, hasMore:true, loading:false,
+(()=>{
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => el.querySelectorAll(s);
+
+  const S = { repo: null, branch: null, selCommit: null, repos: [], branches: {}, securityByCommit: {}, commits_page: 1, commits_loading: false, commits_has_more: true, };
+  const CACHE_KEY = 'dashboardCache';
+  const CACHE_VERSION = 'v2';
+  const ICONS = {
+    good: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+    warn: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>`,
+    bad: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>`,
+    unknown: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>`
   };
 
-  const elRepo = document.getElementById('repoList');
-  const elBranch = document.getElementById('branchList');
-  const elCommit = document.getElementById('commitList');
-  const elSelRepo = document.getElementById('selRepo');
-  const elSelBranch = document.getElementById('selBranch');
-  const elSelCommit = document.getElementById('selCommit');
-  const elLast = document.getElementById('lastUpdated');
-  const btnDetail = document.getElementById('btn-detail');
+  const repoFilter = $('#repoFilter'), repoListEl = $('#repoList');
+  const branchListEl = $('#branchList'), commitListEl = $('#commitList');
+  const detailViewCard = $('#detail-view-card'), detailContainerEl = $('#detail-container');
+  const securityCard = $('#security-summary-card'), statusIcon = $('#status-icon-container');
+  const summaryTitle = $('#security-summary-title'), summaryText = $('#security-summary-text');
+  const btnSync = $('#btnSync'), btnVsConfig = $('#btnVsConfig'), btnDetails = $('#btn-view-details');
+  const lastUpdatedStamp = $('#lastUpdatedStamp');
 
-  const THREE_MIN = 3 * 60 * 1000;
+  function formatToKST(isoString) { /* ... */ }
+  function loadCache() { /* ... */ }
+  async function silentSync() { /* ... */ }
+  async function api(path, options = {}) { /* ... */ }
+  function renderRepos() { /* ... */ }
+  function renderBranches() { /* ... */ }
+  function selectRepo(repoName) { /* ... */ }
+  function selectBranch(branchName) { /* ... */ }
+  async function loadMoreCommits() { /* ... */ }
+  async function analyzeCommitInBackground(sha) { /* ... */ }
+  async function selectCommit(sha) { /* ... */ }
+  async function refreshCommit(sha) { /* ... */ }
+  function resetDetailView() { /* ... */ }
+  function renderCommitDetails(details) { /* ... */ }
+  function highlightSelection() { /* ... */ }
+  function updateCommitIndicators(sha, status) { /* ... */ }
+  function updateSecuritySummary(data) { /* ... */ }
+  function esc(s) { /* ... */ }
+  function ago(d) { /* ... */ }
+  function el(tag, cls, content) { /* ... */ }
 
-  // ====== 유틸 ======
-  const normRepo = (full) => (full||"").replace(/\\/g,"/"); // 역슬래시 → 슬래시
-  const esc = (s)=> String(s??"").replace(/[&<>"'`]/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;","`":"&#96;" }[m]));
-  const ago = (iso)=>{
-    if(!iso) return "-";
-    const t = new Date(iso).getTime(), d = Date.now()-t;
-    const sec = Math.floor(d/1000); if(sec<60) return `${sec}초 전`;
-    const min = Math.floor(sec/60); if(min<60) return `${min}분 전`;
-    const hr = Math.floor(min/60); if(hr<24) return `${hr}시간 전`;
-    const day = Math.floor(hr/24); return `${day}일 전`;
-  };
-  const isRecent = (iso)=>{ if(!iso) return false; return (Date.now()-new Date(iso).getTime())<=THREE_MIN; };
-  const stamp = ()=> new Date().toLocaleString('ko-KR',{hour12:false});
-
-  async function api(path, query) {
-    const qs = query ? `?${new URLSearchParams(query).toString()}` : "";
-    const res = await fetch(path+qs, {credentials:'same-origin'});
-    if(!res.ok) throw new Error(`${path} ${res.status}`);
-    return await res.json();
-  }
-
-  function markRecentChain() {
-    // 커밋이 최근이면 해당 커밋/브랜치/레포 요소에 .recent
-    if(!S.commits || !S.commits.length) return;
-    const c = S.commits.find(x=>x.sha===S.commit);
-    if(!c || !isRecent(c.date)) return;
-
-    const repoEl = elRepo.querySelector(`.item[data-repo="${CSS.escape(S.repo)}"]`);
-    const brEl = elBranch.querySelector(`.item[data-branch="${CSS.escape(S.branch)}"]`);
-    const cmEl = elCommit.querySelector(`.item[data-sha="${CSS.escape(S.commit)}"]`);
-    repoEl?.classList.add('recent');
-    brEl?.classList.add('recent');
-    cmEl?.classList.add('recent');
-  }
-
-  // ====== 렌더 ======
-  function renderRepos() {
-    if(!S.repos.length){ elRepo.innerHTML = `<div class="empty">저장소 없음</div>`; return; }
-    elRepo.innerHTML = "";
-    S.repos.forEach(r=>{
-      const full = normRepo(r.full_name);
-      const div = document.createElement('div');
-      div.className = `item repo-item${S.repo===full?' active':''}`;
-      div.dataset.repo = full;
-      div.innerHTML = `<div class="left"><div class="title">${esc(full)}</div><div class="sub">${esc(r.pushed_at||'')}</div></div><div class="dots"><span class="dot"></span></div>`;
-      div.onclick = ()=> selectRepo(full);
-      elRepo.appendChild(div);
-    });
-  }
-
-  function renderBranches() {
-    if(!S.branches.length){ elBranch.innerHTML = `<div class="empty">브랜치 없음</div>`; return; }
-    elBranch.innerHTML = "";
-    S.branches.forEach(b=>{
-      const div = document.createElement('div');
-      div.className = `item branch-item${S.branch===b.name?' active':''}`;
-      div.dataset.branch = b.name;
-      div.innerHTML = `<div class="left"><div class="title">${esc(b.name)}</div><div class="sub">최근: ${esc(b.commit?.sha?.slice(0,7)||'-')}</div></div><div class="dots"><span class="dot"></span></div>`;
-      div.onclick = ()=> selectBranch(b.name);
-      elBranch.appendChild(div);
-    });
-  }
-
-  function renderCommits(append=false) {
-    if(!append) elCommit.innerHTML = "";
-    if(!S.commits.length){ elCommit.innerHTML = `<div class="empty">커밋 없음</div>`; return; }
-
-    const frag = document.createDocumentFragment();
-    S.commits.forEach(c=>{
-      const div = document.createElement('div');
-      div.className = `item commit-item${S.commit===c.sha?' active':''}`;
-      div.dataset.sha = c.sha;
-      div.innerHTML = `
-        <div class="left">
-          <div class="title">${esc(c.message||c.sha)}</div>
-          <div class="sub">${esc(c.author||'-')} · ${ago(c.date)}</div>
-        </div>
-        <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      `;
-      div.onclick = ()=> selectCommit(c.sha);
-      frag.appendChild(div);
-    });
-    elCommit.appendChild(frag);
-    markRecentChain();
-  }
-
-  // ====== 선택/로드 ======
-  async function selectRepo(full) {
-    S.repo = normRepo(full);
-    S.branch = null; S.commit = null;
-    elSelRepo.textContent = S.repo; elSelBranch.textContent='-'; elSelCommit.textContent='-';
-    elBranch.innerHTML = `<div class="empty">브랜치 로딩 중...</div>`;
-    elCommit.innerHTML = `<div class="empty">브랜치를 선택하면 커밋이 표시됩니다.</div>`;
-    const data = await api('/api/branches', { repo: S.repo }); // repo에 슬래시 보장
-    S.branches = data.branches || [];
-    renderBranches();
-  }
-
-  async function selectBranch(name) {
-    S.branch = name; S.commit = null;
-    elSelBranch.textContent = name; elSelCommit.textContent='-';
-    S.page = 1; S.hasMore = true; S.loading=false; S.commits=[];
-    elCommit.innerHTML = `<div class="empty">커밋 로딩 중...</div>`;
-    await loadMoreCommits(true);
-  }
-
-  async function selectCommit(sha) {
-    S.commit = sha;
-    elSelCommit.textContent = sha.slice(0,7);
-    const url = `/details?repo=${encodeURIComponent(S.repo)}&branch=${encodeURIComponent(S.branch||'')}&sha=${encodeURIComponent(S.commit)}`;
-    document.getElementById('btn-detail').href = url;
-    renderCommits(); // active 표시 갱신
-  }
-
-  async function loadRepos() {
-    const data = await api('/api/get_initial_data');
-    S.repos = (data.repos||[]).map(r=>({full_name:normRepo(r.full_name), pushed_at:r.pushed_at}));
-    renderRepos();
-    elLast.textContent = `마지막 갱신: ${stamp()}`;
-  }
-
-  async function loadMoreCommits(reset=false) {
-    if(S.loading || !S.hasMore) return;
-    S.loading = true;
-    try{
-      const data = await api('/api/commits', { repo:S.repo, branch:S.branch, page:S.page });
-      const list = data.commits||[];
-      if(reset) S.commits = list; else S.commits = S.commits.concat(list);
-      S.hasMore = !!data.has_more;
-      S.page += 1;
-      renderCommits(!reset);
-    } finally {
-      S.loading = false;
+  document.addEventListener('DOMContentLoaded', () => {
+    if (loadCache()) {
+      renderRepos();
+      setInterval(silentSync, 60000);
+    } else {
+      window.location.href = '/loading';
     }
-  }
-
-  // ====== 자동 새로고침(상태 유지) ======
-  async function autoRefresh() {
-    const keep = { repo:S.repo, branch:S.branch, commit:S.commit };
-    await loadRepos();
-    if(keep.repo){
-      S.repo = keep.repo;
-      const b = await api('/api/branches', { repo:S.repo });
-      S.branches = b.branches||[];
-      renderBranches();
-    }
-    if(keep.repo && keep.branch){
-      S.branch = keep.branch; S.page=1; S.hasMore=true; S.commits=[];
-      await loadMoreCommits(true);
-    }
-    if(keep.commit){
-      S.commit = keep.commit;
-      renderCommits(); // active 복원
-    }
-    elLast.classList.add('highlight');
-    setTimeout(()=>elLast.classList.remove('highlight'), 800);
-  }
-
-  // ====== 이벤트 ======
-  document.getElementById('btn-refresh').onclick = autoRefresh;
-  document.getElementById('btn-issues').onclick = ()=> location.href='/issues';
-  document.getElementById('btn-vscode').onclick = ()=> alert('VS Code 연동 예정');
-  elCommit.addEventListener('scroll', e=>{
-    const nearBottom = e.target.scrollTop + e.target.clientHeight >= e.target.scrollHeight - 60;
-    if(nearBottom) loadMoreCommits();
   });
 
-  // 초기 & 30초 자동 새로고침
-  (async ()=>{
-    await loadRepos();
-    setInterval(autoRefresh, 30000);
-  })();
+  $('#repoFilter').addEventListener('input', renderRepos);
+  $('#btnSync').addEventListener('click', () => {
+    sessionStorage.removeItem(CACHE_KEY);
+    window.location.href = '/loading';
+  });
+  $('#btn-view-details').addEventListener('click', () => {
+    if (S.selCommit) {
+      const { repo, sha, branch } = S.selCommit;
+      window.location.href = `/details?repo=${repo}&sha=${sha}&branch=${branch || ''}`;
+    }
+  });
+  commitListEl.addEventListener('scroll', () => {
+    if (S.repo && S.branch && commitListEl.scrollTop + commitListEl.clientHeight >= commitListEl.scrollHeight - 100) {
+      loadMoreCommits();
+    }
+  });
+  commitListEl.addEventListener('click', (e) => {
+    const refreshButton = e.target.closest('.btn-refresh');
+    if (refreshButton) {
+      e.stopPropagation();
+      const sha = refreshButton.dataset.sha;
+      if (sha) {
+        refreshCommit(sha);
+      }
+    }
+  });
 })();
 </script>
 </body>
