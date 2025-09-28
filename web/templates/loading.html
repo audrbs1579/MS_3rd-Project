@@ -2,161 +2,61 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>데이터 로딩 중...</title>
+  <title>Loading</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{
-      --bg:#f9fafb;
-      --card:#ffffff;
-      --text:#111827;
-      --muted:#6b7280;
-      --border:#e5e7eb;
-      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-      --primary: #4f46e5;
-    }
-    *{box-sizing:border-box}
-    html,body{
-      margin:0; padding:0; background:var(--bg); color:var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      display: flex; align-items: center; justify-content: center; height: 100vh;
-    }
-    .wrap{max-width:560px; width: 100%; padding:0 20px; text-align: center;}
-    .card{
-      background:var(--card); border:1px solid var(--border);
-      border-radius:12px; padding:32px 40px; box-shadow: var(--shadow);
-    }
-    h1{margin:0 0 16px 0; font-size:24px; color:var(--text);}
-    p#statusText{margin:0 0 24px 0; color:var(--muted); font-size: 16px; min-height: 24px; transition: color 0.3s;}
-    .progress-bar-container{
-      width: 100%;
-      height: 12px;
-      background-color: var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    .progress-bar{
-      width: 0%;
-      height: 100%;
-      background-color: var(--primary);
-      border-radius: 6px;
-      transition: width 0.3s ease-in-out, background-color 0.3s;
-    }
+    body { margin: 0; background: #f9fafb; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif; }
+    .loading { text-align: center; color: #374151; }
+    .spinner { border: 4px solid #f3f4f6; border-top: 4px solid #4f46e5; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>데이터를 준비하는 중입니다</h1>
-      <p id="statusText">초기화 중...</p>
-      <div class="progress-bar-container">
-        <div id="progressBar" class="progress-bar"></div>
-      </div>
-    </div>
+  <div class="loading">
+    <div class="spinner"></div>
+    <p>데이터를 불러오는 중...</p>
   </div>
-<script>
-(async () => {
-    const statusText = document.getElementById('statusText');
-    const progressBar = document.getElementById('progressBar');
 
-    function updateProgress(percentage, text) {
-        const p = Math.max(0, Math.min(100, percentage));
-        progressBar.style.width = `${p}%`;
-        statusText.textContent = text;
-    }
+  <script>
+    const CACHE_KEY = 'dashboardCache';
+    const CACHE_VERSION = 'v2';   // ← dashboard_branch.html 과 동일하게 맞춤
 
-    async function api(path) {
-        const res = await fetch(`/api${path}`, {
-            headers: { 'Accept': 'application/json' },
+    async function loadData() {
+      try {
+        const response = await fetch('/api/get_initial_data', {
+          headers: { 'Accept': 'application/json' },
         });
-        if (res.status === 401) {
-            window.location.href = '/';
-            throw new Error('Unauthorized');
-        }
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(errData.error || `HTTP error ${res.status}`);
-        }
-        return res.json();
-    }
 
-    try {
-        updateProgress(5, '저장소 목록을 불러오는 중...');
-        const repoData = await api('/my_repos');
-        const repos = repoData.repos || [];
-        updateProgress(15, `총 ${repos.length}개의 저장소를 발견했습니다.`);
+        if (response.status === 401) {
+          window.location.href = '/';
+          throw new Error('Unauthorized');
+        }
 
-        const cache = {
-            repos: repos,
-            branches: {},
-            commits: {},
-            timestamp: new Date().toISOString()
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // 캐시에 구조적으로 저장
+        const dataToCache = {
+          version: CACHE_VERSION,
+          repos: data.repos || [],
+          branches: data.branches || {},
+          timestamp: new Date().toISOString()
         };
 
-        const branchPromises = repos.map(repo =>
-            api(`/branches?repo=${repo.full_name}`).then(branchData => ({
-                repoName: repo.full_name,
-                branches: branchData.branches || []
-            }))
-        );
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
 
-        const allBranchesResults = await Promise.all(branchPromises);
-        let totalBranches = 0;
-        allBranchesResults.forEach(result => {
-            cache.branches[result.repoName] = result.branches;
-            totalBranches += result.branches.length;
-        });
-
-        updateProgress(40, `총 ${totalBranches}개의 브랜치 정보를 로딩합니다...`);
-
-        if (totalBranches === 0) {
-            updateProgress(100, '데이터 로딩 완료!');
-            sessionStorage.setItem('dashboardCache', JSON.stringify(cache));
-            window.location.href = '/dashboard';
-            return;
-        }
-
-        const commitPromises = [];
-        for (const repoName in cache.branches) {
-            for (const branch of cache.branches[repoName]) {
-                const key = `${repoName}|${branch.name}`;
-                commitPromises.push(
-                    api(`/commits?repo=${repoName}&branch=${branch.name}`).then(commitData => ({
-                        key: key,
-                        commits: commitData.commits || []
-                    }))
-                );
-            }
-        }
-        
-        let commitsLoaded = 0;
-        commitPromises.forEach(p => {
-            p.then(() => {
-                commitsLoaded++;
-                const progress = 40 + (commitsLoaded / totalBranches) * 58;
-                updateProgress(progress, `${commitsLoaded} / ${totalBranches} 브랜치의 커밋을 캐싱하는 중...`);
-            });
-        });
-
-        const allCommitsResults = await Promise.all(commitPromises);
-
-        allCommitsResults.forEach(result => {
-            cache.commits[result.key] = result.commits;
-        });
-
-        updateProgress(100, '데이터 로딩 완료! 대시보드로 이동합니다.');
-        sessionStorage.setItem('dashboardCache', JSON.stringify(cache));
-        
-        setTimeout(() => {
-            window.location.href = '/dashboard';
-        }, 500);
-
-    } catch (error) {
-        console.error('초기 데이터 로딩 실패:', error);
-        updateProgress(100, `오류 발생: ${error.message}`);
-        progressBar.style.backgroundColor = '#ef4444';
-        statusText.style.color = '#991b1b';
+        // 완료 후 대시보드로 이동
+        window.location.href = '/dashboard';
+      } catch (err) {
+        console.error('Loading error:', err);
+        document.querySelector('.loading p').textContent = '데이터를 불러오지 못했습니다.';
+      }
     }
-})();
-</script>
+
+    loadData();
+  </script>
 </body>
 </html>
