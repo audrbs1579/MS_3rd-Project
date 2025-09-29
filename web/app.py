@@ -129,9 +129,15 @@ def _generate_anomaly_reasons(features, sentinel_status):
         reasons.append("민감한 키워드(secret, key 등)가 포함된 파일을 수정했습니다.")
 
     # 규칙 2: 비정상적 커밋 시간 (예: 새벽 1시 ~ 5시)
-    hour = features.get("hour")
-    if hour is not None and (1 <= hour <= 5):
-        reasons.append(f"일반적이지 않은 시간(새벽 {hour}시)에 커밋이 발생했습니다.")
+    utc_hour = features.get("hour")
+    if utc_hour is not None:
+        # UTC 시간에 9를 더하고 24로 나눈 나머지 값을 구해 KST 시간으로 변환
+        kst_hour = (utc_hour + 9) % 24
+
+    # 변환된 KST 시간이 새벽 1시에서 5시 사이인지 확인
+    if 1 <= kst_hour <= 5:
+        # 메시지에도 변환된 kst_hour를 사용해야 정확한 시간이 표시됨
+        reasons.append(f"일반적이지 않은 시간(새벽 {kst_hour}시)에 커밋이 발생했습니다.")
 
     # 규칙 3: 과도한 코드 변경량 (예: 1000 라인 이상)
     if features.get("push_size", 0) > 1000:
