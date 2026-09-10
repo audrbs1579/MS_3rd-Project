@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Security Issues Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+  <style>
+    .header { margin-bottom: 24px; }
+    .header h1 { font-size: 1.5rem; margin: 0 0 4px 0; }
+    .header p { color: #6b7280; }
+    .issues-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; }
+    .column { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .column h2 { font-size: 1rem; padding: 12px 16px; margin: 0; border-bottom: 1px solid #e5e7eb; }
+    .column .body { padding: 16px; height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+    .issue-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+    .issue-card .repo { font-size: 0.9rem; font-weight: 600; word-break: break-all; }
+    .issue-card .message { font-size: 0.85rem; margin-top: 4px; }
+    .issue-card .meta { font-size: 0.8rem; color: #6b7280; margin-top: 8px; }
+    .issue-card .statuses { display: flex; gap: 8px; margin-top: 8px; }
+    .status-pill { padding: 2px 8px; font-size: 0.75rem; border-radius: 99px; font-weight: 500; }
+    .status-good { background-color: #dcfce7; color: #166534; }
+    .status-warn { background-color: #fef9c3; color: #854d0e; }
+    .status-bad { background-color: #fee2e2; color: #991b1b; }
+    .empty-state { color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+        <a href="/dashboard"><button type="button">메인 대시보드</button></a>
+        <div class="toolbar-actions">
+            <span>Signed in as <b>{{ user_id }}</b></span>
+            <a href="/logout"><button type="button">로그아웃</button></a>
+        </div>
+    </div>
+    <div class="header">
+      <h1>최신 보안 경고</h1>
+      <p>보안 분석에 실패하거나 주의가 필요한 커밋 목록입니다.</p>
+    </div>
+    <div class="issues-grid">
+      <div class="column"><h2>1개 항목 실패</h2><div id="issues-col-1" class="body"><div class="empty-state">내역 없음</div></div></div>
+      <div class="column"><h2>2개 항목 실패</h2><div id="issues-col-2" class="body"><div class="empty-state">내역 없음</div></div></div>
+      <div class="column"><h2>3개 항목 실패</h2><div id="issues-col-3" class="body"><div class="empty-state">내역 없음</div></div></div>
+    </div>
+  </div>
+
+<script>
+  // --- MODIFIED: KST 변환 함수 수정 ---
+  function formatToKST(isoString) {
+    if (!isoString) return '';
+    try {
+        const date = new Date(isoString);
+        const kstTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+        
+        const year = kstTime.getUTCFullYear();
+        const month = kstTime.getUTCMonth() + 1;
+        const day = kstTime.getUTCDate();
+        let hours = kstTime.getUTCHours();
+        const minutes = String(kstTime.getUTCMinutes()).padStart(2, '0');
+
+        const ampm = hours >= 12 ? '오후' : '오전';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        
+        return `${year}년 ${month}월 ${day}일 ${ampm} ${hours}:${minutes}`;
+    } catch(e) {
+        return '날짜 오류';
+    }
+  }
+
+  function ago(isoString) {
+      if (!isoString) return '';
+      const reference = new Date(isoString);
+      const seconds = (Date.now() - reference.getTime()) / 1000;
+      
+      let relativeTime;
+      if (seconds < 60) relativeTime = '방금 전';
+      else if (seconds < 3600) relativeTime = `${Math.floor(seconds / 60)}분 전`;
+      else if (seconds < 86400) relativeTime = `${Math.floor(seconds / 3600)}시간 전`;
+      else relativeTime = `${Math.floor(seconds / 86400)}일 전`;
+
+      const fullDateTime = formatToKST(isoString);
+      return `<time datetime="${isoString}" title="${fullDateTime}">${relativeTime}</time>`;
+  }
+  
+  function esc(s) {
+    return (s === null || s === undefined) ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c] || c);
+  }
+
+  async function api(path, options = {}) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      return res.json();
+  }
+
+  function createIssueCard(issue) {
+    const card = document.createElement('div');
+    card.className = 'issue-card';
+    
+    const s = issue.securityStatus || {};
+    const statusesHtml = `
+      <span class="status-pill status-${s.defender?.status||'good'}">CodeQL</span>
+      <span class="status-pill status-${s.sentinel?.status||'good'}">계정</span>
+      <span class="status-pill status-${s.bricks?.status||'good'}">BRICKS</span>
+    `;
+
+    card.innerHTML = `
+      <div class="repo">${esc(issue.repoFullName)}</div>
+      <div class="message">${esc(issue.message)}</div>
+      <div class="meta">${esc(issue.author)} · ${ago(issue.date)}</div>
+      <div class="statuses">${statusesHtml}</div>
+    `;
+    
+    card.style.cursor = 'pointer';
+    card.onclick = () => {
+      const detailUrl = `/details?repo=${issue.repoFullName}&sha=${issue.id}`;
+      window.location.href = detailUrl;
+    };
+
+    return card;
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const issues = await api('/api/issues');
+      const cols = {
+        1: document.getElementById('issues-col-1'),
+        2: document.getElementById('issues-col-2'),
+        3: document.getElementById('issues-col-3'),
+      };
+
+      let issueFound = false;
+      Object.values(cols).forEach(col => col.innerHTML = ''); 
+
+      issues.forEach(issue => {
+        const count = issue.failureCount;
+        if (cols[count]) {
+          const card = createIssueCard(issue);
+          cols[count].appendChild(card);
+          issueFound = true;
+        }
+      });
+      
+      if (!issueFound) {
+        cols[1].innerHTML = '<div class="empty-state">발견된 이슈 없음</div>';
+      }
+
+    } catch (error) {
+      console.error("Failed to load issues:", error);
+      document.querySelector('.issues-grid').innerHTML = '<h2>데이터를 불러오는 데 실패했습니다.</h2>';
+    }
+  });
+</script>
+</body>
+</html>

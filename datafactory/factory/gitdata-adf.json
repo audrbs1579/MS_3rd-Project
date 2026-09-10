@@ -1,0 +1,9 @@
+{
+	"name": "gitdata-adf",
+	"location": "koreacentral",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "9df8c65a-7f2b-45ee-b3c7-5bc57c736c13",
+		"tenantId": "5fb256f0-fbf2-40d2-81d5-bac1b32c419d"
+	}
+}

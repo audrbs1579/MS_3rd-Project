@@ -1,0 +1,7 @@
+flask
+gunicorn
+requests
+azure-functions
+azure-cosmos
+Flask-SocketIO
+eventlet

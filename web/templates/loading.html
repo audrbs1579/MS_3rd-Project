@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Loading</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { margin: 0; background: #f9fafb; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif; }
+    .loading { text-align: center; color: #374151; }
+    .spinner { border: 4px solid #f3f4f6; border-top: 4px solid #4f46e5; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="loading">
+    <div class="spinner"></div>
+    <p>데이터를 불러오는 중...</p>
+  </div>
+
+  <script>
+    const CACHE_KEY = 'dashboardCache';
+    const CACHE_VERSION = 'v2';   // ← dashboard_branch.html 과 동일하게 맞춤
+
+    async function loadData() {
+      try {
+        const response = await fetch('/api/get_initial_data', {
+          headers: { 'Accept': 'application/json' },
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/';
+          throw new Error('Unauthorized');
+        }
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // 캐시에 구조적으로 저장
+        const dataToCache = {
+          version: CACHE_VERSION,
+          repos: data.repos || [],
+          branches: data.branches || {},
+          timestamp: new Date().toISOString()
+        };
+
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(dataToCache));
+
+        // 완료 후 대시보드로 이동
+        window.location.href = '/dashboard';
+      } catch (err) {
+        console.error('Loading error:', err);
+        document.querySelector('.loading p').textContent = '데이터를 불러오지 못했습니다.';
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>

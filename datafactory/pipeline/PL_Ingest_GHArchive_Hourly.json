@@ -1,0 +1,115 @@
+{
+	"name": "PL_Ingest_GHArchive_Hourly",
+	"properties": {
+		"activities": [
+			{
+				"name": "Copy data1",
+				"type": "Copy",
+				"dependsOn": [
+					{
+						"activity": "Set variable1",
+						"dependencyConditions": [
+							"Succeeded",
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "JsonSource",
+						"storeSettings": {
+							"type": "HttpReadSettings",
+							"requestMethod": "GET"
+						},
+						"formatSettings": {
+							"type": "JsonReadSettings"
+						}
+					},
+					"sink": {
+						"type": "JsonSink",
+						"storeSettings": {
+							"type": "AzureBlobFSWriteSettings",
+							"copyBehavior": "FlattenHierarchy"
+						},
+						"formatSettings": {
+							"type": "JsonWriteSettings"
+						}
+					},
+					"enableStaging": false
+				},
+				"inputs": [
+					{
+						"referenceName": "DS_HTTP_GHArchiveJsonGz",
+						"type": "DatasetReference",
+						"parameters": {
+							"year": {
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'yyyy')",
+								"type": "Expression"
+							},
+							"month": {
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'MM')",
+								"type": "Expression"
+							},
+							"day": {
+								"value": "@formatDateTime(variables('safe_trigger_time'), 'dd')",
+								"type": "Expression"
+							},
+							"hour": {
+								"value": "@string(int(formatDateTime(variables('safe_trigger_time'), 'HH')))",
+								"type": "Expression"
+							}
+						}
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "DS_ADLS_GHArchiveJson",
+						"type": "DatasetReference",
+						"parameters": {
+							"dynamic_filename": {
+								"value": "@concat(formatDateTime(variables('safe_trigger_time'), 'yyyy-MM-dd-HH'), '.json')",
+								"type": "Expression"
+							}
+						}
+					}
+				]
+			},
+			{
+				"name": "Set variable1",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "safe_trigger_time",
+					"value": {
+						"value": "@addHours(pipeline().parameters.trigger_time, -4)",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"trigger_time": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"safe_trigger_time": {
+				"type": "String"
+			}
+		},
+		"annotations": []
+	}
+}
